@@ -153,7 +153,7 @@ class MapService {
     const popupContent = `
       <div class="p-2">
         <h3 class="font-semibold text-sm">${pin.title}</h3>
-        <p class="text-xs text-gray-600">${pin.type} • ${pin.status}</p>
+        <p class="text-xs text-neutral-600">${pin.type} • ${pin.status}</p>
         ${pin.description ? `<p class="text-xs mt-1">${pin.description}</p>` : ''}
       </div>
     `

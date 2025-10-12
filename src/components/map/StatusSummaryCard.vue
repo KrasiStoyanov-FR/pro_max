@@ -1,5 +1,5 @@
 <template>
-  <div class="absolute top-4 left-4 z-20 bg-gray-800 rounded-lg shadow-md p-4 w-64">
+  <div class="absolute top-4 left-4 z-20 bg-neutral-900 rounded-lg shadow-md p-4 w-64">
     <div class="space-y-3">
       <!-- Alarms -->
       <div class="flex items-center space-x-3">

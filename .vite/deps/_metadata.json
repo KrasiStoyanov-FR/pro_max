@@ -1,0 +1,49 @@
+{
+  "hash": "4652378b",
+  "configHash": "81d02dab",
+  "lockfileHash": "d2025d09",
+  "browserHash": "fcfc2f1c",
+  "optimized": {
+    "@phosphor-icons/vue": {
+      "src": "../../node_modules/@phosphor-icons/vue/dist/index.mjs",
+      "file": "@phosphor-icons_vue.js",
+      "fileHash": "b5e77470",
+      "needsInterop": false
+    },
+    "leaflet": {
+      "src": "../../node_modules/leaflet/dist/leaflet-src.js",
+      "file": "leaflet.js",
+      "fileHash": "3dffca0e",
+      "needsInterop": true
+    },
+    "pinia": {
+      "src": "../../node_modules/pinia/dist/pinia.mjs",
+      "file": "pinia.js",
+      "fileHash": "b79947c7",
+      "needsInterop": false
+    },
+    "vue": {
+      "src": "../../node_modules/vue/dist/vue.runtime.esm-bundler.js",
+      "file": "vue.js",
+      "fileHash": "6727741a",
+      "needsInterop": false
+    },
+    "vue-router": {
+      "src": "../../node_modules/vue-router/dist/vue-router.mjs",
+      "file": "vue-router.js",
+      "fileHash": "ad1d118b",
+      "needsInterop": false
+    }
+  },
+  "chunks": {
+    "chunk-AYVSL3LM": {
+      "file": "chunk-AYVSL3LM.js"
+    },
+    "chunk-ZS4T33C3": {
+      "file": "chunk-ZS4T33C3.js"
+    },
+    "chunk-BUSYA2B4": {
+      "file": "chunk-BUSYA2B4.js"
+    }
+  }
+}

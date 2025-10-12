@@ -12,7 +12,18 @@ export default defineConfig({
   },
   server: {
     port: 3000,
-    host: true
+    host: true,
+    watch: {
+      usePolling: true,
+      interval: 100
+    }
+  },
+  css: {
+    postcss: './postcss.config.js'
+  },
+  cacheDir: '.vite',
+  optimizeDeps: {
+    exclude: ['js-big-decimal']
   },
   build: {
     outDir: 'dist',

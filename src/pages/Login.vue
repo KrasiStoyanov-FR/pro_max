@@ -1,5 +1,5 @@
 <template>
-  <div class="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+  <div class="min-h-screen flex items-center justify-center bg-neutral-50 py-12 px-4 sm:px-6 lg:px-8">
     <div class="max-w-md w-full space-y-8">
       <!-- Header -->
       <div class="text-center">
@@ -8,10 +8,10 @@
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
           </svg>
         </div>
-        <h2 class="mt-6 text-3xl font-extrabold text-gray-900">
+        <h2 class="mt-6 text-3xl font-extrabold text-neutral-900">
           Defense Radar Dashboard
         </h2>
-        <p class="mt-2 text-sm text-gray-600">
+        <p class="mt-2 text-sm text-neutral-600">
           Sign in to access the radar monitoring system
         </p>
       </div>
@@ -21,7 +21,7 @@
         <div class="space-y-4">
           <!-- Email field -->
           <div>
-            <label for="email" class="block text-sm font-medium text-gray-700">
+            <label for="email" class="block text-sm font-medium text-neutral-700">
               Email address
             </label>
             <input
@@ -40,7 +40,7 @@
 
           <!-- Password field -->
           <div>
-            <label for="password" class="block text-sm font-medium text-gray-700">
+            <label for="password" class="block text-sm font-medium text-neutral-700">
               Password
             </label>
             <input
@@ -66,9 +66,9 @@
               v-model="form.rememberMe"
               name="remember-me"
               type="checkbox"
-              class="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+              class="h-4 w-4 text-primary-600 focus:ring-primary-500 border-neutral-300 rounded"
             />
-            <label for="remember-me" class="ml-2 block text-sm text-gray-900">
+            <label for="remember-me" class="ml-2 block text-sm text-neutral-900">
               Remember me
             </label>
           </div>

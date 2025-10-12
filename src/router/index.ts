@@ -3,7 +3,7 @@ import { useAuthStore } from '@/store/auth'
 
 // Lazy-loaded route components for code-splitting
 const Login = () => import('@/pages/Login.vue')
-const Dashboard = () => import('@/pages/Dashboard.vue')
+const Map = () => import('@/pages/Map.vue')
 
 // TODO: Add more routes as needed
 // const Reports = () => import('@/pages/Reports.vue')
@@ -15,7 +15,7 @@ const router = createRouter({
   routes: [
     {
       path: '/',
-      redirect: '/dashboard'
+      redirect: '/map'
     },
     {
       path: '/login',
@@ -27,12 +27,12 @@ const router = createRouter({
       }
     },
     {
-      path: '/dashboard',
-      name: 'Dashboard',
-      component: Dashboard,
+      path: '/map',
+      name: 'Map',
+      component: Map,
       meta: {
         requiresAuth: true,
-        title: 'Dashboard - Defense Radar Dashboard'
+        title: 'Map - Defense Radar Dashboard'
       }
     },
     // TODO: Add more protected routes
@@ -68,7 +68,7 @@ const router = createRouter({
     {
       path: '/:pathMatch(.*)*',
       name: 'NotFound',
-      redirect: '/dashboard'
+      redirect: '/map'
     }
   ]
 })
@@ -98,8 +98,8 @@ router.beforeEach(async (to, from, next) => {
     if (to.meta.roles && Array.isArray(to.meta.roles)) {
       const userRole = authStore.userRole
       if (!userRole || !to.meta.roles.includes(userRole)) {
-        // Redirect to dashboard if user doesn't have required role
-        next('/dashboard')
+        // Redirect to map if user doesn't have required role
+        next('/map')
         return
       }
     }
@@ -107,7 +107,7 @@ router.beforeEach(async (to, from, next) => {
   
   // Redirect authenticated users away from login page
   if (to.path === '/login' && authStore.isAuthenticated) {
-    const redirectPath = (to.query.redirect as string) || '/dashboard'
+    const redirectPath = (to.query.redirect as string) || '/map'
     next(redirectPath)
     return
   }

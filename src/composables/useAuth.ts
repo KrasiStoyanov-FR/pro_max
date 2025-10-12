@@ -20,8 +20,8 @@ export function useAuth() {
       const result = await authStore.login(credentials)
       
       if (result.success) {
-        // Redirect to dashboard or intended route
-        const redirectPath = router.currentRoute.value.query.redirect as string || '/dashboard'
+        // Redirect to map or intended route
+        const redirectPath = router.currentRoute.value.query.redirect as string || '/map'
         await router.push(redirectPath)
         return { success: true }
       } else {
