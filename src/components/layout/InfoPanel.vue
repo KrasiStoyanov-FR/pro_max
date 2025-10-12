@@ -1,13 +1,13 @@
 <template>
   <div 
     :class="[
-      'bg-neutral-900 border-l border-neutral-600 transition-all duration-300 ease-in-out',
-      isOpen ? 'w-80' : 'w-0'
+      'flex-1 bg-neutral-900 border-l transition-all duration-300 ease-in-out',
+      isOpen ? 'max-w-64 lg:max-w-80' : 'max-w-0'
     ]"
   >
     <div v-if="isOpen" class="h-full flex flex-col">
       <!-- Panel header -->
-      <div class="p-4 border-b border-neutral-600">
+      <div class="p-4 border-b">
         <div class="flex items-center justify-between">
           <h3 class="text-lg font-semibold text-white">Select a Drone</h3>
           <button
@@ -23,7 +23,7 @@
       <div class="flex-1 overflow-y-auto p-4">
         <!-- Drone Selection Dropdown -->
         <div class="mb-6">
-          <div class="bg-neutral-900 border border-neutral-600 rounded-lg p-3 flex items-center space-x-3">
+          <div class="bg-neutral-900 border rounded-lg p-3 flex items-center space-x-3">
             <!-- Drone Icon -->
             <PhPaperPlaneTilt :size="24" class="text-white" />
             <!-- Drone Name -->

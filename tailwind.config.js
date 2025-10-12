@@ -81,11 +81,26 @@ export default {
     },
 
     extend: {
+
       fontFamily: {
         sans: ['Inter', 'system-ui', 'sans-serif'],
         mono: ['JetBrains Mono', 'monospace'],
       },
+
+      spacing: {
+        4.5: '1.125rem',
+      },
+
+      width: {
+        4.5: '1.125rem',
+      },
+
+      height: {
+        4.5: '1.125rem',
+      },
+
     },
   },
+  
   plugins: [],
 }

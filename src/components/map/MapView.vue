@@ -1,15 +1,15 @@
 <template>
-  <div class="h-full w-full relative">
+  <div class="h-full flex-1 relative">
     <!-- Map container -->
     <div 
       ref="mapContainer"
-      class="h-full w-full"
+      class="h-full w-full relative z-10"
     ></div>
 
     <!-- Loading overlay -->
     <div 
       v-if="isLoading"
-      class="absolute inset-0 bg-white bg-opacity-75 flex items-center justify-center z-10"
+      class="absolute inset-0 bg-neutral-800 bg-opacity-75 flex items-center justify-center z-10"
     >
       <div class="flex flex-col items-center space-y-2">
         <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
@@ -67,7 +67,7 @@
 
     <!-- Map info overlay -->
     <div class="absolute bottom-4 left-4 z-20">
-      <div class="bg-white bg-opacity-90 rounded-lg p-3 shadow-sm">
+      <div class="bg-neutral-800 bg-opacity-90 rounded-lg p-3 shadow-sm">
         <div class="text-xs text-neutral-600 space-y-1">
           <div>Pins: {{ pinsCount }}</div>
           <div>Zoom: {{ currentZoom }}</div>

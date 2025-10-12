@@ -1,11 +1,11 @@
 <template>
   <aside :class="[
-    'bg-neutral-900 border-r border-neutral-600 transition-all ease-in-out',
-    isCollapsed ? 'w-16' : 'w-64'
+    'flex-1 bg-neutral-900 transition-all duration-[400ms] ease-in-out',
+    isCollapsed ? 'max-w-16' : 'max-w-64'
   ]">
     <div class="h-full flex flex-col">
       <!-- Sidebar header -->
-      <div class="px-6 py-4 border-b border-neutral-600">
+      <div :class="isCollapsed ? 'px-4' : 'px-6'" class="py-4 transition-all duration-[400ms] ease-in-out">
         <div class="flex items-center justify-between relative">
           <div class="flex items-center space-x-2">
             <!-- DTS Logo -->
@@ -21,33 +21,49 @@
 
           <button @click="$emit('toggle')"
             class="w-8 h-8 flex items-center justify-center absolute top-0 -right-10 bottom-0 my-auto p-1 rounded-md bg-neutral-600 hover:bg-neutral-700 text-neutral-200 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-primary-500 transition-all ease-in-out"
-            :class="{ 'rotate-180': isCollapsed }">
+            :class="{ 'rotate-180 -right-12': isCollapsed }">
             <PhCaretLeft :size="16" weight="bold" />
           </button>
         </div>
       </div>
 
       <!-- Navigation items -->
-      <nav class="flex-1 p-4 space-y-2">
-        <router-link v-for="item in navigationItems" :key="item.name" :to="item.href" :class="[
-          'sidebar-item',
-          $route.name === item.name ? 'sidebar-item-active' : 'sidebar-item-inactive'
-        ]">
-          <component :is="item.icon" class="w-5 h-5 flex-shrink-0" />
-          <span v-if="!isCollapsed" class="ml-3">{{ item.label }}</span>
-        </router-link>
-      </nav>
+      <div class="flex-1">
+        <div class="relative">
+          <nav class="grid grid-cols-1 flex-1 py-4 relative z-10">
+            <router-link v-for="item in navigationItems" :key="item.name" :to="item.href" :class="[
+              isCollapsed ? 'sidebar-item-collapsed' : '',
+              $route.name === item.name ? 'sidebar-item-active' : 'sidebar-item-inactive'
+            ]" class="sidebar-item col-span-1 row-span-1">
+              <component :is="item.icon" :weight="$route.name === item.name ? 'fill' : 'bold'"
+                :class="{ 'text-primary-500': $route.name === item.name && !isCollapsed }"
+                class="w-5 h-5 flex-shrink-0 transition-colors duration-[400ms] ease-in-out" />
+              <span v-if="!isCollapsed" class="ml-1.5">{{ item.label }}</span>
+            </router-link>
+          </nav>
+
+          <div :class="[isCollapsed ? 'w-full right-0 px-3' : 'w-2']"
+            class="py-4 flex flex-col absolute top-0 bottom-0 left-0 transition-all duration-[400ms] ease-in-out z-0">
+            <!-- TODO: Fix the snappiness of the rounded corners on sidebar collapsing -->
+            <span
+              :class="[isCollapsed ? 'rounded-xl' : 'rounded-tr-full rounded-br-full']"
+              class="h-10 transform translate-y-0.5 bg-primary-500 transition-all duration-[400ms] ease-in-out"
+              :style="`margin-top: ${currentNavigationItemOffsetTop}rem;`"></span>
+          </div>
+        </div>
+      </div>
 
       <!-- Sidebar footer -->
-      <div class="p-4 border-t border-neutral-600">
-        <p v-if="!isCollapsed" class="text-xs text-neutral-500">v3.15.3</p>
+      <div :class="[isCollapsed ? 'px-3' : 'px-4']" class="pb-4">
+        <p class="pt-4 transform border-t text-xs text-neutral-500 truncate">v3.15.3</p>
       </div>
     </div>
   </aside>
 </template>
 
 <script setup lang="ts">
-import { PhList, PhCompass, PhLayout, PhCaretLeft } from '@phosphor-icons/vue'
+import { PhCompass, PhLayout, PhCaretLeft } from '@phosphor-icons/vue'
+import { computed } from 'vue';
 import { useRoute } from 'vue-router'
 
 // Props
@@ -98,4 +114,14 @@ const navigationItems = [
     icon: PhLayout
   },
 ]
+
+const currentNavigationItemOffsetTop = computed(() => {
+  let result = 0
+  navigationItems.map((item, index) => {
+    result = route.name === item.name ? index : result
+  })
+
+  return result * 2.75
+})
+
 </script>

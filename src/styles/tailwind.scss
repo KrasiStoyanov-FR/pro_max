@@ -25,7 +25,7 @@
   }
 
   .input-field {
-    @apply block w-full rounded-lg border-neutral-600 bg-neutral-800 text-white shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm;
+    @apply block w-full rounded-lg bg-neutral-800 text-white shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm;
   }
 
   .card {
@@ -33,15 +33,19 @@
   }
 
   .sidebar-item {
-    @apply flex items-center px-3 py-2 text-sm font-medium rounded-md transition-colors duration-200;
+    @apply min-h-10 flex items-center px-6 py-2 my-0.5 text-sm font-medium rounded-md transition-all duration-[400ms] ease-in-out;
+  }
+
+  .sidebar-item-collapsed {
+    @apply min-w-10 mx-3 px-2.5;
   }
 
   .sidebar-item-active {
-    @apply bg-primary-600 text-white;
+    @apply text-white;
   }
 
   .sidebar-item-inactive {
-    @apply text-neutral-400 hover:bg-neutral-700 hover:text-white;
+    @apply text-neutral-400 hover:text-white;
   }
 }
 
