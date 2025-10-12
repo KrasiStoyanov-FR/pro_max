@@ -8,7 +8,7 @@
       <!-- Top Navigation -->
       <TopNav />
 
-      <div class="flex-1 flex overflow-hidden">
+      <div class="flex-1 flex overflow-hidden relative">
         <!-- Map/Content Area -->
         <div class="flex-1 overflow-hidden relative">
           <slot name="content" />

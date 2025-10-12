@@ -1,19 +1,13 @@
 <template>
-  <div 
-    :class="[
-      'flex-1 bg-neutral-900 border-l transition-all duration-300 ease-in-out',
-      isOpen ? 'max-w-64 lg:max-w-80' : 'max-w-0'
-    ]"
-  >
-    <div v-if="isOpen" class="h-full flex flex-col">
+  <div
+    class="flex justify-end absolute top-0 right-0 bottom-0 left-0 z-10">
+    <div v-if="isOpen" class="h-full flex flex-1 flex-col bg-neutral-900 transition-all duration-300 ease-in-out" :class="[isOpen ? 'max-w-64 lg:max-w-80' : 'max-w-0']">
       <!-- Panel header -->
       <div class="p-4 border-b">
         <div class="flex items-center justify-between">
           <h3 class="text-lg font-semibold text-white">Select a Drone</h3>
-          <button
-            @click="$emit('close')"
-            class="p-1 text-neutral-400 hover:text-white focus:outline-none focus:ring-2 focus:ring-primary-500 rounded-md"
-          >
+          <button @click="$emit('close')"
+            class="p-1 text-neutral-400 hover:text-white focus:outline-none focus:ring-2 focus:ring-primary-500 rounded-md">
             <PhX :size="20" />
           </button>
         </div>
