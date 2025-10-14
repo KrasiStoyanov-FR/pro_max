@@ -7,8 +7,8 @@ export const useMapStore = defineStore('map', () => {
   const pins = ref<MapPin[]>([])
   const selectedPin = ref<MapPin | null>(null)
   const viewport = ref<MapViewport>({
-    center: [39.8283, -98.5795], // Center of USA
-    zoom: 4
+    center: [42.6977, 23.3219], // Sofia, Bulgaria (where most drones are located)
+    zoom: 10
   })
   const isLoading = ref(false)
   const mapInstance = ref<any>(null) // Will hold Leaflet map instance
@@ -57,7 +57,12 @@ export const useMapStore = defineStore('map', () => {
 
   const flyToPin = (pin: MapPin) => {
     if (mapInstance.value) {
-      mapInstance.value.flyTo([pin.lat, pin.lng], 15)
+      // Use a higher zoom level to ensure we zoom IN to the drone
+      // Check current zoom and use a higher level if we're already close
+      const currentZoom = mapInstance.value.getZoom()
+      const targetZoom = Math.min(Math.max(currentZoom + 2, 16), 18) // Zoom in by 2 levels, between 16-18
+      
+      mapInstance.value.flyTo([pin.lat, pin.lng], targetZoom)
     }
     selectPin(pin)
   }
@@ -99,8 +104,8 @@ export const useMapStore = defineStore('map', () => {
     pins.value = []
     selectedPin.value = null
     viewport.value = {
-      center: [39.8283, -98.5795],
-      zoom: 4
+      center: [42.6977, 23.3219], // Sofia, Bulgaria (where most drones are located)
+      zoom: 10
     }
     mapInstance.value = null
   }

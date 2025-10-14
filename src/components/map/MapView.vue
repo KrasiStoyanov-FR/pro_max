@@ -1,16 +1,10 @@
 <template>
   <div class="h-full flex-1 relative">
     <!-- Map container -->
-    <div 
-      ref="mapContainer"
-      class="h-full w-full relative z-10"
-    ></div>
+    <div ref="mapContainer" class="h-full w-full relative z-10"></div>
 
     <!-- Loading overlay -->
-    <div 
-      v-if="isLoading"
-      class="absolute inset-0 bg-neutral-800 bg-opacity-75 flex items-center justify-center z-10"
-    >
+    <div v-if="isLoading" class="absolute inset-0 bg-neutral-800 bg-opacity-75 flex items-center justify-center z-10">
       <div class="flex flex-col items-center space-y-2">
         <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
         <p class="text-sm text-neutral-600">Loading map...</p>
@@ -18,71 +12,77 @@
     </div>
 
     <!-- Error overlay -->
-    <div 
-      v-if="mapError"
-      class="absolute inset-0 bg-red-50 flex items-center justify-center z-10"
-    >
+    <div v-if="mapError" class="absolute inset-0 bg-red-50 flex items-center justify-center z-10">
       <div class="text-center p-6">
         <PhWarning :size="48" class="text-red-400 mx-auto mb-4" />
         <h3 class="text-lg font-medium text-red-900 mb-2">Map Error</h3>
         <p class="text-sm text-red-700 mb-4">{{ mapError }}</p>
-        <button 
-          @click="retryMap"
-          class="btn-primary text-sm"
-        >
+        <button @click="retryMap" class="btn-primary text-sm">
           Retry
         </button>
       </div>
     </div>
 
     <!-- Map controls overlay -->
-    <div class="absolute top-4 right-4 z-20 space-y-2">
-      <!-- Center to user location -->
-      <button
-        @click="centerToUserLocation"
-        class="map-control"
-        title="Center to my location"
-      >
-        <PhMapPin :size="20" class="text-neutral-600" weight="bold" />
-      </button>
+    <div class="absolute bottom-4 right-4 lg:bottom-6 lg:right-6 z-20">
+      <div class="flex flex-col space-y-1">
+        <!-- Toggle layers (topmost) -->
+        <button @click="toggleLayers" class="map-control-button map-control-button--inverted" title="Toggle terrain layers">
+          <PhStack :size="18" class="text-current" weight="fill" />
+        </button>
 
-      <!-- Toggle layers -->
-      <button
-        @click="toggleLayers"
-        class="map-control"
-        title="Toggle layers"
-      >
-        <PhSquaresFour :size="20" class="text-neutral-600" />
-      </button>
+        <!-- Zoom In -->
+        <button @click="zoomIn" class="map-control-button" title="Zoom In">
+          <PhPlus :size="18" class="text-current" weight="bold" />
+        </button>
 
-      <!-- Refresh pins -->
-      <button
-        @click="refreshPins"
-        class="map-control"
-        title="Refresh data"
-      >
-        <PhArrowClockwise :size="20" class="text-neutral-600" />
-      </button>
-    </div>
+        <!-- Zoom Out -->
+        <button @click="zoomOut" class="map-control-button" title="Zoom Out">
+          <PhMinus :size="18" class="text-current" weight="bold" />
+        </button>
 
-    <!-- Map info overlay -->
-    <div class="absolute bottom-4 left-4 z-20">
-      <div class="bg-neutral-800 bg-opacity-90 rounded-lg p-3 shadow-sm">
-        <div class="text-xs text-neutral-600 space-y-1">
-          <div>Pins: {{ pinsCount }}</div>
-          <div>Zoom: {{ currentZoom }}</div>
-          <div v-if="selectedPin">Selected: {{ selectedPin.title }}</div>
-        </div>
+        <!-- Center to user location -->
+        <button @click="centerToUserLocation" class="map-control-button" title="Center to my location">
+          <PhGpsFix :size="18" class="text-current" weight="fill" />
+        </button>
+
+        <!-- Refresh pins -->
+        <button @click="refreshPins" class="map-control-button" title="Refresh map data">
+          <PhArrowClockwise :size="18" class="text-current" weight="bold" />
+        </button>
       </div>
     </div>
+
+    <!-- TODO: The map doesn't visually resize when the sidebar is collapsed. When that happens, the space the sidebar took is now cutout from the map on its right side, since the sidebar is on the left. Look into this issue and see if there's additional settings concerning responsiveness. -->
+
+    <!-- Map info overlay -->
+    <!-- TODO: Consider moving this somewhere where it doesn't overlap with other windows. Plus, consider if it's worth including it in the view. Maybe think of a more compact design? -->
+    <!-- <div class="absolute bottom-4 left-4 z-20">
+      <div class="bg-neutral-900/95 backdrop-blur-sm rounded-lg p-4 shadow-lg border border-neutral-700/50">
+        <div class="text-sm text-white space-y-2">
+          <div class="flex items-center space-x-2">
+            <PhMapPin :size="16" class="text-primary-400" weight="bold" />
+            <span class="font-medium">Pins: {{ pinsCount }}</span>
+          </div>
+          <div class="flex items-center space-x-2">
+            <PhSquaresFour :size="16" class="text-primary-400" weight="bold" />
+            <span class="font-medium">Zoom: {{ currentZoom }}</span>
+          </div>
+          <div v-if="selectedPin" class="flex items-center space-x-2 pt-1 border-t border-neutral-700/50">
+            <PhMapPin :size="16" class="text-green-400" weight="bold" />
+            <span class="text-green-400 font-medium truncate max-w-48">{{ selectedPin.title }}</span>
+          </div>
+        </div>
+      </div>
+    </div> -->
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
-import { PhWarning, PhMapPin, PhSquaresFour, PhArrowClockwise } from '@phosphor-icons/vue'
+import { computed, onMounted, onUnmounted, watch } from 'vue'
+import { PhWarning, PhArrowClockwise, PhGpsFix, PhStack, PhPlus, PhMinus } from '@phosphor-icons/vue'
 import { useMapPins } from '@/composables/useMapPins'
-import type { MapViewport } from '@/types/map'
+import { mapService } from '@/services/mapService'
 
 // Props
 interface Props {
@@ -94,8 +94,8 @@ interface Props {
 }
 
 const props = withDefaults(defineProps<Props>(), {
-  center: () => [39.8283, -98.5795], // Center of USA
-  zoom: 4,
+  center: () => [42.6977, 23.3219], // Sofia, Bulgaria
+  zoom: 10,
   maxZoom: 18,
   minZoom: 1
 })
@@ -158,8 +158,20 @@ const centerToUserLocation = () => {
 }
 
 const toggleLayers = () => {
-  // TODO: Implement layer toggling
-  console.log('Toggle layers - to be implemented')
+  const newLayer = mapService.toggleLayer()
+  console.log('Switched to layer:', newLayer)
+}
+
+const zoomIn = () => {
+  if (isMapReady.value) {
+    mapService.zoomIn()
+  }
+}
+
+const zoomOut = () => {
+  if (isMapReady.value) {
+    mapService.zoomOut()
+  }
 }
 
 const refreshPins = async () => {

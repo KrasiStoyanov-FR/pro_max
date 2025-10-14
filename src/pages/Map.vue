@@ -5,8 +5,6 @@
         <!-- Map view -->
         <MapView
           :pins="pins"
-          :center="[39.8283, -98.5795]"
-          :zoom="4"
           @pin-selected="handlePinSelected"
           @pin-deselected="handlePinDeselected"
         />

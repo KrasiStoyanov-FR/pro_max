@@ -1,5 +1,6 @@
 import L from 'leaflet'
 import type { MapPin, MapViewport, MapControl } from '@/types/map'
+import { getActiveZones, type DroneZone } from './droneZones'
 
 // Fix for default markers in Leaflet with Vite
 delete (L.Icon.Default.prototype as any)._getIconUrl
@@ -26,6 +27,8 @@ class MapService {
   private markers: Map<string, L.Marker> = new Map()
   private controls: Map<string, L.Control> = new Map()
   private onPinClickCallback: PinClickCallback | null = null
+  private currentTileLayer: L.TileLayer | null = null
+  private currentLayerType: 'dark' | 'light' | 'satellite' = 'satellite'
 
   async init(container: HTMLElement, options: MapServiceOptions): Promise<L.Map> {
     // Lazy load Leaflet to enable code-splitting
@@ -36,16 +39,11 @@ class MapService {
         maxZoom: options.maxZoom || 18,
         minZoom: options.minZoom || 1,
         zoomControl: false, // We'll add custom controls
+        attributionControl: false, // Remove attribution control
       })
 
-      // Add dark-themed map tiles
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-        attribution: options.attribution || '© OpenStreetMap contributors © CARTO',
-        maxZoom: 18,
-      }).addTo(this.map)
-
-      // Add custom zoom control
-      this.addZoomControl()
+      // Add initial tile layer
+      this.setTileLayer('satellite')
     }
 
     return this.map
@@ -54,7 +52,7 @@ class MapService {
   private addZoomControl() {
     if (!this.map) return
 
-    const zoomControl = (L as any).control({ position: 'topright' })
+    const zoomControl = (L as any).control({ position: 'bottomright' })
     
     zoomControl.onAdd = () => {
       const div = L.DomUtil.create('div', 'map-control')
@@ -104,44 +102,67 @@ class MapService {
       marker.addTo(this.map!)
     })
 
-    // Add restricted zone polygon (red zone from screenshot)
-    this.addRestrictedZone()
+    // Add drone operation zones
+    this.addDroneZones()
   }
 
-  private addRestrictedZone(): void {
+  private addDroneZones(): void {
     if (!this.map) return
 
-    // TODO: Replace with actual coordinates from screenshot
-    const restrictedZoneCoords: [number, number][] = [
-      [42.7, 23.3],
-      [42.75, 23.35],
-      [42.8, 23.3],
-      [42.75, 23.25],
-      [42.7, 23.3]
-    ]
+    const zones = getActiveZones()
 
-    const polygon = L.polygon(restrictedZoneCoords, {
-      color: '#ef4444',
-      fillColor: '#ef4444',
-      fillOpacity: 0.3,
-      weight: 2
-    }).addTo(this.map)
+    zones.forEach(zone => {
+      // Create the highlighted region circle
+      const circle = L.circle(zone.center, {
+        radius: zone.radius || 1000, // Default to 1km if no radius specified
+        color: zone.color,
+        fillColor: zone.color,
+        fillOpacity: zone.fillOpacity,
+        opacity: zone.opacity,
+        weight: 2,
+        className: `zone-${zone.type}`
+      }).addTo(this.map!)
 
-    // Add drone icon in restricted zone
-    const droneIcon = L.divIcon({
-      className: 'drone-icon',
+      // Add tooltip to show zone name and description
+      circle.bindTooltip(`
+        <div class="font-medium">${zone.name}</div>
+        <div class="text-xs text-neutral-400 mt-1">${zone.description}</div>
+        <div class="text-xs text-neutral-500 mt-1 uppercase">${zone.type}</div>
+        <div class="text-xs text-neutral-500 mt-1">Radius: ${(zone.radius || 1000) / 1000}km</div>
+      `, {
+        permanent: false,
+        direction: 'center',
+        className: 'zone-tooltip',
+        opacity: 0.95
+      })
+
+      // Add zone type indicator icon in center (only for restricted/emergency zones)
+      if (zone.type === 'restricted' || zone.type === 'emergency') {
+        const icon = this.getZoneIcon(zone.type, zone.color)
+        L.marker(zone.center, { icon }).addTo(this.map!)
+      }
+    })
+  }
+
+  private getZoneIcon(type: DroneZone['type'], color: string): L.DivIcon {
+    const isRestricted = type === 'restricted'
+    const bgColor = isRestricted ? 'red' : 'orange'
+    
+    return L.divIcon({
+      className: `zone-icon zone-icon-${type}`,
       html: `
-        <div class="w-8 h-8 text-white">
-          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path>
+        <div class="flex items-center justify-center w-8 h-8 bg-${bgColor}-500/80 rounded-full backdrop-blur-sm border-2 border-white shadow-lg ${isRestricted ? 'animate-pulse' : ''}">
+          <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            ${isRestricted 
+              ? '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-1.964-1.333-2.732 0L3.732 16c-.77 1.333.192 3 1.732 3z"></path>'
+              : '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-1.964-1.333-2.732 0L3.732 16c-.77 1.333.192 3 1.732 3z"></path>'
+            }
           </svg>
         </div>
       `,
       iconSize: [32, 32],
       iconAnchor: [16, 16]
     })
-
-    L.marker([42.75, 23.3], { icon: droneIcon }).addTo(this.map)
   }
 
   private createMarker(pin: MapPin): L.Marker {
@@ -173,9 +194,31 @@ class MapService {
     const color = this.getColorForStatus(status)
     const isAlarm = status === 'critical'
     
-    return L.divIcon({
-      className: 'custom-marker',
-      html: `
+    // Create different icons based on pin type
+    let iconHtml = ''
+    
+    if (type === 'drone') {
+      // Drone icon with propellers
+      iconHtml = `
+        <div class="relative">
+          <div class="w-8 h-8 rounded-full border-2 border-white shadow-lg flex items-center justify-center" 
+               style="background-color: ${color}">
+            <div class="w-4 h-4 relative">
+              <!-- Drone body -->
+              <div class="w-3 h-3 rounded-sm bg-white mx-auto mt-0.5"></div>
+              <!-- Propellers -->
+              <div class="absolute -top-1 left-1 w-1 h-1 bg-white rounded-full"></div>
+              <div class="absolute -top-1 right-1 w-1 h-1 bg-white rounded-full"></div>
+              <div class="absolute -bottom-1 left-1 w-1 h-1 bg-white rounded-full"></div>
+              <div class="absolute -bottom-1 right-1 w-1 h-1 bg-white rounded-full"></div>
+            </div>
+          </div>
+          ${isAlarm ? '<div class="absolute inset-0 w-8 h-8 rounded-full border-2 border-red-500 animate-ping"></div>' : ''}
+        </div>
+      `
+    } else {
+      // Default circular icon for other types
+      iconHtml = `
         <div class="relative">
           <div class="w-6 h-6 rounded-full border-2 border-white shadow-lg flex items-center justify-center" 
                style="background-color: ${color}">
@@ -183,9 +226,14 @@ class MapService {
           </div>
           ${isAlarm ? '<div class="absolute inset-0 w-6 h-6 rounded-full border-2 border-red-500 animate-ping"></div>' : ''}
         </div>
-      `,
-      iconSize: [24, 24],
-      iconAnchor: [12, 12]
+      `
+    }
+    
+    return L.divIcon({
+      className: 'custom-marker',
+      html: iconHtml,
+      iconSize: type === 'drone' ? [32, 32] : [24, 24],
+      iconAnchor: type === 'drone' ? [16, 16] : [12, 12]
     } as any)
   }
 
@@ -257,6 +305,67 @@ class MapService {
     }
   }
 
+  private setTileLayer(type: 'dark' | 'light' | 'satellite'): void {
+    if (!this.map) return
+
+    // Remove existing tile layer
+    if (this.currentTileLayer) {
+      this.map.removeLayer(this.currentTileLayer)
+    }
+
+    let tileUrl: string
+    let attribution: string
+
+    switch (type) {
+      case 'light':
+        tileUrl = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png'
+        attribution = '© OpenStreetMap contributors © CARTO'
+        break
+      case 'satellite':
+        tileUrl = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
+        attribution = '© Esri, Maxar, Earthstar Geographics'
+        break
+      case 'dark':
+      default:
+        tileUrl = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+        attribution = '© OpenStreetMap contributors © CARTO'
+        break
+    }
+
+    this.currentTileLayer = L.tileLayer(tileUrl, {
+      attribution: '', // Remove attribution
+      maxZoom: 18,
+    }).addTo(this.map)
+
+    this.currentLayerType = type
+  }
+
+  toggleLayer(): string {
+    const layers: ('dark' | 'light' | 'satellite')[] = ['dark', 'light', 'satellite']
+    const currentIndex = layers.indexOf(this.currentLayerType)
+    const nextIndex = (currentIndex + 1) % layers.length
+    const nextLayer = layers[nextIndex]
+    
+    this.setTileLayer(nextLayer)
+    return nextLayer
+  }
+
+  getCurrentLayer(): string {
+    return this.currentLayerType
+  }
+
+  zoomIn(): void {
+    if (this.map) {
+      this.map.zoomIn()
+    }
+  }
+
+  zoomOut(): void {
+    if (this.map) {
+      this.map.zoomOut()
+    }
+  }
+
   destroy(): void {
     if (this.map) {
       this.map.remove()
@@ -265,6 +374,7 @@ class MapService {
     this.markers.clear()
     this.controls.clear()
     this.onPinClickCallback = null
+    this.currentTileLayer = null
   }
 }
 

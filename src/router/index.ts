@@ -5,10 +5,11 @@ import { useAuthStore } from '@/store/auth'
 const Login = () => import('@/pages/Login.vue')
 const Map = () => import('@/pages/Map.vue')
 
-// TODO: Add more routes as needed
-// const Reports = () => import('@/pages/Reports.vue')
-// const Settings = () => import('@/pages/Settings.vue')
-// const Alerts = () => import('@/pages/Alerts.vue')
+// TODO: Create these page components
+// const Dashboard = () => import('@/pages/Dashboard.vue')
+// const Account = () => import('@/pages/Account.vue')
+// const Receivers = () => import('@/pages/Receivers.vue')
+// const Controls = () => import('@/pages/Controls.vue')
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -35,34 +36,41 @@ const router = createRouter({
         title: 'Map - Defense Radar Dashboard'
       }
     },
-    // TODO: Add more protected routes
+    // TODO: Uncomment when page components are created
     // {
-    //   path: '/reports',
-    //   name: 'Reports',
-    //   component: Reports,
+    //   path: '/dashboard',
+    //   name: 'Dashboard',
+    //   component: Dashboard,
     //   meta: {
     //     requiresAuth: true,
-    //     roles: ['admin', 'operator'],
-    //     title: 'Reports - Defense Radar Dashboard'
+    //     title: 'Dashboard - Defense Radar Dashboard'
     //   }
     // },
     // {
-    //   path: '/settings',
-    //   name: 'Settings',
-    //   component: Settings,
+    //   path: '/account',
+    //   name: 'Account',
+    //   component: Account,
     //   meta: {
     //     requiresAuth: true,
-    //     roles: ['admin'],
-    //     title: 'Settings - Defense Radar Dashboard'
+    //     title: 'Account - Defense Radar Dashboard'
     //   }
     // },
     // {
-    //   path: '/alerts',
-    //   name: 'Alerts',
-    //   component: Alerts,
+    //   path: '/receivers',
+    //   name: 'Receivers',
+    //   component: Receivers,
     //   meta: {
     //     requiresAuth: true,
-    //     title: 'Alerts - Defense Radar Dashboard'
+    //     title: 'Receivers - Defense Radar Dashboard'
+    //   }
+    // },
+    // {
+    //   path: '/controls',
+    //   name: 'Controls',
+    //   component: Controls,
+    //   meta: {
+    //     requiresAuth: true,
+    //     title: 'Controls - Defense Radar Dashboard'
     //   }
     // },
     {

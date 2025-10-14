@@ -9,14 +9,15 @@
       <TopNav />
 
       <div class="flex-1 flex overflow-hidden relative">
-        <!-- Map/Content Area -->
-        <div class="flex-1 overflow-hidden relative">
-          <slot name="content" />
-        </div>
-
         <!-- Info Panel -->
         <InfoPanel :is-open="isInfoPanelOpen" :selected-pin="selectedPin" @close="closeInfoPanel"
-          @pin-deselected="handlePinDeselected" />
+          @pin-deselected="handlePinDeselected"
+          class="flex justify-start p-4 absolute top-0 right-0 bottom-0 left-0 z-10 pointer-events-none lg:p-6" />
+
+        <!-- Map/Content Area -->
+        <div class="flex-1 overflow-hidden relative z-0">
+          <slot name="content" />
+        </div>
       </div>
     </main>
   </div>

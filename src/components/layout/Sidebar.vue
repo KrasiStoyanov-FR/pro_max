@@ -44,11 +44,15 @@
 
           <div :class="[isCollapsed ? 'w-full right-0 px-3' : 'w-2']"
             class="py-4 flex flex-col absolute top-0 bottom-0 left-0 transition-all duration-[400ms] ease-in-out z-0">
-            <!-- TODO: Fix the snappiness of the rounded corners on sidebar collapsing -->
             <span
-              :class="[isCollapsed ? 'rounded-xl' : 'rounded-tr-full rounded-br-full']"
               class="h-10 transform translate-y-0.5 bg-primary-500 transition-all duration-[400ms] ease-in-out"
-              :style="`margin-top: ${currentNavigationItemOffsetTop}rem;`"></span>
+              :style="`
+                margin-top: ${currentNavigationItemOffsetTop}rem;
+                border-top-right-radius: ${isCollapsed ? '0.75rem' : '9999px'};
+                border-bottom-right-radius: ${isCollapsed ? '0.75rem' : '9999px'};
+                border-top-left-radius: ${isCollapsed ? '0.75rem' : '0'};
+                border-bottom-left-radius: ${isCollapsed ? '0.75rem' : '0'};
+              `"></span>
           </div>
         </div>
       </div>
@@ -82,6 +86,8 @@ defineEmits<{
 const route = useRoute()
 
 // Navigation items
+// NOTE: Routes for Dashboard, Account, Receivers, and Controls are not yet implemented
+// Uncomment routes in router/index.ts and create corresponding page components
 const navigationItems = [
   {
     name: 'Map',

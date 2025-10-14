@@ -22,12 +22,35 @@ export function useMapPins() {
       mapError.value = null
       mapStore.setLoading(true)
 
+      // Try to get user's current location
+      let center = options?.center || viewport.value.center
+      let zoom = options?.zoom || viewport.value.zoom
+
+      if (navigator.geolocation) {
+        try {
+          const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+            navigator.geolocation.getCurrentPosition(resolve, reject, {
+              enableHighAccuracy: true,
+              timeout: 5000,
+              maximumAge: 300000 // 5 minutes
+            })
+          })
+          
+          center = [position.coords.latitude, position.coords.longitude]
+          zoom = 10 // Closer zoom when using current location
+          console.log('Using current location:', center)
+        } catch (geoError) {
+          console.warn('Geolocation failed, using default center:', geoError)
+          // Fall back to default center
+        }
+      }
+
       const mapOptions = {
-        center: options?.center || viewport.value.center,
-        zoom: options?.zoom || viewport.value.zoom,
+        center,
+        zoom,
         maxZoom: 18,
         minZoom: 1,
-        attribution: '© OpenStreetMap contributors'
+        attribution: '' // Remove attribution
       }
 
       const map = await mapService.init(container, mapOptions)
@@ -35,8 +58,7 @@ export function useMapPins() {
 
       // Set up pin click handler
       mapService.onPinClick((pin: MapPin) => {
-        mapStore.selectPin(pin)
-        mapStore.flyToPin(pin)
+        mapStore.flyToPin(pin) // This will also call selectPin internally
       })
 
       // Load initial pins
@@ -94,9 +116,7 @@ export function useMapPins() {
   // Select a pin
   const selectPin = (pin: MapPin | null) => {
     mapStore.selectPin(pin)
-    if (pin && isMapReady.value) {
-      mapService.flyTo(pin.lat, pin.lng, 15)
-    }
+    // Note: flyTo is handled by flyToPin method to avoid duplicate calls
   }
 
   // Clear selection

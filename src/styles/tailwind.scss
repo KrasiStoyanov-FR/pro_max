@@ -24,8 +24,108 @@
     @apply bg-neutral-600 hover:bg-neutral-500 text-white font-medium py-2 px-4 rounded-lg transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-neutral-500 focus:ring-offset-2;
   }
 
+  /* 
+   * Global Input Field Styling System
+   * 
+   * Available classes:
+   * - .input-field: Basic input field (use for simple forms like login)
+   * - .input-field-with-icon: Input with icon on the left
+   * - .input-field-with-icon-right: Input with icon on the right  
+   * - .input-field-with-dropdown: Complex input with dropdown and icon (like TopNav search)
+   * 
+   * Error state: Add .error class to any input variant
+   * Disabled state: Use :disabled pseudo-class
+   */
+
+  /* Base input field styling */
   .input-field {
-    @apply block w-full rounded-lg bg-neutral-800 text-white shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm;
+    @apply block w-full rounded-lg bg-neutral-800 text-white placeholder:text-neutral-400 border border-neutral-700 shadow-sm transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 sm:text-sm py-2 px-4;
+  }
+
+  /* Input field with icon on the left */
+  .input-field-with-icon {
+    @apply flex rounded-lg bg-neutral-800 border border-neutral-700 shadow-sm transition-all duration-200 focus-within:ring-2 focus-within:ring-primary-500 focus-within:border-primary-500 overflow-hidden;
+  }
+
+  .input-field-with-icon input {
+    @apply block min-w-0 grow bg-transparent py-2 px-4 text-sm text-white placeholder:text-neutral-400 focus:outline-none;
+  }
+
+  .input-field-with-icon .input-icon {
+    @apply flex items-center justify-center px-3 text-neutral-400;
+  }
+
+  /* Input field with icon on the right */
+  .input-field-with-icon-right {
+    @apply flex rounded-lg bg-neutral-800 border border-neutral-700 shadow-sm transition-all duration-200 focus-within:ring-2 focus-within:ring-primary-500 focus-within:border-primary-500 overflow-hidden;
+  }
+
+  .input-field-with-icon-right input {
+    @apply block min-w-0 grow bg-transparent py-2 px-4 text-sm text-white placeholder:text-neutral-400 focus:outline-none;
+  }
+
+  .input-field-with-icon-right .input-icon {
+    @apply flex items-center justify-center my-2 pr-4 pl-2 text-neutral-400;
+
+    // @apply flex items-center justify-center px-3 text-neutral-400;
+  }
+
+  /* Input field with dropdown and icon (like TopNav search) */
+  .input-field-with-dropdown {
+    @apply flex rounded-lg bg-neutral-800 border border-neutral-700 shadow-sm transition-all duration-200 focus-within:ring-2 focus-within:ring-primary-500 focus-within:border-primary-500 overflow-hidden;
+  }
+
+  .input-field-with-dropdown .input-dropdown {
+    @apply grid shrink-0 grid-cols-1 bg-primary-700 focus-within:relative;
+  }
+
+  .input-field-with-dropdown .input-dropdown select {
+    @apply col-start-1 row-start-1 w-full appearance-none rounded-md bg-transparent py-2 pr-5 pl-3 text-base text-white focus:outline-none sm:text-sm cursor-pointer;
+  }
+
+  /* Hide selected value when dropdown is closed */
+  .input-field-with-dropdown .dropdown-select {
+    color: transparent;
+  }
+
+  .input-field-with-dropdown .dropdown-select option {
+    color: white;
+  }
+
+  .input-field-with-dropdown .dropdown-select:focus {
+    color: white;
+  }
+
+  .input-field-with-dropdown .input-dropdown .dropdown-icon {
+    @apply pointer-events-none col-start-1 row-start-1 ml-2.5 size-5 self-center justify-self-start text-primary-300 sm:size-4;
+  }
+
+  .input-field-with-dropdown .input-dropdown .dropdown-arrow {
+    @apply pointer-events-none col-start-1 row-start-1 mr-2 size-3 self-center justify-self-end text-primary-300;
+  }
+
+  .input-field-with-dropdown input {
+    @apply block min-w-0 grow bg-transparent py-2 px-4 text-sm text-white placeholder:text-neutral-400 focus:outline-none;
+  }
+
+  .input-field-with-dropdown .input-icon {
+    @apply flex items-center justify-center px-3 pl-2 border-l border-neutral-700 text-neutral-400;
+  }
+
+  /* Error state for all input variants */
+  .input-field.error,
+  .input-field-with-icon.error,
+  .input-field-with-icon-right.error,
+  .input-field-with-dropdown.error {
+    @apply border-red-500 focus:ring-red-500 focus:border-red-500;
+  }
+
+  /* Disabled state for all input variants */
+  .input-field:disabled,
+  .input-field-with-icon:disabled,
+  .input-field-with-icon-right:disabled,
+  .input-field-with-dropdown:disabled {
+    @apply opacity-50 cursor-not-allowed bg-neutral-900;
   }
 
   .card {
@@ -63,5 +163,9 @@
 }
 
 .map-control-button {
-  @apply w-8 h-8 flex items-center justify-center rounded-md hover:bg-neutral-600 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-primary-500;
+  @apply w-12 h-12 flex items-center justify-center rounded-lg text-neutral-800 hover:text-neutral-900 dark:text-primary-500 dark:hover:text-primary-400 bg-white hover:bg-neutral-100 dark:bg-neutral-800 dark:hover:bg-neutral-900 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 focus:ring-offset-neutral-900;
+
+  &--inverted {
+    @apply bg-neutral-800 hover:bg-neutral-900 dark:bg-white dark:hover:bg-neutral-100 text-primary-500 hover:text-primary-400 dark:text-neutral-800 dark:hover:text-neutral-900;
+  }
 }
