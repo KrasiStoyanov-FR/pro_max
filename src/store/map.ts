@@ -1,11 +1,14 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
+import L from 'leaflet'
 import type { MapPin, MapViewport } from '@/types/map'
+import type { PinCluster } from '@/services/mapService'
 
 export const useMapStore = defineStore('map', () => {
   // State
   const pins = ref<MapPin[]>([])
   const selectedPin = ref<MapPin | null>(null)
+  const selectedCluster = ref<PinCluster | null>(null)
   const viewport = ref<MapViewport>({
     center: [42.6977, 23.3219], // Sofia, Bulgaria (where most drones are located)
     zoom: 10
@@ -13,10 +16,22 @@ export const useMapStore = defineStore('map', () => {
   const isLoading = ref(false)
   const mapInstance = ref<any>(null) // Will hold Leaflet map instance
 
+  // Viewport tracking for panels
+  const availableViewport = ref({
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    center: [42.6977, 23.3219] as [number, number]
+  })
+
   // Getters
   const selectedPinData = computed(() => selectedPin.value)
+  const selectedClusterData = computed(() => selectedCluster.value)
   const pinsCount = computed(() => pins.value.length)
   const hasSelectedPin = computed(() => selectedPin.value !== null)
+  const hasSelectedCluster = computed(() => selectedCluster.value !== null)
+  const availableViewportData = computed(() => availableViewport.value)
 
   // Actions
   const setMapInstance = (map: any) => {
@@ -47,12 +62,60 @@ export const useMapStore = defineStore('map', () => {
     }
   }
 
-  const selectPin = (pin: MapPin | null) => {
+  const selectPin = (pin: MapPin | null, keepCluster: boolean = false) => {
+    console.log('Store: selectPin called with:', pin?.id, pin?.title, 'keepCluster:', keepCluster)
+    console.trace('Store selectPin call stack:') // This will show us what's calling it
     selectedPin.value = pin
+    // Only clear cluster selection if not keeping it (e.g., when selecting pin from cluster)
+    if (pin && !keepCluster) {
+      selectedCluster.value = null
+    }
+    
+    // Trigger highlighting on the map
+    if (mapInstance.value) {
+      console.log('Store: Selecting pin, triggering highlight:', pin?.id)
+      // We'll need to import mapService or call it from the composable
+    }
+  }
+
+  const selectCluster = (cluster: PinCluster | null) => {
+    selectedCluster.value = cluster
+    // Clear pin selection when selecting a cluster
+    if (cluster) {
+      selectedPin.value = null
+    }
   }
 
   const clearSelection = () => {
     selectedPin.value = null
+    selectedCluster.value = null
+  }
+
+  const updateAvailableViewport = (panelWidths: { cluster: number, info: number }) => {
+    if (!mapInstance.value) return
+    
+    const mapContainer = mapInstance.value.getContainer()
+    const containerRect = mapContainer.getBoundingClientRect()
+    
+    // Calculate available space (subtract panel widths from left side)
+    const totalPanelWidth = panelWidths.cluster + panelWidths.info
+    const availableLeft = totalPanelWidth
+    const availableRight = containerRect.width
+    
+    // Calculate the center of the available viewport
+    const availableCenterX = availableLeft + (availableRight - availableLeft) / 2
+    const availableCenterY = containerRect.height / 2
+    
+    // Convert screen coordinates to lat/lng
+    const centerPoint = mapInstance.value.containerPointToLatLng([availableCenterX, availableCenterY])
+    
+    availableViewport.value = {
+      left: availableLeft,
+      right: availableRight,
+      top: 0,
+      bottom: containerRect.height,
+      center: [centerPoint.lat, centerPoint.lng]
+    }
   }
 
   const flyToPin = (pin: MapPin) => {
@@ -62,9 +125,36 @@ export const useMapStore = defineStore('map', () => {
       const currentZoom = mapInstance.value.getZoom()
       const targetZoom = Math.min(Math.max(currentZoom + 2, 16), 18) // Zoom in by 2 levels, between 16-18
       
-      mapInstance.value.flyTo([pin.lat, pin.lng], targetZoom)
+      // Check if panels are visible or will be visible after selection
+      const hasClusterPanel = selectedCluster.value !== null
+      const hasInfoPanel = selectedPin.value !== null
+      const willHaveInfoPanel = !hasInfoPanel // If no info panel currently, we're about to show one
+      
+      // Calculate panel widths for padding
+      const clusterWidth = hasClusterPanel ? 350 : 0
+      const infoWidth = hasInfoPanel ? 350 : (willHaveInfoPanel ? 350 : 0)
+      const totalPanelWidth = clusterWidth + infoWidth
+      
+      if (totalPanelWidth > 0) {
+        // Panels are visible or will be visible, adjust centering accordingly
+        const pinLatLng = [pin.lat, pin.lng]
+        const bounds = L.latLngBounds([pinLatLng, pinLatLng])
+        
+        // Use fitBounds with padding to center the pin in the visible area
+        mapInstance.value.fitBounds(bounds, {
+          paddingTopLeft: [totalPanelWidth, 0],
+          paddingBottomRight: [0, 0],
+          maxZoom: targetZoom,
+          animate: true
+        })
+      } else {
+        // No panels visible or will be visible, center normally
+        mapInstance.value.flyTo([pin.lat, pin.lng], targetZoom)
+      }
     }
-    selectPin(pin)
+    // Keep cluster selection if there's an active cluster
+    const keepCluster = selectedCluster.value !== null
+    selectPin(pin, keepCluster)
   }
 
   const flyToLocation = (lat: number, lng: number, zoom: number = 10) => {
@@ -114,14 +204,18 @@ export const useMapStore = defineStore('map', () => {
     // State
     pins,
     selectedPin,
+    selectedCluster,
     viewport,
     isLoading,
     mapInstance,
     
     // Getters
     selectedPinData,
+    selectedClusterData,
     pinsCount,
     hasSelectedPin,
+    hasSelectedCluster,
+    availableViewportData,
     
     // Actions
     setMapInstance,
@@ -130,7 +224,9 @@ export const useMapStore = defineStore('map', () => {
     addPin,
     removePin,
     selectPin,
+    selectCluster,
     clearSelection,
+    updateAvailableViewport,
     flyToPin,
     flyToLocation,
     getPinsInBounds,

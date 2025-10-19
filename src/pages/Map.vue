@@ -20,6 +20,7 @@
 import { computed, onMounted } from 'vue'
 import { useMapStore } from '@/store/map'
 import { useAuth } from '@/composables/useAuth'
+import { useMapPins } from '@/composables/useMapPins'
 import LayoutWrapper from '@/components/layout/LayoutWrapper.vue'
 import MapView from '@/components/map/MapView.vue'
 import StatusSummaryCard from '@/components/map/StatusSummaryCard.vue'
@@ -27,9 +28,10 @@ import StatusSummaryCard from '@/components/map/StatusSummaryCard.vue'
 // Composables
 useAuth()
 const mapStore = useMapStore()
+const { pins: mapPins, selectedPin, initializeMap, loadPins } = useMapPins()
 
 // Computed properties
-const pins = computed(() => mapStore.pins)
+const pins = computed(() => mapPins.value)
 
 // Methods
 const handlePinSelected = () => {

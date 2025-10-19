@@ -1,4 +1,4 @@
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useMapStore } from '@/store/map'
 import { mapService } from '@/services/mapService'
 import { databaseApi } from '@/services/api'
@@ -59,6 +59,13 @@ export function useMapPins() {
       // Set up pin click handler
       mapService.onPinClick((pin: MapPin) => {
         mapStore.flyToPin(pin) // This will also call selectPin internally
+      })
+
+      // Set up cluster click handler
+      mapService.onClusterClick((cluster) => {
+        mapStore.selectCluster(cluster)
+        // Expand cluster to show individual pins immediately
+        mapService.expandCluster(cluster)
       })
 
       isMapReady.value = true
@@ -271,6 +278,16 @@ export function useMapPins() {
 
   onUnmounted(() => {
     cleanup()
+  })
+
+  // Watch for selected pin changes to highlight it on the map
+  watch(selectedPin, (newPin, oldPin) => {
+    console.log('Selected pin changed:', newPin?.id, newPin?.title, 'Map ready:', isMapReady.value)
+    console.log('Previous pin was:', oldPin?.id, oldPin?.title)
+    console.trace('selectedPin watcher call stack:') // This will show us what's triggering the change
+    if (isMapReady.value) {
+      mapService.highlightSelectedPin(newPin)
+    }
   })
 
   return {

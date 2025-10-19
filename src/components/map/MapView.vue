@@ -196,8 +196,8 @@ onMounted(async () => {
     await initializeMap(mapContainer.value, {
       center: props.center,
       zoom: props.zoom,
-      maxZoom: props.maxZoom,
-      minZoom: props.minZoom
+      ...(props.maxZoom && { maxZoom: props.maxZoom }),
+      ...(props.minZoom && { minZoom: props.minZoom })
     })
   }
 })

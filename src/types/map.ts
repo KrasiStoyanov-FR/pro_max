@@ -14,6 +14,8 @@ export interface MapPin {
 export interface MapViewport {
   center: [number, number]
   zoom: number
+  maxZoom?: number
+  minZoom?: number
 }
 
 export interface MapControl {
