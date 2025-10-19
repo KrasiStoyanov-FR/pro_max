@@ -1,14 +1,14 @@
 <template>
   <div>
     <div v-if="isOpen"
-      class="h-full flex flex-1 flex-col rounded-2xl bg-primary-200/40 backdrop-blur-2xl transition-all duration-300 ease-in-out pointer-events-auto"
+      class="h-full flex flex-1 flex-col rounded-2xl bg-neutral-900/40 backdrop-blur-2xl transition-all duration-300 ease-in-out pointer-events-auto"
       :class="[isOpen ? 'max-w-64 lg:max-w-80' : 'max-w-0']">
       <!-- Panel header -->
-      <div class="p-4 border-b border-primary-300">
+      <div class="p-4 border-b border-neutral-400">
         <div class="flex items-center justify-between">
           <h3 class="text-lg font-semibold text-white">{{ selectedPin ? selectedPin.title : 'Select a Target' }}</h3>
           <button @click="$emit('close')"
-            class="p-1 text-primary-200 hover:text-white focus:outline-none focus:ring-2 focus:ring-primary-500 rounded-md">
+            class="p-1 text-neutral-200 hover:text-white focus:outline-none focus:ring-2 focus:ring-neutral-500 rounded-md">
             <PhX :size="20" />
           </button>
         </div>
@@ -129,11 +129,53 @@
           </div>
 
           <!-- Drone-specific fields -->
+          <div v-if="selectedPin.data?.drone_id" class="flex items-start space-x-3">
+            <PhCube :size="16" class="text-primary-50 mt-0.5" />
+            <div class="flex-1">
+              <p class="text-xs text-primary-200 uppercase tracking-wide">Drone ID</p>
+              <p class="text-sm text-white">{{ selectedPin.data.drone_id }}</p>
+            </div>
+          </div>
+
           <div v-if="selectedPin.data?.model" class="flex items-start space-x-3">
             <PhCube :size="16" class="text-primary-50 mt-0.5" />
             <div class="flex-1">
               <p class="text-xs text-primary-200 uppercase tracking-wide">Drone Model</p>
               <p class="text-sm text-white">{{ selectedPin.data.model }}</p>
+            </div>
+          </div>
+
+          <div v-if="selectedPin.data?.receiver_type" class="flex items-start space-x-3">
+            <PhWifiHigh :size="16" class="text-primary-50 mt-0.5" />
+            <div class="flex-1">
+              <p class="text-xs text-primary-200 uppercase tracking-wide">Receiver Type</p>
+              <p class="text-sm text-white">{{ selectedPin.data.receiver_type }}</p>
+            </div>
+          </div>
+
+          <div v-if="selectedPin.data?.frequency" class="flex items-start space-x-3">
+            <PhWifiHigh :size="16" class="text-primary-50 mt-0.5" />
+            <div class="flex-1">
+              <p class="text-xs text-primary-200 uppercase tracking-wide">Frequency</p>
+              <p class="text-sm text-white">{{ selectedPin.data.frequency }} MHz</p>
+            </div>
+          </div>
+
+          <div v-if="selectedPin.data?.signal_strength" class="flex items-start space-x-3">
+            <PhWifiHigh :size="16" class="text-primary-50 mt-0.5" />
+            <div class="flex-1">
+              <p class="text-xs text-primary-200 uppercase tracking-wide">Signal Strength</p>
+              <p class="text-sm text-white">{{ selectedPin.data.signal_strength }} dBm</p>
+            </div>
+          </div>
+
+          <div v-if="selectedPin.data?.detection_status !== undefined" class="flex items-start space-x-3">
+            <PhWarning :size="16" class="text-primary-50 mt-0.5" />
+            <div class="flex-1">
+              <p class="text-xs text-primary-200 uppercase tracking-wide">Detection Status</p>
+              <p class="text-sm" :class="selectedPin.data.detection_status ? 'text-green-400' : 'text-red-400'">
+                {{ selectedPin.data.detection_status ? 'Active' : 'Inactive' }}
+              </p>
             </div>
           </div>
 
@@ -191,6 +233,17 @@
             <div class="flex-1">
               <p class="text-xs text-primary-200 uppercase tracking-wide">Coordinates</p>
               <p class="text-sm text-white font-mono">{{ selectedPin.lat.toFixed(4) }}, {{ selectedPin.lng.toFixed(4) }}
+              </p>
+            </div>
+          </div>
+
+          <!-- Data Source -->
+          <div v-if="selectedPin.data?.source" class="flex items-start space-x-3">
+            <PhCube :size="16" class="text-primary-50 mt-0.5" />
+            <div class="flex-1">
+              <p class="text-xs text-primary-200 uppercase tracking-wide">Data Source</p>
+              <p class="text-sm" :class="selectedPin.data.source === 'database' ? 'text-green-400' : 'text-yellow-400'">
+                {{ selectedPin.data.source === 'database' ? 'Real Database' : 'Sample Data' }}
               </p>
             </div>
           </div>

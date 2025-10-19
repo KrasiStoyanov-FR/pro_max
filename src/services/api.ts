@@ -1,11 +1,24 @@
 import axios, { type AxiosInstance, type AxiosRequestConfig, type AxiosResponse } from 'axios'
 import { useAuthStore } from '@/store/auth'
 import router from '@/router'
+import type { 
+  Drone, 
+  DronePosition, 
+  RFDetection, 
+  FlightSession, 
+  OperatorPosition, 
+  ReceiverLog,
+  DroneWithPositions,
+  MapMarker,
+  DronePositionsResponse,
+  DronesResponse,
+  RFDetectionsResponse
+} from '@/types/database'
 
 // Create axios instance with base configuration
 const api: AxiosInstance = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1',
-  timeout: 10000,
+  baseURL: 'http://localhost:3001/api/db',
+  timeout: 30000,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -73,128 +86,236 @@ export const apiEndpoints = {
   version: '/version',
 }
 
-// Mock API functions for development
-export const mockApi = {
-  // Mock login endpoint
-  async login(credentials: { email: string; password: string }) {
-    // Simulate API delay
-    await new Promise(resolve => setTimeout(resolve, 1000))
-    
-    if (credentials.email === 'admin@radar.com' && credentials.password === 'password') {
-      return {
-        data: {
-          user: {
-            id: '1',
-            name: 'Admin User',
-            email: 'admin@radar.com',
-            role: 'admin'
-          },
-          token: 'mock-jwt-token-' + Date.now(),
-          expiresIn: 86400 // 24 hours
-        }
-      }
-    } else {
-      throw new Error('Invalid credentials')
-    }
-  },
-  
-  // Mock targets endpoint
-  async getTargets(bounds?: string) {
-    await new Promise(resolve => setTimeout(resolve, 500))
-    
-    // Return mock targets data
-    return {
-      data: {
-        targets: [
-          {
-            id: '1',
-            lat: 40.7128,
-            lng: -74.0060,
-            title: 'New York Radar Station',
-            type: 'radar',
-            status: 'active',
-            priority: 'high'
-          },
-          {
-            id: '2',
-            lat: 34.0522,
-            lng: -118.2437,
-            title: 'Los Angeles Target',
-            type: 'target',
-            status: 'warning',
-            priority: 'medium'
-          },
-          {
-            id: '3',
-            lat: 41.8781,
-            lng: -87.6298,
-            title: 'Chicago Threat',
-            type: 'threat',
-            status: 'critical',
-            priority: 'critical'
-          }
-        ]
-      }
-    }
-  },
-  
-  // Mock target by ID
-  async getTargetById(id: string) {
-    await new Promise(resolve => setTimeout(resolve, 300))
-    
-    const targets = [
-      {
-        id: '1',
-        lat: 40.7128,
-        lng: -74.0060,
-        title: 'New York Radar Station',
-        description: 'Primary radar station covering the northeastern region',
-        type: 'radar',
-        status: 'active',
-        priority: 'high',
-        data: {
-          frequency: '2.4 GHz',
-          range: '250 km',
-          altitude: '150 m',
-          lastUpdate: new Date().toISOString()
-        }
-      }
-    ]
-    
-    const target = targets.find(t => t.id === id)
-    if (!target) {
-      throw new Error('Target not found')
-    }
-    
-    return { data: target }
-  }
-}
 
-// Production API functions (to be implemented when backend is ready)
-export const productionApi = {
+// Real database API functions
+export const databaseApi = {
   async login(credentials: { email: string; password: string }) {
-    return api.post(apiEndpoints.login, credentials)
+    // TODO: Implement real authentication endpoint
+    throw new Error('Authentication not yet implemented - please implement real auth endpoint')
   },
   
+  // Get all drones from database
+  async getDrones(): Promise<DronesResponse> {
+    try {
+      console.log('[API] Fetching drones from database...')
+      const response = await api.get('/table/drones?database=drone_monitoring')
+      return {
+        success: true,
+        data: response.data.data as Drone[]
+      }
+    } catch (error) {
+      console.error('[API] Failed to fetch drones from database:', error)
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      }
+    }
+  },
+  
+  // Get drone positions from database
+  async getDronePositions(limit: number = 100): Promise<DronePositionsResponse> {
+    try {
+      console.log('[API] Fetching drone positions from database...')
+      const response = await api.get(`/table/drone_positions?database=drone_monitoring&limit=${limit}`)
+      return {
+        success: true,
+        data: response.data.data as DronePosition[]
+      }
+    } catch (error) {
+      console.error('[API] Failed to fetch drone positions from database:', error)
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      }
+    }
+  },
+  
+  // Get RF detections from database
+  async getRFDetections(limit: number = 100): Promise<RFDetectionsResponse> {
+    try {
+      console.log('[API] Fetching RF detections from database...')
+      const response = await api.get(`/table/rf_detections?database=drone_monitoring&limit=${limit}`)
+      return {
+        success: true,
+        data: response.data.data as RFDetection[]
+      }
+    } catch (error) {
+      console.error('[API] Failed to fetch RF detections from database:', error)
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      }
+    }
+  },
+  
+  // Get flight sessions from database
+  async getFlightSessions(limit: number = 50): Promise<{ success: boolean; data?: FlightSession[]; error?: string }> {
+    try {
+      console.log('[API] Fetching flight sessions from database...')
+      const response = await api.get(`/table/flight_sessions?database=drone_monitoring&limit=${limit}`)
+    return {
+        success: true,
+        data: response.data.data as FlightSession[]
+      }
+    } catch (error) {
+      console.error('[API] Failed to fetch flight sessions from database:', error)
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      }
+    }
+  },
+  
+  // Get operator positions from database
+  async getOperatorPositions(limit: number = 50): Promise<{ success: boolean; data?: OperatorPosition[]; error?: string }> {
+    try {
+      console.log('[API] Fetching operator positions from database...')
+      const response = await api.get(`/table/operator_positions?database=drone_monitoring&limit=${limit}`)
+      return {
+        success: true,
+        data: response.data.data as OperatorPosition[]
+      }
+    } catch (error) {
+      console.error('[API] Failed to fetch operator positions from database:', error)
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      }
+    }
+  },
+  
+  // Get receiver logs from database
+  async getReceiverLogs(limit: number = 50): Promise<{ success: boolean; data?: ReceiverLog[]; error?: string }> {
+    try {
+      console.log('[API] Fetching receiver logs from database...')
+      const response = await api.get(`/table/receiver_logs?database=drone_monitoring&limit=${limit}`)
+      return {
+        success: true,
+        data: response.data.data as ReceiverLog[]
+      }
+    } catch (error) {
+      console.error('[API] Failed to fetch receiver logs from database:', error)
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      }
+    }
+  },
+  
+  // Legacy method - get targets (now returns drone positions as map markers)
   async getTargets(bounds?: string) {
-    const url = bounds ? apiEndpoints.targetsByBounds(bounds) : apiEndpoints.targets
-    return api.get(url)
+    try {
+      // Get real drone positions from database
+      const positionsResponse = await this.getDronePositions(50)
+      
+      if (positionsResponse.success && positionsResponse.data) {
+        // Convert drone positions to map markers
+        const markers = positionsResponse.data.map((position: DronePosition) => ({
+          id: `drone-${position.drone_id}-${position.id}`,
+          lat: parseFloat(position.latitude.toString()),
+          lng: parseFloat(position.longitude.toString()),
+          title: `Drone ${position.drone_id}`,
+          type: 'drone' as const,
+          status: 'active',
+          priority: 'high',
+          data: {
+            altitude: position.altitude,
+            speed: position.speed,
+            timestamp: position.time,
+            receiver_type: position.receiver_type
+          }
+        }))
+        
+        return {
+          data: {
+            targets: markers
+          }
+        }
+      }
+      
+      throw new Error('No drone positions available from database')
+    } catch (error) {
+      console.error('[API] Failed to fetch targets from database:', error)
+      throw new Error(`Failed to fetch drone positions: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    }
   },
   
+  // Legacy method - get target by ID
   async getTargetById(id: string) {
-    return api.get(apiEndpoints.targetsById(id))
+    try {
+      // Try to find drone position by ID
+      const positionsResponse = await this.getDronePositions(1000)
+      
+      if (positionsResponse.success && positionsResponse.data) {
+        const position = positionsResponse.data.find(p => p.id.toString() === id || p.drone_id.toString() === id)
+        if (position) {
+          return {
+            data: {
+              id: position.id.toString(),
+              lat: parseFloat(position.latitude.toString()),
+              lng: parseFloat(position.longitude.toString()),
+              title: `Drone ${position.drone_id}`,
+              type: 'drone',
+              status: 'active',
+              priority: 'high',
+              data: {
+                altitude: position.altitude,
+                speed: position.speed,
+                timestamp: position.time,
+                receiver_type: position.receiver_type
+              }
+            }
+          }
+        }
+      }
+      
+      throw new Error(`Target with ID ${id} not found in database`)
+    } catch (error) {
+      console.error('[API] Failed to fetch target by ID from database:', error)
+      throw new Error(`Failed to fetch target: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    }
   },
   
   async getRadarStatus() {
-    return api.get(apiEndpoints.radarStatus)
+    try {
+      // Get receiver logs to determine radar status
+      const logsResponse = await this.getReceiverLogs(10)
+      
+      if (logsResponse.success && logsResponse.data) {
+        const latestLog = logsResponse.data[0]
+        return {
+          data: {
+            status: latestLog?.status || 'unknown',
+            message: latestLog?.message || 'Radar system status unknown',
+            lastUpdate: latestLog?.time
+          }
+        }
+      }
+      
+      throw new Error('No receiver logs available from database')
+    } catch (error) {
+      console.error('[API] Failed to fetch radar status from database:', error)
+      throw new Error(`Failed to fetch radar status: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    }
   },
   
   async getHealth() {
-    return api.get(apiEndpoints.health)
+    try {
+      const response = await api.get('/test')
+      return response
+    } catch (error) {
+      console.error('[API] Failed to fetch health status:', error)
+      return {
+        data: {
+          status: 'error',
+          message: 'Database connection failed'
+        }
+      }
+    }
   }
 }
 
-// Export the appropriate API based on environment
-export const apiService = import.meta.env.DEV ? mockApi : productionApi
+// Export the database API service
+export const apiService = databaseApi
 
 export default api

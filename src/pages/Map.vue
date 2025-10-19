@@ -51,8 +51,7 @@ const handlePinDeselected = () => {
 
 // Lifecycle
 onMounted(() => {
-  // Initialize the map store with mock data
-  // This will be replaced with real API calls
+  // Map will load real database data automatically via useMapPins composable
   console.log('Map mounted, user:', user.value)
 })
 </script>
