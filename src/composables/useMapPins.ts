@@ -105,8 +105,7 @@ export function useMapPins() {
             altitude: position.altitude,
             speed: position.speed,
             receiver_type: position.receiver_type,
-            timestamp: position.time,
-            source: 'database'
+            timestamp: position.time
           },
           timestamp: position.time
         }))
@@ -129,8 +128,7 @@ export function useMapPins() {
             frequency: detection.frequency,
             signal_strength: detection.signal_strength,
             detection_status: detection.detection_status,
-            timestamp: detection.time,
-            source: 'database'
+            timestamp: detection.time
           },
           timestamp: detection.time
         }))
@@ -150,8 +148,7 @@ export function useMapPins() {
           priority: 'low' as const,
           data: {
             drone_id: position.drone_id,
-            timestamp: position.time,
-            source: 'database'
+            timestamp: position.time
           },
           timestamp: position.time
         }))

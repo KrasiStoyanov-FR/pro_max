@@ -236,17 +236,6 @@
               </p>
             </div>
           </div>
-
-          <!-- Data Source -->
-          <div v-if="selectedPin.data?.source" class="flex items-start space-x-3">
-            <PhCube :size="16" class="text-primary-50 mt-0.5" />
-            <div class="flex-1">
-              <p class="text-xs text-primary-200 uppercase tracking-wide">Data Source</p>
-              <p class="text-sm" :class="selectedPin.data.source === 'database' ? 'text-green-400' : 'text-yellow-400'">
-                {{ selectedPin.data.source === 'database' ? 'Real Database' : 'Sample Data' }}
-              </p>
-            </div>
-          </div>
         </div>
       </div>
 
