@@ -44,38 +44,19 @@ const activeDrones = ref(0)
 const rfDetections = ref(0)
 const operators = ref(0)
 
-// Update statistics from real database data
+// Update statistics from map store data (no additional API calls)
 const updateStatistics = async () => {
   try {
-    // Check database connection
+    // Check database connection only once per minute
     const healthResponse = await databaseApi.getHealth()
     databaseStatus.value = healthResponse.data?.status === 'success' ? 'connected' : 'disconnected'
     
-    if (databaseStatus.value === 'connected') {
-      // Get real statistics
-      const [dronesResponse, rfResponse, operatorsResponse] = await Promise.all([
-        databaseApi.getDrones(),
-        databaseApi.getRFDetections(1000),
-        databaseApi.getOperatorPositions(1000)
-      ])
-      
-      activeDrones.value = dronesResponse.success ? (dronesResponse.data?.length || 0) : 0
-      rfDetections.value = rfResponse.success ? (rfResponse.data?.length || 0) : 0
-      operators.value = operatorsResponse.success ? (operatorsResponse.data?.length || 0) : 0
-    } else {
-      // No fallback - show zero counts when database is disconnected
-      activeDrones.value = 0
-      rfDetections.value = 0
-      operators.value = 0
-    }
+    // Use map store data instead of making additional API calls
+    updateFromMapStore()
   } catch (error) {
     console.error('[StatusSummary] Error updating statistics:', error)
     databaseStatus.value = 'disconnected'
-    
-    // No fallback - show zero counts on error
-    activeDrones.value = 0
-    rfDetections.value = 0
-    operators.value = 0
+    updateFromMapStore()
   }
 }
 
@@ -90,8 +71,8 @@ const updateFromMapStore = () => {
 // Lifecycle
 onMounted(() => {
   updateStatistics()
-  // Update every 30 seconds
-  const interval = setInterval(updateStatistics, 30000)
+  // Update every 60 seconds (reduced frequency)
+  const interval = setInterval(updateStatistics, 60000)
   
   // Cleanup interval on unmount
   onUnmounted(() => {

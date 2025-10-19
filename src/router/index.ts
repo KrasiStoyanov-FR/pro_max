@@ -5,7 +5,7 @@ import { useAuthStore } from '@/store/auth'
 const Login = () => import('@/pages/Login.vue')
 const Map = () => import('@/pages/Map.vue')
 
-// TODO: Create these page components
+// TODO: Create these page components when needed
 // const Dashboard = () => import('@/pages/Dashboard.vue')
 // const Account = () => import('@/pages/Account.vue')
 // const Receivers = () => import('@/pages/Receivers.vue')
@@ -36,43 +36,8 @@ const router = createRouter({
         title: 'Map - Defense Radar Dashboard'
       }
     },
-    // TODO: Uncomment when page components are created
-    // {
-    //   path: '/dashboard',
-    //   name: 'Dashboard',
-    //   component: Dashboard,
-    //   meta: {
-    //     requiresAuth: true,
-    //     title: 'Dashboard - Defense Radar Dashboard'
-    //   }
-    // },
-    // {
-    //   path: '/account',
-    //   name: 'Account',
-    //   component: Account,
-    //   meta: {
-    //     requiresAuth: true,
-    //     title: 'Account - Defense Radar Dashboard'
-    //   }
-    // },
-    // {
-    //   path: '/receivers',
-    //   name: 'Receivers',
-    //   component: Receivers,
-    //   meta: {
-    //     requiresAuth: true,
-    //     title: 'Receivers - Defense Radar Dashboard'
-    //   }
-    // },
-    // {
-    //   path: '/controls',
-    //   name: 'Controls',
-    //   component: Controls,
-    //   meta: {
-    //     requiresAuth: true,
-    //     title: 'Controls - Defense Radar Dashboard'
-    //   }
-    // },
+    // TODO: Add these routes when page components are created
+    // Dashboard, Account, Receivers, Controls routes will be added here
     {
       path: '/:pathMatch(.*)*',
       name: 'NotFound',

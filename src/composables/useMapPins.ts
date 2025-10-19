@@ -39,7 +39,6 @@ export function useMapPins() {
           
           center = [position.coords.latitude, position.coords.longitude]
           zoom = 10 // Closer zoom when using current location
-          console.log('Using current location:', center)
         } catch (geoError) {
           console.warn('Geolocation failed, using default center:', geoError)
           // Fall back to default center
@@ -62,10 +61,11 @@ export function useMapPins() {
         mapStore.flyToPin(pin) // This will also call selectPin internally
       })
 
-      // Load initial pins
+      isMapReady.value = true
+      
+      // Load initial pins after map is ready
       await loadPins()
 
-      isMapReady.value = true
       mapStore.setLoading(false)
     } catch (error) {
       console.error('Map initialization error:', error)
@@ -79,7 +79,6 @@ export function useMapPins() {
     try {
       mapStore.setLoading(true)
       
-      console.log('[MapPins] Loading real database data...')
       
       // Fetch real data from database
       const [dronePositionsResponse, rfDetectionsResponse, operatorPositionsResponse] = await Promise.all([
@@ -112,7 +111,6 @@ export function useMapPins() {
           timestamp: position.time
         }))
         pins.push(...dronePins)
-        console.log(`[MapPins] Added ${dronePins.length} drone position pins`)
       }
       
       // Convert RF detections to map pins
@@ -137,7 +135,6 @@ export function useMapPins() {
           timestamp: detection.time
         }))
         pins.push(...rfPins)
-        console.log(`[MapPins] Added ${rfPins.length} RF detection pins`)
       }
       
       // Convert operator positions to map pins
@@ -159,12 +156,10 @@ export function useMapPins() {
           timestamp: position.time
         }))
         pins.push(...operatorPins)
-        console.log(`[MapPins] Added ${operatorPins.length} operator position pins`)
       }
       
       // Set pins from database
       if (pins.length > 0) {
-        console.log(`[MapPins] Loaded ${pins.length} pins from database`)
         mapStore.setPins(pins)
         
         // Add pins to map
@@ -257,6 +252,24 @@ export function useMapPins() {
     if (mapContainer.value) {
       initializeMap(mapContainer.value)
     }
+    
+    // Set up 1-minute refresh interval for fresh data
+    const refreshInterval = setInterval(async () => {
+      if (isMapReady.value) {
+        try {
+          // Clear cache to get fresh data
+          databaseApi.clearCache()
+          await loadPins()
+        } catch (error) {
+          console.error('[MapPins] Error refreshing data:', error)
+        }
+      }
+    }, 60000) // 1 minute
+    
+    // Cleanup interval on unmount
+    onUnmounted(() => {
+      clearInterval(refreshInterval)
+    })
   })
 
   onUnmounted(() => {

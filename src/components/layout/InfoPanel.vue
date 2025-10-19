@@ -261,7 +261,6 @@
   </div>
 </template>
 
-<!-- TODO: The info panel is bright in colors - the background is bright as well as the text inside. When switching the terrain from dark to light, the info panel should also change colors to improve visibility. -->
 
 <script setup lang="ts">
 import { PhX, PhPaperPlaneTilt, PhCube, PhGauge, PhIdentificationCard, PhWifiHigh, PhMapTrifold, PhMapPin, PhWarning } from '@phosphor-icons/vue'

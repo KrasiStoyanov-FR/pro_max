@@ -158,8 +158,7 @@ const centerToUserLocation = () => {
 }
 
 const toggleLayers = () => {
-  const newLayer = mapService.toggleLayer()
-  console.log('Switched to layer:', newLayer)
+  mapService.toggleLayer()
 }
 
 const zoomIn = () => {
@@ -197,8 +196,8 @@ onMounted(async () => {
     await initializeMap(mapContainer.value, {
       center: props.center,
       zoom: props.zoom,
-      // maxZoom: props.maxZoom,
-      // minZoom: props.minZoom
+      maxZoom: props.maxZoom,
+      minZoom: props.minZoom
     })
   }
 })

@@ -64,7 +64,7 @@ api.interceptors.response.use(
   }
 )
 
-// API endpoints - TODO: Replace with real backend endpoints
+// API endpoints
 export const apiEndpoints = {
   // Authentication
   login: '/auth/login',
@@ -87,71 +87,115 @@ export const apiEndpoints = {
 }
 
 
+// Simple cache to prevent duplicate API calls
+const apiCache = new Map<string, { data: any; timestamp: number }>()
+const pendingRequests = new Map<string, Promise<any>>()
+const CACHE_DURATION = 30000 // 30 seconds cache
+
+// Helper function to get cached data or fetch new data with request deduplication
+const getCachedData = async (key: string, fetchFn: () => Promise<any>) => {
+  const cached = apiCache.get(key)
+  const now = Date.now()
+  
+  // Return cached data if it's still valid
+  if (cached && (now - cached.timestamp) < CACHE_DURATION) {
+    return cached.data
+  }
+  
+  // If there's already a pending request for this key, wait for it
+  if (pendingRequests.has(key)) {
+    return await pendingRequests.get(key)
+  }
+  
+  // Create a new request and store it as pending
+  const requestPromise = fetchFn().then(data => {
+    // Cache the result
+    apiCache.set(key, { data, timestamp: Date.now() })
+    // Remove from pending requests
+    pendingRequests.delete(key)
+    return data
+  }).catch(error => {
+    // Remove from pending requests on error
+    pendingRequests.delete(key)
+    throw error
+  })
+  
+  pendingRequests.set(key, requestPromise)
+  return await requestPromise
+}
+
+// Function to clear cache (useful for forced refresh)
+const clearCache = () => {
+  apiCache.clear()
+  pendingRequests.clear()
+}
+
 // Real database API functions
 export const databaseApi = {
   async login(credentials: { email: string; password: string }) {
-    // TODO: Implement real authentication endpoint
     throw new Error('Authentication not yet implemented - please implement real auth endpoint')
   },
   
   // Get all drones from database
   async getDrones(): Promise<DronesResponse> {
-    try {
-      console.log('[API] Fetching drones from database...')
-      const response = await api.get('/table/drones?database=drone_monitoring')
-      return {
-        success: true,
-        data: response.data.data as Drone[]
+    return getCachedData('drones', async () => {
+      try {
+        const response = await api.get('/table/drones?database=drone_monitoring')
+        return {
+          success: true,
+          data: response.data.data as Drone[]
+        }
+      } catch (error) {
+        console.error('[API] Failed to fetch drones from database:', error)
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        }
       }
-    } catch (error) {
-      console.error('[API] Failed to fetch drones from database:', error)
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error'
-      }
-    }
+    })
   },
   
   // Get drone positions from database
   async getDronePositions(limit: number = 100): Promise<DronePositionsResponse> {
-    try {
-      console.log('[API] Fetching drone positions from database...')
-      const response = await api.get(`/table/drone_positions?database=drone_monitoring&limit=${limit}`)
-      return {
-        success: true,
-        data: response.data.data as DronePosition[]
+    return getCachedData(`drone_positions_${limit}`, async () => {
+      try {
+        const response = await api.get(`/table/drone_positions?database=drone_monitoring&limit=${limit}`)
+        return {
+          success: true,
+          data: response.data.data as DronePosition[]
+        }
+      } catch (error) {
+        console.error('[API] Failed to fetch drone positions from database:', error)
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        }
       }
-    } catch (error) {
-      console.error('[API] Failed to fetch drone positions from database:', error)
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error'
-      }
-    }
+    })
   },
   
   // Get RF detections from database
   async getRFDetections(limit: number = 100): Promise<RFDetectionsResponse> {
-    try {
-      console.log('[API] Fetching RF detections from database...')
-      const response = await api.get(`/table/rf_detections?database=drone_monitoring&limit=${limit}`)
-      return {
-        success: true,
-        data: response.data.data as RFDetection[]
+    return getCachedData(`rf_detections_${limit}`, async () => {
+      try {
+        const response = await api.get(`/table/rf_detections?database=drone_monitoring&limit=${limit}`)
+        return {
+          success: true,
+          data: response.data.data as RFDetection[]
+        }
+      } catch (error) {
+        console.error('[API] Failed to fetch RF detections from database:', error)
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        }
       }
-    } catch (error) {
-      console.error('[API] Failed to fetch RF detections from database:', error)
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error'
-      }
-    }
+    })
   },
   
   // Get flight sessions from database
   async getFlightSessions(limit: number = 50): Promise<{ success: boolean; data?: FlightSession[]; error?: string }> {
     try {
-      console.log('[API] Fetching flight sessions from database...')
       const response = await api.get(`/table/flight_sessions?database=drone_monitoring&limit=${limit}`)
     return {
         success: true,
@@ -168,26 +212,26 @@ export const databaseApi = {
   
   // Get operator positions from database
   async getOperatorPositions(limit: number = 50): Promise<{ success: boolean; data?: OperatorPosition[]; error?: string }> {
-    try {
-      console.log('[API] Fetching operator positions from database...')
-      const response = await api.get(`/table/operator_positions?database=drone_monitoring&limit=${limit}`)
-      return {
-        success: true,
-        data: response.data.data as OperatorPosition[]
+    return getCachedData(`operator_positions_${limit}`, async () => {
+      try {
+        const response = await api.get(`/table/operator_positions?database=drone_monitoring&limit=${limit}`)
+        return {
+          success: true,
+          data: response.data.data as OperatorPosition[]
+        }
+      } catch (error) {
+        console.error('[API] Failed to fetch operator positions from database:', error)
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        }
       }
-    } catch (error) {
-      console.error('[API] Failed to fetch operator positions from database:', error)
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error'
-      }
-    }
+    })
   },
   
   // Get receiver logs from database
   async getReceiverLogs(limit: number = 50): Promise<{ success: boolean; data?: ReceiverLog[]; error?: string }> {
     try {
-      console.log('[API] Fetching receiver logs from database...')
       const response = await api.get(`/table/receiver_logs?database=drone_monitoring&limit=${limit}`)
       return {
         success: true,
@@ -301,7 +345,7 @@ export const databaseApi = {
   
   async getHealth() {
     try {
-      const response = await api.get('/test')
+      const response = await api.get('/health')
       return response
     } catch (error) {
       console.error('[API] Failed to fetch health status:', error)
@@ -312,6 +356,11 @@ export const databaseApi = {
         }
       }
     }
+  },
+  
+  // Clear cache to force fresh data fetch
+  clearCache() {
+    clearCache()
   }
 }
 

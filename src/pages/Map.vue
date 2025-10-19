@@ -25,34 +25,24 @@ import MapView from '@/components/map/MapView.vue'
 import StatusSummaryCard from '@/components/map/StatusSummaryCard.vue'
 
 // Composables
-const { user } = useAuth()
+useAuth()
 const mapStore = useMapStore()
 
 // Computed properties
 const pins = computed(() => mapStore.pins)
-const totalPins = computed(() => mapStore.pinsCount)
-const activePins = computed(() => 
-  mapStore.pins.filter(pin => pin.status === 'active').length
-)
-const criticalPins = computed(() => 
-  mapStore.pins.filter(pin => pin.status === 'critical').length
-)
 
 // Methods
-const handlePinSelected = (pin: any) => {
-  console.log('Pin selected:', pin)
+const handlePinSelected = () => {
   // The map store will handle the selection
 }
 
 const handlePinDeselected = () => {
-  console.log('Pin deselected')
   // The map store will handle the deselection
 }
 
 // Lifecycle
 onMounted(() => {
   // Map will load real database data automatically via useMapPins composable
-  console.log('Map mounted, user:', user.value)
 })
 </script>
 

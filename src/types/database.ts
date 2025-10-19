@@ -1,5 +1,4 @@
 // Database schema types based on the real MariaDB schema
-// TODO: Remove dummy data types once migration is complete
 
 // Main drone table
 export interface Drone {

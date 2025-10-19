@@ -69,8 +69,8 @@ const createConnectionPool = async () => {
 
 // Routes
 
-// Test database connection
-app.get('/api/db/test', async (req, res) => {
+// Database health check
+app.get('/api/db/health', async (req, res) => {
   try {
     console.log('[API] Testing database connection...')
     
@@ -375,7 +375,7 @@ app.use((error, req, res, next) => {
 app.listen(PORT, () => {
   console.log(`[API] Database server running on port ${PORT}`)
   console.log(`[API] Health check: http://localhost:${PORT}/api/health`)
-  console.log(`[API] Database connection: http://localhost:${PORT}/api/db/test`)
+  console.log(`[API] Database health check: http://localhost:${PORT}/api/db/health`)
 })
 
 // Graceful shutdown
