@@ -2,70 +2,19 @@
 
 A production-ready Vue 3 + TypeScript frontend application for monitoring radar targets and threats with an interactive map interface.
 
-## Features
-
-- 🗺️ **Interactive Map**: Leaflet-based map with custom markers and controls
-- 🔐 **Authentication**: Secure login with route guards and session management
-- 📊 **Real-time Data**: Live target monitoring with status indicators
-- 📱 **Responsive Design**: Mobile-friendly layout with collapsible sidebar
-- 🎨 **Modern UI**: TailwindCSS with HeadlessUI components
-- ⚡ **Performance**: Code-splitting and lazy loading for optimal performance
-- 🔧 **TypeScript**: Full type safety throughout the application
-
-## Tech Stack
-
-- **Frontend**: Vue 3 + TypeScript + Vite
-- **Styling**: TailwindCSS + HeadlessUI
-- **State Management**: Pinia
-- **Routing**: Vue Router with guards
-- **Maps**: Leaflet + OpenStreetMap
-- **HTTP Client**: Axios with interceptors
-- **Forms**: Vee-validate
-- **Build Tool**: Vite
-
-## Project Structure
-
-```
-src/
-├── components/
-│   ├── layout/          # TopNav, Sidebar, InfoPanel, LayoutWrapper
-│   ├── map/             # MapView, MapControls, Marker components
-│   └── ui/              # Shared UI components
-├── pages/
-│   ├── Login.vue
-│   └── Dashboard.vue
-├── router/
-│   └── index.ts         # Routes + navigation guards
-├── store/
-│   ├── auth.ts          # Pinia auth store
-│   └── map.ts           # Pinia map store
-├── services/
-│   ├── api.ts           # Axios instance + interceptors
-│   ├── mapService.ts    # Abstracted map adapter
-│   └── mockData.ts      # Dummy pins for development
-├── composables/
-│   ├── useAuth.ts
-│   └── useMapPins.ts
-├── styles/
-│   └── tailwind.css
-├── utils/
-│   └── security.md      # Security recommendations
-└── main.ts
-```
-
-## Getting Started
+## 🚀 Quick Start
 
 ### Prerequisites
 
-- Node.js 18+ 
-- npm or yarn
+- **Node.js 18+** ([Download here](https://nodejs.org/))
+- **npm** (comes with Node.js)
 
-### Installation
+### Installation & Setup
 
 1. **Clone the repository**
    ```bash
    git clone <repository-url>
-   cd project-defense-radar
+   cd pro_max
    ```
 
 2. **Install dependencies**
@@ -80,95 +29,141 @@ src/
    
    Edit `.env.local` with your configuration:
    ```bash
-   VITE_API_BASE_URL=http://localhost:8000/api/v1
+   VITE_API_BASE_URL=http://localhost:3001/api
    VITE_MAP_PROVIDER=leaflet
    VITE_MAPBOX_KEY=your_mapbox_key_here
    VITE_APP_TITLE=Defense Radar Dashboard
    ```
 
-4. **Start development server**
+4. **Start the application**
+   
+   **Option 1: Frontend only (for UI testing)**
    ```bash
    npm run dev
    ```
+   
+   **Option 2: Full stack (Frontend + Backend + Database)**
+   ```bash
+   npm start
+   ```
 
-5. **Open your browser**
-   Navigate to `http://localhost:3000`
+5. **Access the application**
+   - Open your browser and navigate to: **http://localhost:3000**
 
-### Demo Credentials
+## 🔐 Admin Access
 
-For development, use these credentials to log in:
+### Login Credentials
+Use these credentials to access the system:
+
 - **Email**: `admin@radar.com`
 - **Password**: `password`
 
-## Available Scripts
+### What You Can Access
+- Interactive radar map with real-time target monitoring
+- Database connection status and health checks
+- User management and authentication system
+- Responsive dashboard with mobile support
 
-- `npm run dev` - Start development server
-- `npm run build` - Build for production
+## 🏗️ Architecture Overview
+
+This application consists of three main components:
+
+### Frontend (Vue 3 + TypeScript)
+- **Port**: 3000
+- **Framework**: Vue 3 with Composition API
+- **Styling**: TailwindCSS + HeadlessUI
+- **State Management**: Pinia
+- **Maps**: Leaflet with OpenStreetMap
+
+### Backend (Express.js + Node.js)
+- **Port**: 3001
+- **Framework**: Express.js with TypeScript
+- **Database**: MariaDB/MySQL connection
+- **API Endpoints**: Database health checks, table queries, custom SQL execution
+
+### Database (MariaDB)
+- **Host**: `detect.pm99.site:58591`
+- **Database**: `drone_app`
+- **Connection**: Configured in `server.js`
+
+## 📋 Available Scripts
+
+- `npm run dev` - Start frontend development server only
+- `npm run server` - Start backend server only  
+- `npm start` - Start both frontend and backend concurrently
+- `npm run build` - Build frontend for production
 - `npm run preview` - Preview production build
 - `npm run lint` - Run ESLint
 - `npm run format` - Format code with Prettier
 
-## Configuration
+## 🔧 Configuration
 
 ### Environment Variables
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `VITE_API_BASE_URL` | Backend API base URL | `http://localhost:8000/api/v1` |
-| `VITE_MAP_PROVIDER` | Map provider (`leaflet` or `mapbox`) | `leaflet` |
-| `VITE_MAPBOX_KEY` | Mapbox API key (if using Mapbox) | - |
-| `VITE_APP_TITLE` | Application title | `Defense Radar Dashboard` |
+| Variable | Description | Default | Required |
+|----------|-------------|---------|----------|
+| `VITE_API_BASE_URL` | Backend API base URL | `http://localhost:3001/api` | Yes |
+| `VITE_MAP_PROVIDER` | Map provider (`leaflet` or `mapbox`) | `leaflet` | No |
+| `VITE_MAPBOX_KEY` | Mapbox API key (if using Mapbox) | - | No |
+| `VITE_APP_TITLE` | Application title | `Defense Radar Dashboard` | No |
 
-### Map Configuration
+### Database Configuration
 
-The application uses Leaflet by default with OpenStreetMap tiles. To switch to Mapbox:
+The backend automatically connects to the configured MariaDB database:
+- **Host**: `detect.pm99.site`
+- **Port**: `58591`
+- **User**: `drone_app`
+- **Database**: Configured for drone monitoring
 
-1. Update `VITE_MAP_PROVIDER=mapbox` in your `.env.local`
-2. Add your Mapbox API key: `VITE_MAPBOX_KEY=your_key_here`
-3. The `mapService.ts` will automatically use Mapbox when configured
+## 🌐 API Endpoints
 
-## Authentication
+The backend provides the following endpoints:
 
-### Current Implementation (Development)
-- Mock authentication with hardcoded credentials
-- Tokens stored in `sessionStorage`
-- Route guards protect authenticated routes
+- `GET /api/health` - Server health check
+- `GET /api/db/health` - Database connection health check
+- `GET /api/db/databases` - List all available databases
+- `GET /api/db/tables` - List tables in current database
+- `GET /api/db/tables/:database` - List tables in specific database
+- `GET /api/db/table/:tableName` - Get data from specific table
+- `GET /api/db/schema/:tableName` - Get table schema
+- `POST /api/db/query` - Execute custom SQL query
+- `GET /api/db/all-data` - Get all data from all tables
 
-### Production Setup
-See `src/utils/security.md` for detailed security recommendations including:
-- HttpOnly cookies for token storage
-- Proper CORS configuration
-- Content Security Policy (CSP) headers
-- Rate limiting and input validation
+## 🗺️ Map Features
 
-## API Integration
+- **Interactive Map**: Leaflet-based with custom markers and controls
+- **Real-time Data**: Live target monitoring with status indicators
+- **Responsive Design**: Mobile-friendly layout with collapsible sidebar
+- **Custom Markers**: Drone detection zones and radar targets
+- **Map Controls**: Zoom, pan, and layer controls
 
-### Current Mock Data
-The application uses mock data from `src/services/mockData.ts` for development.
+## 🔒 Authentication System
 
-### Backend Integration
-To connect to a real backend:
+### Current Implementation
+- **Mock Authentication**: Hardcoded credentials for development
+- **Session Storage**: Tokens stored in browser sessionStorage
+- **Route Guards**: Protected routes with authentication checks
+- **User Roles**: Admin, Operator, and Viewer roles supported
 
-1. **Update API endpoints** in `src/services/api.ts`
-2. **Replace mock functions** with real API calls
-3. **Update authentication flow** to use backend endpoints
-4. **Configure CORS** on your backend server
+### Admin Features
+- Full access to all dashboard features
+- Database management capabilities
+- User management (when backend integration is complete)
+- System configuration access
 
-Example API endpoints:
-- `POST /auth/login` - User authentication
-- `GET /targets` - Get all targets
-- `GET /targets/:id` - Get specific target
-- `GET /targets?bbox=...` - Get targets in bounds
+## 🚀 Deployment
 
-## Deployment
+### Development
+```bash
+npm start  # Starts both frontend and backend
+```
 
-### Build for Production
+### Production Build
 ```bash
 npm run build
 ```
 
-### Nginx Configuration
-See `src/utils/security.md` for complete Nginx configuration with security headers.
+The built files will be in the `dist/` directory, ready for deployment to any static hosting service.
 
 ### Docker Deployment
 ```dockerfile
@@ -181,87 +176,73 @@ RUN npm run build
 
 FROM nginx:alpine
 COPY --from=builder /app/dist /usr/share/nginx/html
-COPY nginx.conf /etc/nginx/nginx.conf
 EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]
 ```
 
-### Netlify Deployment
-Create `netlify.toml`:
-```toml
-[build]
-  command = "npm run build"
-  publish = "dist"
+## 🛠️ Tech Stack
 
-[[redirects]]
-  from = "/*"
-  to = "/index.html"
-  status = 200
-```
+### Frontend
+- **Vue 3** - Progressive JavaScript framework
+- **TypeScript** - Type-safe JavaScript
+- **Vite** - Fast build tool and dev server
+- **TailwindCSS** - Utility-first CSS framework
+- **HeadlessUI** - Unstyled UI components
+- **Pinia** - State management
+- **Vue Router** - Client-side routing
+- **Leaflet** - Interactive maps
+- **Axios** - HTTP client
 
-## Security Considerations
+### Backend
+- **Express.js** - Web framework
+- **Node.js** - Runtime environment
+- **MariaDB/MySQL** - Database
+- **CORS** - Cross-origin resource sharing
+- **dotenv** - Environment variable management
 
-### Development
-- Mock authentication for testing
-- Tokens in sessionStorage (not secure for production)
-- No HTTPS required for local development
-
-### Production
-- Use HttpOnly cookies for token storage
-- Implement proper CORS policies
-- Add Content Security Policy headers
-- Enable HTTPS with valid SSL certificates
-- Implement rate limiting and input validation
-- Regular security updates and dependency scanning
-
-See `src/utils/security.md` for comprehensive security guidelines.
-
-## Performance Optimization
-
-### Code Splitting
-- Routes are lazy-loaded for optimal bundle size
-- Map library is dynamically imported
-- Vendor chunks are separated for better caching
-
-### Map Performance
-- Marker clustering for large datasets (to be implemented)
-- Tile caching for faster map loading
-- Throttled re-renders for smooth interactions
-
-### Lighthouse Recommendations
-- Use `npm run build` for production builds
-- Enable gzip compression on your server
-- Implement proper caching headers
-- Optimize images and assets
-
-## Browser Support
+## 📱 Browser Support
 
 - Chrome 88+
 - Firefox 85+
 - Safari 14+
 - Edge 88+
 
-## Contributing
+## 🔍 Troubleshooting
 
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/new-feature`
-3. Commit changes: `git commit -am 'Add new feature'`
-4. Push to branch: `git push origin feature/new-feature`
-5. Submit a pull request
+### Common Issues
 
-## License
+1. **Port 3000 already in use**
+   ```bash
+   # Kill process using port 3000
+   npx kill-port 3000
+   ```
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+2. **Database connection issues**
+   - Check if the MariaDB server is accessible
+   - Verify network connectivity to `detect.pm99.site:58591`
+   - Check backend logs for connection errors
 
-## Support
+3. **Build failures**
+   ```bash
+   # Clear node_modules and reinstall
+   rm -rf node_modules package-lock.json
+   npm install
+   ```
 
-For questions or issues:
+4. **Environment variables not loading**
+   - Ensure `.env.local` file exists in project root
+   - Restart the development server after changes
+
+## 📞 Support
+
+For technical support or questions:
+
 1. Check the [security documentation](src/utils/security.md)
 2. Review the [Vue.js documentation](https://vuejs.org/)
 3. Check [TailwindCSS documentation](https://tailwindcss.com/)
 4. Open an issue in the repository
 
-## Roadmap
+## 🔮 Roadmap
 
 - [ ] Real-time WebSocket integration
 - [ ] Advanced filtering and search
@@ -272,4 +253,14 @@ For questions or issues:
 - [ ] Dark mode theme
 - [ ] Offline support with service workers
 
+---
 
+## 🎯 Quick Reference
+
+**Start the application**: `npm start`  
+**Access URL**: http://localhost:3000  
+**Admin Email**: admin@radar.com  
+**Admin Password**: password  
+**Backend API**: http://localhost:3001/api  
+
+**Ready to use!** 🚀
