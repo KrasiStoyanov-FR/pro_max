@@ -49,7 +49,7 @@ const updateStatistics = async () => {
   try {
     // Check database connection only once per minute
     const healthResponse = await databaseApi.getHealth()
-    databaseStatus.value = healthResponse.data?.status === 'success' ? 'connected' : 'disconnected'
+    databaseStatus.value = healthResponse.data?.success === true ? 'connected' : 'disconnected'
     
     // Use map store data instead of making additional API calls
     updateFromMapStore()

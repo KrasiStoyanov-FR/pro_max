@@ -47,7 +47,7 @@ interface Props {
 
 const props = withDefaults(defineProps<Props>(), {
   defaultInfoPanelOpen: false,
-  defaultSidebarCollapsed: false,
+  defaultSidebarCollapsed: true, // False by design
 })
 
 // State

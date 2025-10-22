@@ -304,8 +304,22 @@ class MapService {
     }
   }
 
+  private clearDroneZones(): void {
+    if (!this.map) return
+    
+    // Remove all existing zone layers
+    this.map.eachLayer((layer) => {
+      if (layer instanceof L.Circle && (layer as any).options.className?.startsWith('zone-')) {
+        this.map!.removeLayer(layer)
+      }
+    })
+  }
+
   private addDroneZones(): void {
     if (!this.map) return
+
+    // Clear existing zones first to prevent stacking
+    this.clearDroneZones()
 
     const zones = getActiveZones()
 

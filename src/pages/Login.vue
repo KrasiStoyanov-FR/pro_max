@@ -54,7 +54,7 @@
           </div>
 
           <div class="text-sm">
-            <a href="#" class="font-medium text-blue-600 hover:text-blue-500">
+            <a href="#" class="font-medium text-primary-600 hover:text-primary-700 transition-colors duration-200 ease-in-out">
               Forgot your password?
             </a>
           </div>
@@ -63,7 +63,7 @@
         <!-- Submit button -->
         <div>
           <button type="submit" :disabled="isLoading"
-            class="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 ease-in-out">
+            class="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-neutral-900 bg-primary-600 hover:text-white hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 ease-in-out">
             <span v-if="isLoading" class="absolute left-0 inset-y-0 flex items-center pl-3">
               <svg class="animate-spin h-5 w-5 text-primary-500" fill="none" viewBox="0 0 24 24">
                 <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
@@ -96,7 +96,7 @@
         </div>
 
         <!-- Demo credentials -->
-        <div class="p-4 bg-blue-900/20 rounded-xl border border-blue-500/30 backdrop-blur-lg">
+        <div class="p-4 bg-blue-900/50 rounded-xl border border-blue-600/30 backdrop-blur-lg">
           <div class="flex">
             <div class="flex-shrink-0">
               <PhInfo :size="20" class="text-blue-500" weight="bold" />
