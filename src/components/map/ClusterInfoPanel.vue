@@ -1,6 +1,6 @@
 <template>
       <div
-        class="h-full w-64 lg:w-80 flex flex-col rounded-2xl bg-neutral-900 transition-all duration-300 ease-out z-10 overflow-hidden"
+        class="h-full w-64 lg:w-80 flex flex-col rounded-2xl bg-neutral-900/40 backdrop-blur-2xl transition-all duration-300 ease-out z-10 overflow-hidden"
         :class="[cluster ? 'opacity-100 translate-x-0 pointer-events-auto' : 'opacity-0 -translate-x-4 pointer-events-none']"
         :style="{ transitionDelay: cluster ? '0ms' : '0ms' }">
     
