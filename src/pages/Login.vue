@@ -26,8 +26,11 @@
             <label for="email" class="block text-sm font-medium text-white">
               Email address
             </label>
-            <input id="email" v-model="form.email" name="email" type="email" autocomplete="email" required
-              class="mt-1 input-field" :class="{ 'error': errors.email }" placeholder="Enter your email" />
+
+            <div class="mt-1 input-field" :class="{ 'error': errors.email }">
+              <input id="email" v-model="form.email" name="email" type="email" autocomplete="email" required
+                placeholder="Enter your email" />
+            </div>
             <p v-if="errors.email" class="mt-1 text-sm text-red-600">{{ errors.email }}</p>
           </div>
 
@@ -36,9 +39,11 @@
             <label for="password" class="block text-sm font-medium text-white">
               Password
             </label>
-            <input id="password" v-model="form.password" name="password" type="password" autocomplete="current-password"
-              required class="mt-1 input-field" :class="{ 'error': errors.password }"
-              placeholder="Enter your password" />
+
+            <div class="mt-1 input-field" :class="{ 'error': errors.email }">
+              <input id="password" v-model="form.password" name="password" type="password"
+                autocomplete="current-password" required placeholder="Enter your password" />
+            </div>
             <p v-if="errors.password" class="mt-1 text-sm text-red-600">{{ errors.password }}</p>
           </div>
         </div>
@@ -54,7 +59,8 @@
           </div>
 
           <div class="text-sm">
-            <a href="#" class="font-medium text-primary-600 hover:text-primary-700 transition-colors duration-200 ease-in-out">
+            <a href="#"
+              class="font-medium text-primary-600 hover:text-primary-700 transition-colors duration-200 ease-in-out">
               Forgot your password?
             </a>
           </div>
@@ -118,7 +124,7 @@
 <script setup lang="ts">
 import { ref, reactive } from 'vue'
 import { useAuth } from '@/composables/useAuth'
-import { PhInfo } from '@phosphor-icons/vue'
+import { PhInfo, PhMagnifyingGlass } from '@phosphor-icons/vue'
 
 // Composables
 const { login } = useAuth()

@@ -1,6 +1,6 @@
 <template>
   <div
-    class="max-h-80 flex self-end rounded-2xl bg-neutral-900/70 backdrop-blur-3xl transition-all duration-300 ease-out pointer-events-auto overflow-hidden"
+    class="max-h-80 md:min-h-80 flex self-end rounded-2xl bg-neutral-900/70 backdrop-blur-3xl transition-all duration-300 ease-out pointer-events-auto overflow-hidden"
     :class="[
       // Size and visibility
       isOpen ? 'w-64 lg:w-80 opacity-100 visible translate-x-0 scale-100 pointer-events-auto' : 'w-0 opacity-0 -translate-x-full invisible scale-95 pointer-events-none',
@@ -30,13 +30,13 @@
             'border-green-500': selectedPin.status === 'active',
             'border-yellow-500': selectedPin.status === 'warning',
             'border-red-500': selectedPin.status === 'critical',
-            'border-gray-500': selectedPin.status === 'inactive'
+            'border-neutral-500': selectedPin.status === 'inactive'
           }">
             <PhPaperPlaneTilt :size="24" :class="{
               'text-green-400': selectedPin.status === 'active',
               'text-yellow-400': selectedPin.status === 'warning',
               'text-red-400': selectedPin.status === 'critical',
-              'text-gray-400': selectedPin.status === 'inactive'
+              'text-neutral-400': selectedPin.status === 'inactive'
             }" />
             <div class="flex-1">
               <span class="text-white text-sm font-medium">{{ selectedPin.type.toUpperCase() }}</span>
@@ -46,7 +46,7 @@
               'bg-green-500/20 text-green-400': selectedPin.status === 'active',
               'bg-yellow-500/20 text-yellow-400': selectedPin.status === 'warning',
               'bg-red-500/20 text-red-400': selectedPin.status === 'critical',
-              'bg-gray-500/20 text-gray-400': selectedPin.status === 'inactive'
+              'bg-neutral-500/20 text-neutral-400': selectedPin.status === 'inactive'
             }">
               {{ selectedPin.status }}
             </span>
