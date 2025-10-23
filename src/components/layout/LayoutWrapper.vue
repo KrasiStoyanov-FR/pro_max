@@ -15,7 +15,7 @@
             @select-pin="handlePinFromCluster" @zoom-to-cluster="handleZoomToCluster" />
 
           <!-- Info Panel -->
-          <InfoPanel :is-open="isInfoPanelOpen" :selected-pin="selectedPin" 
+          <InfoPanel :is-open="isInfoPanelOpen" :selected-pin="selectedPin"
             :has-cluster-panel="mapStore.hasSelectedCluster" @close="closeInfoPanel"
             @pin-deselected="handlePinDeselected" />
         </div>
@@ -102,7 +102,7 @@ watch([() => mapStore.hasSelectedCluster, isInfoPanelOpen], () => {
   // Calculate panel widths based on visibility
   const clusterWidth = mapStore.hasSelectedCluster ? 320 : 0 // w-64 lg:w-80 = 256px + 64px = 320px
   const infoWidth = isInfoPanelOpen.value ? 320 : 0 // w-64 lg:w-80 = 256px + 64px = 320px
-  
+
   // Update the available viewport
   mapStore.updateAvailableViewport({
     cluster: clusterWidth,
