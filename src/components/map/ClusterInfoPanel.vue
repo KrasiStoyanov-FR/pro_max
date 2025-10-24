@@ -6,19 +6,19 @@
     ]" :style="{ transitionDelay: cluster ? '0ms' : '0ms' }">
 
     <!-- Content wrapper with proper visibility control -->
-    <div v-if="cluster" class="flex flex-col h-full min-w-0 transition-opacity duration-200 ease-out"
+    <div v-if="cluster" class="h-full min-w-0 flex flex-col transition-opacity duration-200 ease-out"
       :class="[cluster ? 'opacity-100' : 'opacity-0 pointer-events-none']"
       :style="{ transitionDelay: cluster ? '100ms' : '0ms' }">
       <!-- Header -->
       <div class="flex items-center justify-between p-4 pb-0">
         <div class="flex items-center space-x-3">
           <div>
-            <h3 class="text-white font-semibold">Pin Cluster</h3>
+            <h2 class="font-semibold text-white">Pin Cluster</h2>
             <!-- <p class="text-neutral-200 text-xs">{{ cluster.pins.length }} items grouped</p> -->
           </div>
         </div>
 
-        <button @click="closePanel" class="text-neutral-200 hover:text-white transition-colors">
+        <button @click="closePanel" class="p-1 text-neutral-200 hover:text-white focus:outline-none focus:ring-2 focus:ring-neutral-500 rounded-md">
           <PhX :size="20" weight="bold" />
         </button>
       </div>

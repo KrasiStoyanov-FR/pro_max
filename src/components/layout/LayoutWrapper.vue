@@ -17,7 +17,7 @@
           <!-- Info Panel -->
           <InfoPanel :is-open="isInfoPanelOpen" :selected-pin="selectedPin"
             :has-cluster-panel="mapStore.hasSelectedCluster" @close="closeInfoPanel"
-            @pin-deselected="handlePinDeselected" />
+            @pin-deselected="handlePinDeselected" @zoom-to-map-pin="handleZoomToMapPin" />
         </div>
 
         <!-- Map/Content Area -->
@@ -38,6 +38,7 @@ import { mapService } from '@/services/mapService'
 import InfoPanel from './InfoPanel.vue'
 import Sidebar from './Sidebar.vue'
 import TopNav from './TopNav.vue'
+import type { MapPin } from '@/types/map'
 
 // Props
 interface Props {
@@ -76,6 +77,11 @@ const handlePinFromCluster = (pin: any) => {
 const handleZoomToCluster = (cluster: any) => {
   // Use the expandCluster method to show individual pins
   mapService.expandCluster(cluster)
+}
+
+const handleZoomToMapPin = (selectedPin: MapPin) => {
+  // Use the zoomToMapPin method to focus on individual pins
+  mapService.zoomToMapPin(selectedPin)
 }
 
 const closeInfoPanel = () => {

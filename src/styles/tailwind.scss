@@ -15,7 +15,7 @@
   }
 
   * {
-    @apply [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-track]:bg-white/30 [&::-webkit-scrollbar-track]:border-r [&::-webkit-scrollbar-track]:border-l [&::-webkit-scrollbar-track]:border-transparent [&::-webkit-scrollbar-track]:bg-clip-padding [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-white;
+    @apply [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-white/30 [&::-webkit-scrollbar-track]:border-r [&::-webkit-scrollbar-track]:border-l [&::-webkit-scrollbar-track]:border-transparent [&::-webkit-scrollbar-track]:bg-clip-padding [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-white;
   }
 }
 

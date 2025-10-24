@@ -1,5 +1,5 @@
 <template>
-  <div class="absolute top-4 right-4 z-20 bg-neutral-900 rounded-2xl shadow-md p-4 w-64 lg:top-6 lg:right-6">
+  <div class="w-64 p-4 absolute top-4 lg:top-6 right-4 lg:right-6 z-20 rounded-2xl bg-neutral-900/40 backdrop-blur-3xl shadow-md">
     <div class="space-y-3">
       <!-- Database Status -->
       <div class="flex items-center space-x-3">

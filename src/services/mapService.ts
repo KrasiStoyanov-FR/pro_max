@@ -84,7 +84,7 @@ class MapService {
         if (zoomTimeout) {
           clearTimeout(zoomTimeout)
         }
-        
+
         // Debounce the clustering to avoid too many updates during zoom
         zoomTimeout = setTimeout(() => {
           const currentZoom = this.map!.getZoom()
@@ -104,7 +104,7 @@ class MapService {
     if (!this.map) return
 
     const zoomControl = (L as any).control({ position: 'bottomright' })
-    
+
     zoomControl.onAdd = () => {
       const div = L.DomUtil.create('div', 'map-control')
       div.innerHTML = `
@@ -121,22 +121,22 @@ class MapService {
           </button>
         </div>
       `
-      
+
       // Add event listeners
       div.addEventListener('click', (e) => {
         const target = e.target as HTMLElement
         const action = target.closest('[data-action]')?.getAttribute('data-action')
-        
+
         if (action === 'zoom-in' && this.map) {
           this.map.zoomIn()
         } else if (action === 'zoom-out' && this.map) {
           this.map.zoomOut()
         }
       })
-      
+
       return div
     }
-    
+
     zoomControl.addTo(this.map)
     this.controls.set('zoom', zoomControl)
   }
@@ -158,10 +158,10 @@ class MapService {
     if (!this.map) return
 
     console.log('Highlighting selected pin:', selectedPin?.id, selectedPin?.title)
-    
+
     // Remove any existing highlight marker
     this.clearHighlightMarker()
-    
+
     if (selectedPin) {
       // Create a large, bright highlight marker
       const highlightIcon = L.divIcon({
@@ -188,18 +188,18 @@ class MapService {
         iconSize: [40, 40],
         iconAnchor: [20, 20]
       })
-      
+
       // Create the highlight marker
       this.highlightMarker = L.marker([selectedPin.lat, selectedPin.lng], {
         icon: highlightIcon,
         zIndexOffset: 1000 // Make sure it's on top
       })
-      
+
       // Add to map
       this.highlightMarker.addTo(this.map)
-      
+
       console.log('Added highlight marker for pin:', selectedPin.id)
-      
+
       // Force individual pins to be shown with fade effect
       this.forceShowIndividualPins(selectedPin)
     } else {
@@ -212,7 +212,7 @@ class MapService {
     if (this.highlightMarker && this.map) {
       this.map.removeLayer(this.highlightMarker)
       this.highlightMarker = null
-      
+
       // Restore all markers to full opacity
       this.clearFadeEffect()
     }
@@ -226,23 +226,23 @@ class MapService {
   private forceShowIndividualPins(selectedPin: MapPin): void {
     console.log('Force showing individual pins with fade effect for:', selectedPin.id)
     console.log('Existing markers count:', this.markers.size)
-    
+
     // If no markers exist, we need to create them first
     if (this.markers.size === 0) {
       console.log('No existing markers, creating individual pins')
       this.showIndividualPins(selectedPin)
       return
     }
-    
+
     // Clear clusters but keep markers
     this.clearClusters()
-    
+
     // Apply fade effect to existing markers
     this.markers.forEach((marker, pinId) => {
       const isSelected = selectedPin?.id === pinId
       const isFaded = selectedPin !== null && !isSelected
       console.log(`Processing existing marker ${pinId}: isSelected=${isSelected}, isFaded=${isFaded}`)
-      
+
       if (isFaded) {
         console.log(`Fading existing marker ${pinId}`)
         // Add a small delay to ensure the marker is fully rendered
@@ -259,7 +259,7 @@ class MapService {
   private applyFadeEffect(selectedPin: MapPin): void {
     console.log('Applying fade effect, selected pin:', selectedPin.id)
     console.log('Total markers available:', this.markers.size)
-    
+
     // Since markers are already created with fade effect in showIndividualPins,
     // we don't need to apply additional fade effect here
     console.log('Markers already have fade effect applied in showIndividualPins')
@@ -267,7 +267,7 @@ class MapService {
 
   private clearFadeEffect(): void {
     console.log('Clearing fade effect')
-    
+
     // Restore all markers to full opacity
     this.markers.forEach((marker) => {
       this.brightenMarker(marker)
@@ -278,7 +278,7 @@ class MapService {
     const element = marker.getElement()
     if (element) {
       element.style.opacity = '1'
-      ;(marker as any).isFaded = false
+        ; (marker as any).isFaded = false
     }
   }
 
@@ -288,8 +288,8 @@ class MapService {
     if (element) {
       console.log('Setting opacity to 0.5 for marker')
       element.style.opacity = '0.5'
-      ;(marker as any).isFaded = true
-      
+        ; (marker as any).isFaded = true
+
       // Add hover effects
       element.addEventListener('mouseenter', () => {
         this.brightenMarker(marker)
@@ -306,7 +306,7 @@ class MapService {
 
   private clearDroneZones(): void {
     if (!this.map) return
-    
+
     // Remove all existing zone layers
     this.map.eachLayer((layer) => {
       if (layer instanceof L.Circle && (layer as any).options.className?.startsWith('zone-')) {
@@ -359,16 +359,16 @@ class MapService {
   private getZoneIcon(type: DroneZone['type'], color: string): L.DivIcon {
     const isRestricted = type === 'restricted'
     const bgColor = isRestricted ? 'red' : 'orange'
-    
+
     return L.divIcon({
       className: `zone-icon zone-icon-${type}`,
       html: `
         <div class="flex items-center justify-center w-8 h-8 bg-${bgColor}-500/80 rounded-full backdrop-blur-sm border-2 border-white shadow-lg ${isRestricted ? 'animate-pulse' : ''}">
           <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            ${isRestricted 
-              ? '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-1.964-1.333-2.732 0L3.732 16c-.77 1.333.192 3 1.732 3z"></path>'
-              : '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-1.964-1.333-2.732 0L3.732 16c-.77 1.333.192 3 1.732 3z"></path>'
-            }
+            ${isRestricted
+          ? '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-1.964-1.333-2.732 0L3.732 16c-.77 1.333.192 3 1.732 3z"></path>'
+          : '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-1.964-1.333-2.732 0L3.732 16c-.77 1.333.192 3 1.732 3z"></path>'
+        }
           </svg>
         </div>
       `,
@@ -384,16 +384,16 @@ class MapService {
     if (isFaded) {
       console.log('Creating faded marker for pin:', pin.id, pin.title)
     }
-    
+
     const marker = L.marker([pin.lat, pin.lng], {
       icon: this.getIconForPinType(pin.type, pin.status, isSelected, isFaded)
     })
-    
-    // Store fade state on marker for hover effects
-    ;(marker as any).isFaded = isFaded
 
-    // Store pin data on marker for easy access
-    ;(marker as any).pinData = pin
+      // Store fade state on marker for hover effects
+      ; (marker as any).isFaded = isFaded
+
+      // Store pin data on marker for easy access
+      ; (marker as any).pinData = pin
 
     // Add popup
     const popupContent = `
@@ -417,7 +417,7 @@ class MapService {
       marker.on('mouseover', () => {
         this.brightenMarker(marker)
       })
-      
+
       marker.on('mouseout', () => {
         this.fadeMarker(marker)
       })
@@ -433,11 +433,11 @@ class MapService {
     const zoom = this.map.getZoom()
     console.log('applyClustering called with selectedPin:', selectedPin?.id, 'zoom:', zoom, 'clustering range:', CLUSTER_CONFIG.minZoom, '-', CLUSTER_CONFIG.maxZoom)
     console.trace('applyClustering call stack:') // This will show us what's calling it
-    
+
     // Clear existing markers and clusters first
     this.clearMarkers()
     this.clearClusters()
-    
+
     // Only cluster at certain zoom levels
     if (zoom >= CLUSTER_CONFIG.minZoom && zoom <= CLUSTER_CONFIG.maxZoom) {
       isClusteringActive = true
@@ -454,7 +454,7 @@ class MapService {
     if (!this.map) return
 
     const clusters = this.groupPinsIntoClusters(this.allPins)
-    
+
     clusters.forEach(cluster => {
       const clusterMarker = this.createClusterMarker(cluster)
       this.clusters.set(cluster.id, cluster)
@@ -464,18 +464,18 @@ class MapService {
 
   private showIndividualPins(selectedPin: MapPin | null = null): void {
     console.log('Showing individual pins, selected pin:', selectedPin?.id)
-    
+
     // When not clustering, show ALL individual pins
     this.allPins.forEach(pin => {
       const isSelected = selectedPin?.id === pin.id
       const isFaded = selectedPin !== null && !isSelected // Fade all pins except the selected one
       console.log(`Pin ${pin.id}: isSelected=${isSelected}, isFaded=${isFaded}`)
-      
+
       // Create marker for all pins
       const marker = this.createMarker(pin, false, false)
       this.markers.set(pin.id, marker)
       marker.addTo(this.map!)
-      
+
       // Apply DOM fade effect if needed
       if (isFaded) {
         console.log(`Applying DOM fade effect to newly created marker ${pin.id}`)
@@ -493,7 +493,7 @@ class MapService {
 
     // First pass: Find all potential clusters using DBSCAN-like algorithm
     const potentialClusters = this.findPotentialClusters(pins)
-    
+
     // Second pass: Filter clusters by minimum distance and size
     potentialClusters.forEach(clusterPins => {
       if (clusterPins.length < CLUSTER_CONFIG.minPinsForCluster) {
@@ -535,7 +535,7 @@ class MapService {
       }
 
       const cluster = this.createCluster(clusterPins)
-      
+
       // Check if this cluster is too close to existing clusters
       const tooClose = clusters.some(existingCluster => {
         const distance = this.calculatePixelDistance(
@@ -587,10 +587,10 @@ class MapService {
       const toCheck = [pin]
       while (toCheck.length > 0) {
         const currentPin = toCheck.pop()!
-        
+
         pins.forEach(otherPin => {
           if (visited.has(otherPin.id)) return
-          
+
           const distance = this.calculatePixelDistance(currentPin, otherPin)
           if (distance <= CLUSTER_CONFIG.maxClusterRadius) {
             cluster.push(otherPin)
@@ -643,7 +643,7 @@ class MapService {
 
   private createClusterMarker(cluster: PinCluster): L.Marker {
     const clusterIcon = this.createClusterIcon(cluster.pins.length)
-    
+
     const marker = L.marker(cluster.center, {
       icon: clusterIcon,
       zIndexOffset: 1000 // Ensure clusters appear above individual pins
@@ -662,7 +662,7 @@ class MapService {
   private createClusterIcon(count: number): L.DivIcon {
     const size = CLUSTER_CONFIG.clusterIconSize
     const color = count > 10 ? '#ef4444' : count > 5 ? '#f59e0b' : '#10b981'
-    
+
     return L.divIcon({
       html: `
         <div class="flex items-center justify-center w-full h-full rounded-full border-2 border-white shadow-lg" 
@@ -681,10 +681,10 @@ class MapService {
 
     const point1 = this.map.latLngToContainerPoint([pin1.lat, pin1.lng])
     const point2 = this.map.latLngToContainerPoint([pin2.lat, pin2.lng])
-    
+
     const dx = point1.x - point2.x
     const dy = point1.y - point2.y
-    
+
     return Math.sqrt(dx * dx + dy * dy)
   }
 
@@ -700,12 +700,12 @@ class MapService {
   private getIconForPinType(type: string, status: string, isSelected: boolean = false, isFaded: boolean = false): any {
     const color = this.getColorForStatus(status)
     const isAlarm = status === 'critical'
-    
+
     console.log(`Creating icon for ${type}: isSelected=${isSelected}`)
-    
+
     // Create different icons based on pin type
     let iconHtml = ''
-    
+
     if (type === 'drone') {
       // Drone icon with propellers
       iconHtml = `
@@ -739,7 +739,7 @@ class MapService {
         </div>
       `
     }
-    
+
     return L.divIcon({
       className: 'custom-marker',
       html: iconHtml,
@@ -790,10 +790,10 @@ class MapService {
 
     // Calculate bounds for ONLY this cluster's pins
     const clusterBounds = this.calculateClusterBounds(cluster.pins)
-    
+
     // Add padding to the bounds to ensure pins aren't at the edge
     const paddedBounds = clusterBounds.pad(0.1) // 10% padding
-    
+
     // Fit the map to show only this cluster's pins
     this.map.fitBounds(paddedBounds, {
       padding: [20, 20], // Additional padding in pixels
@@ -826,6 +826,14 @@ class MapService {
     return L.latLngBounds([[minLat, minLng], [maxLat, maxLng]])
   }
 
+  zoomToMapPin(selectedPin: MapPin): void {
+    if (!this.map) return
+
+    if (this.onPinClickCallback) {
+      this.onPinClickCallback(selectedPin)
+    }
+  }
+
   isClustering(): boolean {
     return isClusteringActive
   }
@@ -856,11 +864,11 @@ class MapService {
     if (!this.map) throw new Error('Map not initialized')
 
     const control = (L as any).control({ position })
-    
+
     control.onAdd = () => {
       return element
     }
-    
+
     control.addTo(this.map)
     return control
   }
@@ -880,7 +888,7 @@ class MapService {
       }
     })
     this.markers.clear()
-    
+
     // Don't clear highlight marker here - it should be managed separately
     // this.clearHighlightMarker()
   }
@@ -943,7 +951,7 @@ class MapService {
     const currentIndex = layers.indexOf(this.currentLayerType)
     const nextIndex = (currentIndex + 1) % layers.length
     const nextLayer = layers[nextIndex]
-    
+
     this.setTileLayer(nextLayer)
     return nextLayer
   }
