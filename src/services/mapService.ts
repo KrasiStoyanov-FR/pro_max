@@ -151,7 +151,7 @@ class MapService {
     this.applyClustering()
 
     // Add drone operation zones
-    this.addDroneZones()
+    // this.addDroneZones() // Disabled - using only real data from database
   }
 
   highlightSelectedPin(selectedPin: MapPin | null): void {
@@ -316,44 +316,8 @@ class MapService {
   }
 
   private addDroneZones(): void {
-    if (!this.map) return
-
-    // Clear existing zones first to prevent stacking
-    this.clearDroneZones()
-
-    const zones = getActiveZones()
-
-    zones.forEach(zone => {
-      // Create the highlighted region circle
-      const circle = L.circle(zone.center, {
-        radius: zone.radius || 1000, // Default to 1km if no radius specified
-        color: zone.color,
-        fillColor: zone.color,
-        fillOpacity: zone.fillOpacity,
-        opacity: zone.opacity,
-        weight: 2,
-        className: `zone-${zone.type}`
-      }).addTo(this.map!)
-
-      // Add tooltip to show zone name and description
-      circle.bindTooltip(`
-        <div class="font-medium">${zone.name}</div>
-        <div class="text-xs text-neutral-400 mt-1">${zone.description}</div>
-        <div class="text-xs text-neutral-500 mt-1 uppercase">${zone.type}</div>
-        <div class="text-xs text-neutral-500 mt-1">Radius: ${(zone.radius || 1000) / 1000}km</div>
-      `, {
-        permanent: false,
-        direction: 'center',
-        className: 'zone-tooltip',
-        opacity: 0.95
-      })
-
-      // Add zone type indicator icon in center (only for restricted/emergency zones)
-      if (zone.type === 'restricted' || zone.type === 'emergency') {
-        const icon = this.getZoneIcon(zone.type, zone.color)
-        L.marker(zone.center, { icon }).addTo(this.map!)
-      }
-    })
+    // Disabled - using only real data from database
+    return
   }
 
   private getZoneIcon(type: DroneZone['type'], color: string): L.DivIcon {
@@ -698,44 +662,75 @@ class MapService {
   }
 
   private getIconForPinType(type: string, status: string, isSelected: boolean = false, isFaded: boolean = false): any {
-    const color = this.getColorForStatus(status)
+    const color = this.getColorForStatus(status, type)
     const isAlarm = status === 'critical'
+    const isWarning = status === 'warning'
+    const shouldPulse = isAlarm || isWarning // Only pulse for critical and warning status
 
-    console.log(`Creating icon for ${type}: isSelected=${isSelected}`)
+    console.log(`Creating icon for ${type}: isSelected=${isSelected}, shouldPulse=${shouldPulse}`)
 
     // Create different icons based on pin type
     let iconHtml = ''
 
+    // Get the appropriate icon for each type
+    let iconSvg = ''
+    let iconSize = 'w-4 h-4'
+    let markerSize = 'w-8 h-8'
+    
+    switch (type) {
+      case 'drone':
+        // Simple drone/airplane icon
+        iconSvg = `<svg class="${iconSize} text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z"/></svg>`
+        break
+      case 'target':
+        // Radio/wave icon for RF detections
+        iconSvg = `<svg class="${iconSize} text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"/></svg>`
+        break
+      case 'friendly':
+        // User/person icon for operators
+        iconSvg = `<svg class="${iconSize} text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>`
+        break
+      default:
+        // Default circle icon
+        iconSvg = `<svg class="${iconSize} text-white" fill="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></svg>`
+    }
+
     if (type === 'drone') {
-      // Drone icon with propellers
+      // Drone icon with Phosphor drone icon
       iconHtml = `
         <div class="relative transition-opacity duration-200">
-          <div class="w-8 h-8 rounded-full border-2 border-white shadow-lg flex items-center justify-center" 
+          <!-- Pulse animation circles (only for critical/warning) -->
+          ${shouldPulse ? `
+            <div class="absolute inset-0 w-8 h-8 rounded-full" style="background-color: ${color}; animation: markerPulseOuter 4s ease-in-out infinite;"></div>
+            <div class="absolute inset-0 w-8 h-8 rounded-full" style="background-color: ${color}; animation: markerPulseInner 4s ease-in-out infinite; animation-delay: 0.5s;"></div>
+          ` : ''}
+          
+          <!-- Main marker -->
+          <div class="w-8 h-8 rounded-full border-2 border-white shadow-lg flex items-center justify-center relative z-10" 
                style="background-color: ${color}">
-            <div class="w-4 h-4 relative">
-              <!-- Drone body -->
-              <div class="w-3 h-3 rounded-sm bg-white mx-auto mt-0.5"></div>
-              <!-- Propellers -->
-              <div class="absolute -top-1 left-1 w-1 h-1 bg-white rounded-full"></div>
-              <div class="absolute -top-1 right-1 w-1 h-1 bg-white rounded-full"></div>
-              <div class="absolute -bottom-1 left-1 w-1 h-1 bg-white rounded-full"></div>
-              <div class="absolute -bottom-1 right-1 w-1 h-1 bg-white rounded-full"></div>
-            </div>
+            ${iconSvg}
           </div>
-          ${isAlarm ? '<div class="absolute inset-0 w-8 h-8 rounded-full border-2 border-red-500 animate-ping"></div>' : ''}
-          ${isSelected ? '<div class="absolute -inset-2 w-12 h-12 rounded-full border-4 border-blue-500 animate-pulse" style="border-color: #3b82f6; animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;"></div>' : ''}
+          
+          ${isSelected ? '<div class="absolute -inset-2 w-12 h-12 rounded-full border-4 border-blue-500 animate-pulse" style="border-color: #3b82f6; animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; z-index: 5;"></div>' : ''}
         </div>
       `
     } else {
-      // Default circular icon for other types
+      // Other types with appropriate icons
       iconHtml = `
         <div class="relative transition-opacity duration-200">
-          <div class="w-6 h-6 rounded-full border-2 border-white shadow-lg flex items-center justify-center" 
+          <!-- Pulse animation circles (only for critical/warning) -->
+          ${shouldPulse ? `
+            <div class="absolute inset-0 w-6 h-6 rounded-full" style="background-color: ${color}; animation: markerPulseOuter 4s ease-in-out infinite;"></div>
+            <div class="absolute inset-0 w-6 h-6 rounded-full" style="background-color: ${color}; animation: markerPulseInner 4s ease-in-out infinite; animation-delay: 0.5s;"></div>
+          ` : ''}
+          
+          <!-- Main marker -->
+          <div class="w-6 h-6 rounded-full border-2 border-white shadow-lg flex items-center justify-center relative z-10" 
                style="background-color: ${color}">
-            <div class="w-2 h-2 rounded-full bg-white"></div>
+            ${iconSvg}
           </div>
-          ${isAlarm ? '<div class="absolute inset-0 w-6 h-6 rounded-full border-2 border-red-500 animate-ping"></div>' : ''}
-          ${isSelected ? '<div class="absolute -inset-1 w-8 h-8 rounded-full border-3 border-blue-500 animate-pulse" style="border-color: #3b82f6; animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;"></div>' : ''}
+          
+          ${isSelected ? '<div class="absolute -inset-1 w-8 h-8 rounded-full border-3 border-blue-500 animate-pulse" style="border-color: #3b82f6; animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; z-index: 5;"></div>' : ''}
         </div>
       `
     }
@@ -748,13 +743,16 @@ class MapService {
     } as any)
   }
 
-  private getColorForStatus(status: string): string {
-    switch (status) {
-      case 'active': return '#22c55e'  // Green for active
-      case 'warning': return '#f59e0b' // Yellow for warning
-      case 'critical': return '#ef4444' // Red for critical/alarms
-      case 'inactive': return '#3b82f6' // Blue for inactive
-      default: return '#3b82f6'
+  private getColorForStatus(status: string, type: string): string {
+    // Use type-based colors for markers (ignore status for colors)
+    switch (type) {
+      case 'drone': return '#22c55e'    // Green for drones (primary color palette)
+      case 'target': return '#f59e0b'   // Yellow for RF detections
+      case 'friendly': return '#3b82f6' // Blue for operators
+      case 'radar': return '#8b5cf6'    // Purple for radar
+      case 'threat': return '#ef4444'   // Red for threats
+      case 'unknown': return '#6b7280'  // Gray for unknown
+      default: return '#3b82f6'         // Default blue
     }
   }
 

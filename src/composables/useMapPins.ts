@@ -128,7 +128,7 @@ export function useMapPins() {
           title: `RF Detection - Drone ${detection.drone_id}`,
           description: `Frequency: ${detection.frequency} MHz, Signal: ${detection.signal_strength} dBm`,
           type: 'target' as const,
-          status: detection.detection_status ? 'active' : 'inactive' as const,
+          status: detection.detection_status ? 'active' as const : 'inactive' as const,
           priority: 'high' as const,
           data: {
             drone_id: detection.drone_id,
@@ -162,6 +162,8 @@ export function useMapPins() {
         pins.push(...operatorPins)
       }
       
+
+
       // Set pins from database
       if (pins.length > 0) {
         mapStore.setPins(pins)
