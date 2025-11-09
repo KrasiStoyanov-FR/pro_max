@@ -88,11 +88,16 @@ export function useMapPins() {
       
       
       // Fetch real data from database
-      const [dronePositionsResponse, rfDetectionsResponse, operatorPositionsResponse] = await Promise.all([
+      const [dronePositionsResponse, rfDetectionsResponse, operatorPositionsResponse, drones, receiverLogs] = await Promise.all([
         databaseApi.getDronePositions(100),
         databaseApi.getRFDetections(50),
-        databaseApi.getOperatorPositions(50)
+        databaseApi.getOperatorPositions(50),
+        
+        databaseApi.getDrones(),
+        databaseApi.getTargets()
       ])
+
+      console.log(drones, receiverLogs)
       
       const pins: MapPin[] = []
       

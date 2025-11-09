@@ -17,7 +17,8 @@ import type {
 
 // Create axios instance with base configuration
 const api: AxiosInstance = axios.create({
-  baseURL: 'http://localhost:3001/api/db',
+  // baseURL: 'http://172.16.50.50:3001/api/db',
+  baseURL: 'http://localhost:3001/api/db', // TODO: Turn this into a variable, so when I use the SFTP server, I can apply its own env file with a different value for this variable
   timeout: 30000,
   headers: {
     'Content-Type': 'application/json',
@@ -230,6 +231,7 @@ export const databaseApi = {
   },
   
   // Get receiver logs from database
+  // TOOD: show history of what happened to the device (only for the engineer role of the user)
   async getReceiverLogs(limit: number = 50): Promise<{ success: boolean; data?: ReceiverLog[]; error?: string }> {
     try {
       const response = await api.get(`/table/receiver_logs?database=drone_monitoring&limit=${limit}`)

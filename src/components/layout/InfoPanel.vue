@@ -216,7 +216,7 @@
       <!-- Footer -->
       <div v-if="selectedPin" class="p-4 border-t border-white/10">
         <div class="flex items-center justify-between text-xs text-neutral-200">
-          <span>{{ selectedPin.lat.toFixed(4) }}, {{ selectedPin.lng.toFixed(4) }}</span>
+          <span>{{ selectedPin.lat }}, {{ selectedPin.lng.toFixed(4) }}</span>
           <button @click="zoomToMapPin" class="text-primary-400 hover:text-primary-300 transition-colors">
             Zoom to pin
           </button>

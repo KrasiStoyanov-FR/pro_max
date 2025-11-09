@@ -14,8 +14,10 @@ app.use(express.json())
 
 // MariaDB connection configuration
 const DB_CONFIG = {
-  host: 'detect.pm99.site',
-  port: 58591,
+  // host: '172.16.50.100',
+  // port: 3306,
+  host: 'detect.pm99.site', // TODO: Turn this into a variable, so when I use the SFTP server, I can apply its own env file with a different value for this variable
+  port: 58591, // TODO: Turn this into a variable, so when I use the SFTP server, I can apply its own env file with a different value for this variable
   user: 'drone_app',
   password: 'Qwerty@',
   connectionLimit: 10,
@@ -374,8 +376,8 @@ app.use((error, req, res, next) => {
 // Start server
 app.listen(PORT, () => {
   console.log(`[API] Database server running on port ${PORT}`)
-  console.log(`[API] Health check: http://localhost:${PORT}/api/health`)
-  console.log(`[API] Database health check: http://localhost:${PORT}/api/db/health`)
+  console.log(`[API] Health check: http://${DB_CONFIG.host}:${PORT}/api/health`)
+  console.log(`[API] Database health check: http://${DB_CONFIG.host}:${PORT}/api/db/health`)
 })
 
 // Graceful shutdown
