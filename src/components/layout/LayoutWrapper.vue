@@ -17,9 +17,8 @@
           <!-- Info Panel -->
           <InfoPanel :is-open="isInfoPanelOpen" :selected-pin="selectedPin"
             :has-cluster-panel="mapStore.hasSelectedCluster" :focus-mode-active="mapStore.focusModeActive"
-            @close="closeInfoPanel" @pin-deselected="handlePinDeselected" @zoom-to-map-pin="handleZoomToMapPin"
-            @exit-focus="handleExitFocusMode" @enter-focus="handleEnterFocusMode"
-            @focus-trajectory-point="handleFocusTrajectoryPoint" @focus-detection="handleFocusDetection" />
+            @close="closeInfoPanel" @pin-deselected="handlePinDeselected"
+            @exit-focus="handleExitFocusMode" @focus-detection="handleFocusDetection" />
         </div>
 
         <!-- Map/Content Area -->
@@ -39,7 +38,7 @@ import { mapService } from '@/services/mapService'
 import InfoPanel from './InfoPanel.vue'
 import Sidebar from './Sidebar.vue'
 import TopNav from './TopNav.vue'
-import type { MapPin, DroneTrajectoryPoint, DetectionCheckpoint } from '@/types/map'
+import type { DetectionCheckpoint } from '@/types/map'
 
 // Props
 interface Props {

@@ -892,6 +892,10 @@ class MapService {
         // User/person icon for operators
         iconSvg = `<svg class="${iconSize} text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>`
         break
+      case 'sensor':
+        // GPS/static sensor icon
+        iconSvg = `<svg class="${iconSize} text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 0-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 0 0-7-7zm0 9.5a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5z"/></svg>`
+        break
       default:
         // Default circle icon
         iconSvg = `<svg class="${iconSize} text-white" fill="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></svg>`
@@ -951,6 +955,7 @@ class MapService {
       case 'drone': return '#22c55e'    // Green for drones (primary color palette)
       case 'target': return '#f59e0b'   // Yellow for RF detections
       case 'friendly': return '#3b82f6' // Blue for operators
+      case 'sensor': return '#22d3ee'    // Cyan for GPS/static sensors
       case 'radar': return '#8b5cf6'    // Purple for radar
       case 'threat': return '#ef4444'   // Red for threats
       case 'unknown': return '#6b7280'  // Gray for unknown

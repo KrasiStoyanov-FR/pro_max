@@ -8,11 +8,13 @@ import type {
   FlightSession, 
   OperatorPosition, 
   ReceiverLog,
+  GpsUnitPosition,
   DroneWithPositions,
   MapMarker,
   DronePositionsResponse,
   DronesResponse,
-  RFDetectionsResponse
+  RFDetectionsResponse,
+  GpsUnitPositionsResponse
 } from '@/types/database'
 
 // Create axios instance with base configuration
@@ -222,6 +224,24 @@ export const databaseApi = {
         }
       } catch (error) {
         console.error('[API] Failed to fetch operator positions from database:', error)
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        }
+      }
+    })
+  },
+
+  async getGpsUnitPositions(limit: number = 100): Promise<GpsUnitPositionsResponse> {
+    return getCachedData(`gps_unit_position_${limit}`, async () => {
+      try {
+        const response = await api.get(`/table/gps_unit_position?database=drone_monitoring&limit=${limit}`)
+        return {
+          success: true,
+          data: response.data.data as GpsUnitPosition[]
+        }
+      } catch (error) {
+        console.error('[API] Failed to fetch GPS unit positions from database:', error)
         return {
           success: false,
           error: error instanceof Error ? error.message : 'Unknown error'

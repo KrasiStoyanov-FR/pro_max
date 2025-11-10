@@ -4,7 +4,7 @@ export interface MapPin {
   lng: number
   title: string
   description?: string
-  type: 'radar' | 'target' | 'threat' | 'friendly' | 'unknown' | 'drone'
+  type: 'radar' | 'target' | 'threat' | 'friendly' | 'unknown' | 'drone' | 'sensor'
   status: 'active' | 'inactive' | 'warning' | 'critical'
   priority: 'low' | 'medium' | 'high' | 'critical'
   data?: Record<string, any>
@@ -28,6 +28,7 @@ export interface DetectionCheckpoint {
   frequency: number | null
   signalStrength: number | null
   status: boolean
+  systemId?: string | number | null
 }
 
 export interface MapViewport {

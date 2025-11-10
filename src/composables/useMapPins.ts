@@ -3,7 +3,7 @@ import { useMapStore } from '@/store/map'
 import { mapService } from '@/services/mapService'
 import { databaseApi } from '@/services/api'
 import type { MapPin, MapViewport, DroneTrajectory, DroneTrajectoryPoint, DetectionCheckpoint } from '@/types/map'
-import type { DronePosition, RFDetection, OperatorPosition } from '@/types/database'
+import type { DronePosition, RFDetection, OperatorPosition, GpsUnitPosition } from '@/types/database'
 
 export function useMapPins() {
   const mapStore = useMapStore()
@@ -86,7 +86,7 @@ export function useMapPins() {
         if (pin.type === 'target') {
           mapStore.focusDetectionPin(pin)
         } else {
-          mapStore.flyToPin(pin) // This will also call selectPin internally
+        mapStore.flyToPin(pin) // This will also call selectPin internally
         }
       })
 
@@ -174,16 +174,17 @@ export function useMapPins() {
       }
       
       // Fetch real data from database
-      const [dronePositionsResponse, rfDetectionsResponse, operatorPositionsResponse, drones, receiverLogs] = await Promise.all([
+      const [
+        dronePositionsResponse,
+        rfDetectionsResponse,
+        operatorPositionsResponse,
+        gpsUnitPositionsResponse
+      ] = await Promise.all([
         databaseApi.getDronePositions(100),
         databaseApi.getRFDetections(50),
         databaseApi.getOperatorPositions(50),
-        
-        databaseApi.getDrones(),
-        databaseApi.getTargets()
+        databaseApi.getGpsUnitPositions(100)
       ])
-
-      console.log(drones, receiverLogs)
       
       const pins: MapPin[] = []
       const droneTrajectoryMap = new Map<string, { points: DroneTrajectoryPoint[], positions: DronePosition[], latestPosition: DronePosition | null }>()
@@ -197,6 +198,30 @@ export function useMapPins() {
         const nearZeroThreshold = 0.0001
         if (Math.abs(lat) < nearZeroThreshold && Math.abs(lng) < nearZeroThreshold) return false
         return true
+      }
+
+      const parseCoordinate = (value: unknown): number | null => {
+        if (value === null || value === undefined) return null
+        if (typeof value === 'number') {
+          return Number.isFinite(value) ? value : null
+        }
+        if (typeof value === 'string') {
+          const parsed = parseFloat(value)
+          return Number.isFinite(parsed) ? parsed : null
+        }
+        return null
+      }
+
+      const extractCoordinate = (source: Record<string, any>, keys: string[]): number | null => {
+        for (const key of keys) {
+          if (key in source) {
+            const value = parseCoordinate(source[key])
+            if (value !== null) {
+              return value
+            }
+          }
+        }
+        return null
       }
       
       // Convert drone positions to map pins
@@ -265,7 +290,15 @@ export function useMapPins() {
             droneTrajectoryPoints.set(droneId, filteredPoints)
           }
 
-          const detections = droneDetectionsMap.get(droneId) || []
+          const systemAssociation = markerPosition.system_id ?? entry.latestPosition?.system_id ?? null
+          const detectionKeys = [
+            String(droneId),
+            ...(systemAssociation !== null && systemAssociation !== undefined ? [`system:${systemAssociation}`] : [])
+          ]
+          const detections =
+            detectionKeys.reduce<DetectionCheckpoint[] | undefined>((acc, key) => {
+              return acc && acc.length > 0 ? acc : droneDetectionsMap.get(key)
+            }, undefined) || []
 
           if (!isValidCoordinate(latestLat, latestLng)) {
             const fallbackPosition = [...entry.positions].reverse().find(pos => {
@@ -304,11 +337,12 @@ export function useMapPins() {
             type: 'drone',
             status: 'active',
             priority: 'medium',
-            data: {
+          data: {
               drone_id: markerPosition.drone_id,
               altitude: markerPosition.altitude,
               speed: markerPosition.speed,
               receiver_type: markerPosition.receiver_type,
+              system_id: markerPosition.system_id ?? entry.latestPosition?.system_id ?? null,
               timestamp: markerPosition.time,
               trajectory: filteredPoints,
               detections
@@ -321,16 +355,28 @@ export function useMapPins() {
       // Aggregate RF detections per drone
       if (rfDetectionsResponse.success && rfDetectionsResponse.data) {
         rfDetectionsResponse.data.forEach((detection: RFDetection) => {
-          const droneKey = String(detection.drone_id)
-          const checkpoints = droneDetectionsMap.get(droneKey) || []
-          checkpoints.push({
+          const checkpoint: DetectionCheckpoint = {
             id: detection.id,
             timestamp: detection.time,
             frequency: detection.frequency,
             signalStrength: detection.signal_strength,
-            status: detection.detection_status
-          })
-          droneDetectionsMap.set(droneKey, checkpoints)
+            status: detection.detection_status,
+            systemId: detection.system_id ?? null
+          }
+
+          const addDetectionToMap = (key: string) => {
+            const list = droneDetectionsMap.get(key) || []
+            list.push(checkpoint)
+            droneDetectionsMap.set(key, list)
+          }
+
+          if (detection.drone_id !== null && detection.drone_id !== undefined) {
+            addDetectionToMap(String(detection.drone_id))
+          }
+
+          if (detection.system_id !== null && detection.system_id !== undefined) {
+            addDetectionToMap(`system:${detection.system_id}`)
+          }
         })
       }
       
@@ -349,7 +395,7 @@ export function useMapPins() {
             : 'Operator (unassigned)'
 
           acc.push({
-            id: `operator-pos-${position.id}`,
+          id: `operator-pos-${position.id}`,
             lat,
             lng,
             title: label,
@@ -359,16 +405,59 @@ export function useMapPins() {
             type: 'friendly',
             status: 'active',
             priority: 'low',
-            data: {
-              drone_id: position.drone_id,
-              timestamp: position.time
-            },
+          data: {
+            drone_id: position.drone_id,
+              system_id: position.system_id ?? null,
             timestamp: position.time
+          },
+          timestamp: position.time
           })
 
           return acc
         }, [])
         pins.push(...operatorPins)
+      }
+
+      if (gpsUnitPositionsResponse.success && gpsUnitPositionsResponse.data) {
+        const gpsPins = gpsUnitPositionsResponse.data.reduce<MapPin[]>((acc, unit: GpsUnitPosition) => {
+          const lat = extractCoordinate(unit, ['latitude', 'lat', 'latitude_deg', 'gps_lat', 'geo_lat', 'y'])
+          const lng = extractCoordinate(unit, ['longitude', 'lng', 'lon', 'longitude_deg', 'gps_lng', 'gps_lon', 'geo_lon', 'x'])
+          
+          if (lat === null || lng === null || !isValidCoordinate(lat, lng)) {
+            return acc
+          }
+
+          const unitLabel = unit.system_id ?? unit.unit_id ?? unit.name ?? unit.id
+          const statusRaw = typeof unit.status === 'string' ? unit.status.toLowerCase() : null
+          const status = statusRaw === 'inactive' || statusRaw === 'offline' ? 'inactive' : 'active'
+
+          acc.push({
+            id: `gps-unit-${unitLabel}`,
+            lat,
+            lng,
+            title: `GPS Unit ${unitLabel}`,
+            description: unit.status ? `Status: ${unit.status}` : 'Static GPS device position',
+            type: 'sensor',
+            status,
+            priority: 'medium',
+            data: {
+              unit_id: unit.unit_id,
+              system_id: unit.system_id ?? null,
+              status: unit.status,
+              timestamp: unit.time ?? null
+            },
+            timestamp: unit.time ?? new Date().toISOString()
+          })
+
+          return acc
+        }, [])
+
+        pins.push(...gpsPins)
+      } else {
+        console.warn('[MapPins] GPS unit positions unavailable or empty', {
+          success: gpsUnitPositionsResponse.success,
+          error: gpsUnitPositionsResponse.error
+        })
       }
       
 
