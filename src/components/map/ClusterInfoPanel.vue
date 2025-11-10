@@ -190,9 +190,11 @@ const closePanel = () => {
 }
 
 const selectPin = (pin: MapPin) => {
-  // Zoom to the pin on the map
-  mapStore.flyToPin(pin)
-  // Emit the select-pin event to update the info panel
+  if (pin.type === 'target') {
+    mapStore.focusDetectionPin(pin)
+  } else {
+    mapStore.flyToPin(pin)
+  }
   emit('select-pin', pin)
 }
 

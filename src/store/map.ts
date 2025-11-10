@@ -15,6 +15,11 @@ export const useMapStore = defineStore('map', () => {
   })
   const isLoading = ref(false)
   const mapInstance = ref<any>(null) // Will hold Leaflet map instance
+  const focusedDronePinId = ref<string | null>(null)
+  const focusedDroneTargetId = ref<string | null>(null)
+  const isFocusMode = ref(false)
+  const focusedTrajectoryTimestamp = ref<string | null>(null)
+  const focusedDetectionId = ref<number | null>(null)
 
   // Viewport tracking for panels
   const availableViewport = ref({
@@ -32,6 +37,7 @@ export const useMapStore = defineStore('map', () => {
   const hasSelectedPin = computed(() => selectedPin.value !== null)
   const hasSelectedCluster = computed(() => selectedCluster.value !== null)
   const availableViewportData = computed(() => availableViewport.value)
+  const focusModeActive = computed(() => isFocusMode.value && !!focusedDronePinId.value)
 
   // Actions
   const setMapInstance = (map: any) => {
@@ -63,12 +69,47 @@ export const useMapStore = defineStore('map', () => {
   }
 
   const selectPin = (pin: MapPin | null, keepCluster: boolean = false) => {
-    console.log('Store: selectPin called with:', pin?.id, pin?.title, 'keepCluster:', keepCluster)
-    console.trace('Store selectPin call stack:') // This will show us what's calling it
     selectedPin.value = pin
     // Only clear cluster selection if not keeping it (e.g., when selecting pin from cluster)
     if (pin && !keepCluster) {
       selectedCluster.value = null
+    }
+
+    if (pin?.type === 'drone') {
+      const droneTarget = pin.data?.drone_id !== undefined && pin.data?.drone_id !== null
+        ? String(pin.data.drone_id)
+        : null
+      enterFocusMode(pin.id, droneTarget)
+
+      if (Array.isArray(pin.data?.trajectory) && pin.data.trajectory.length > 0) {
+        const lastPoint = pin.data.trajectory[pin.data.trajectory.length - 1]
+        setFocusedTrajectoryTimestamp(lastPoint.timestamp)
+      } else {
+        setFocusedTrajectoryTimestamp(null)
+      }
+      setFocusedDetectionId(null)
+    } else if (pin?.type === 'target' && pin?.data) {
+      const detectionId =
+        typeof pin.data.id === 'number'
+          ? pin.data.id
+          : Number(String(pin.id).replace('rf-detection-', ''))
+
+      if (!Number.isNaN(detectionId)) {
+        setFocusedDetectionId(detectionId)
+      }
+
+      if (pin.data.drone_id !== undefined && pin.data.drone_id !== null) {
+        const droneTarget = String(pin.data.drone_id)
+        const existingDronePin = pins.value.find(p => p.type === 'drone' && String(p.data?.drone_id) === droneTarget)
+        const focusPinId = existingDronePin?.id ?? focusedDronePinId.value ?? `drone-${droneTarget}`
+        enterFocusMode(focusPinId, droneTarget)
+      } else if (!isFocusMode.value) {
+        enterFocusMode(pin.id, null)
+      }
+
+      setFocusedTrajectoryTimestamp(pin.data?.timestamp ?? null)
+    } else {
+      exitFocusMode()
     }
     
     // Trigger highlighting on the map
@@ -89,6 +130,7 @@ export const useMapStore = defineStore('map', () => {
   const clearSelection = () => {
     selectedPin.value = null
     selectedCluster.value = null
+    exitFocusMode()
   }
 
   const updateAvailableViewport = (panelWidths: { cluster: number, info: number }) => {
@@ -119,28 +161,27 @@ export const useMapStore = defineStore('map', () => {
   }
 
   const flyToPin = (pin: MapPin) => {
+    if (pin.type === 'target') {
+      focusDetectionPin(pin)
+      return
+    }
+
     if (mapInstance.value) {
-      // Use a higher zoom level to ensure we zoom IN to the drone
-      // Check current zoom and use a higher level if we're already close
       const currentZoom = mapInstance.value.getZoom()
       const targetZoom = Math.min(Math.max(currentZoom + 2, 16), 18) // Zoom in by 2 levels, between 16-18
-      
-      // Check if panels are visible or will be visible after selection
+
       const hasClusterPanel = selectedCluster.value !== null
       const hasInfoPanel = selectedPin.value !== null
       const willHaveInfoPanel = !hasInfoPanel // If no info panel currently, we're about to show one
-      
-      // Calculate panel widths for padding
+
       const clusterWidth = hasClusterPanel ? 350 : 0
       const infoWidth = hasInfoPanel ? 350 : (willHaveInfoPanel ? 350 : 0)
       const totalPanelWidth = clusterWidth + infoWidth
-      
+
       if (totalPanelWidth > 0) {
-        // Panels are visible or will be visible, adjust centering accordingly
         const pinLatLng = [pin.lat, pin.lng]
         const bounds = L.latLngBounds([pinLatLng, pinLatLng])
-        
-        // Use fitBounds with padding to center the pin in the visible area
+
         mapInstance.value.fitBounds(bounds, {
           paddingTopLeft: [totalPanelWidth, 0],
           paddingBottomRight: [0, 0],
@@ -148,11 +189,35 @@ export const useMapStore = defineStore('map', () => {
           animate: true
         })
       } else {
-        // No panels visible or will be visible, center normally
         mapInstance.value.flyTo([pin.lat, pin.lng], targetZoom)
       }
+      console.log('[Map] flyToPin', { pinId: pin.id, currentZoom, targetZoom })
     }
     // Keep cluster selection if there's an active cluster
+    const keepCluster = selectedCluster.value !== null
+    selectPin(pin, keepCluster)
+  }
+
+  const focusDetectionPin = (pin: MapPin) => {
+    if (mapInstance.value) {
+      const currentZoom = mapInstance.value.getZoom()
+      mapInstance.value.panTo([pin.lat, pin.lng], { animate: false })
+      console.log('[Map] focusDetectionPin pan', {
+        pinId: pin.id,
+        zoom: currentZoom
+      })
+      const preferredZoom = currentZoom // For now we expect no change, but this can evolve
+      if (currentZoom !== preferredZoom) {
+        console.warn('[Map] focusDetectionPin zoom mismatch', {
+          currentZoom,
+          preferredZoom
+        })
+      }
+      // Ensure zoom stays fixed even if other flows try to adjust it
+      requestAnimationFrame(() => {
+        mapInstance.value?.setView([pin.lat, pin.lng], preferredZoom, { animate: false })
+      })
+    }
     const keepCluster = selectedCluster.value !== null
     selectPin(pin, keepCluster)
   }
@@ -193,11 +258,36 @@ export const useMapStore = defineStore('map', () => {
   const resetMap = () => {
     pins.value = []
     selectedPin.value = null
+    focusedDronePinId.value = null
+    focusedDroneTargetId.value = null
+    isFocusMode.value = false
     viewport.value = {
       center: [42.6977, 23.3219], // Sofia, Bulgaria (where most drones are located)
       zoom: 10
     }
     mapInstance.value = null
+  }
+
+  const enterFocusMode = (dronePinId: string, droneTargetId: string | null = null) => {
+    focusedDronePinId.value = dronePinId
+    focusedDroneTargetId.value = droneTargetId
+    isFocusMode.value = true
+  }
+
+  const exitFocusMode = () => {
+    focusedDronePinId.value = null
+    focusedDroneTargetId.value = null
+    isFocusMode.value = false
+    focusedTrajectoryTimestamp.value = null
+    focusedDetectionId.value = null
+  }
+
+  const setFocusedTrajectoryTimestamp = (timestamp: string | null) => {
+    focusedTrajectoryTimestamp.value = timestamp
+  }
+
+  const setFocusedDetectionId = (id: number | null) => {
+    focusedDetectionId.value = id
   }
 
   return {
@@ -208,6 +298,11 @@ export const useMapStore = defineStore('map', () => {
     viewport,
     isLoading,
     mapInstance,
+    focusedDronePinId,
+    focusedDroneTargetId,
+    isFocusMode,
+    focusedTrajectoryTimestamp,
+    focusedDetectionId,
     
     // Getters
     selectedPinData,
@@ -216,6 +311,7 @@ export const useMapStore = defineStore('map', () => {
     hasSelectedPin,
     hasSelectedCluster,
     availableViewportData,
+    focusModeActive,
     
     // Actions
     setMapInstance,
@@ -233,7 +329,12 @@ export const useMapStore = defineStore('map', () => {
     searchPins,
     filterPinsByType,
     setLoading,
-    resetMap
+    resetMap,
+    enterFocusMode,
+    exitFocusMode,
+    setFocusedTrajectoryTimestamp,
+    setFocusedDetectionId,
+    focusDetectionPin
   }
 })
 

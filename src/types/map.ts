@@ -11,6 +11,25 @@ export interface MapPin {
   timestamp: string
 }
 
+export interface DroneTrajectoryPoint {
+  lat: number
+  lng: number
+  timestamp: string
+}
+
+export interface DroneTrajectory {
+  droneId: string
+  points: DroneTrajectoryPoint[]
+}
+
+export interface DetectionCheckpoint {
+  id: number
+  timestamp: string
+  frequency: number | null
+  signalStrength: number | null
+  status: boolean
+}
+
 export interface MapViewport {
   center: [number, number]
   zoom: number

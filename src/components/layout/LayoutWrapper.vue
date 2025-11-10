@@ -16,8 +16,10 @@
 
           <!-- Info Panel -->
           <InfoPanel :is-open="isInfoPanelOpen" :selected-pin="selectedPin"
-            :has-cluster-panel="mapStore.hasSelectedCluster" @close="closeInfoPanel"
-            @pin-deselected="handlePinDeselected" @zoom-to-map-pin="handleZoomToMapPin" />
+            :has-cluster-panel="mapStore.hasSelectedCluster" :focus-mode-active="mapStore.focusModeActive"
+            @close="closeInfoPanel" @pin-deselected="handlePinDeselected" @zoom-to-map-pin="handleZoomToMapPin"
+            @exit-focus="handleExitFocusMode" @enter-focus="handleEnterFocusMode"
+            @focus-trajectory-point="handleFocusTrajectoryPoint" @focus-detection="handleFocusDetection" />
         </div>
 
         <!-- Map/Content Area -->
@@ -33,12 +35,11 @@
 import { ref, computed, watch } from 'vue'
 import { useMapStore } from '@/store/map'
 import ClusterInfoPanel from '@/components/map/ClusterInfoPanel.vue'
-import { useMapPins } from '@/composables/useMapPins'
 import { mapService } from '@/services/mapService'
 import InfoPanel from './InfoPanel.vue'
 import Sidebar from './Sidebar.vue'
 import TopNav from './TopNav.vue'
-import type { MapPin } from '@/types/map'
+import type { MapPin, DroneTrajectoryPoint, DetectionCheckpoint } from '@/types/map'
 
 // Props
 interface Props {
@@ -79,9 +80,16 @@ const handleZoomToCluster = (cluster: any) => {
   mapService.expandCluster(cluster)
 }
 
-const handleZoomToMapPin = (selectedPin: MapPin) => {
-  // Use the zoomToMapPin method to focus on individual pins
-  mapService.zoomToMapPin(selectedPin)
+const handleExitFocusMode = () => {
+  mapStore.exitFocusMode()
+}
+
+const handleFocusDetection = (detection: DetectionCheckpoint) => {
+  if (!detection) return
+  mapStore.setFocusedDetectionId(detection.id)
+  mapService.panToDetection(detection.id)
+  const service = mapService as unknown as { highlightDetection?: (id: number | null) => void }
+  service.highlightDetection?.(detection.id)
 }
 
 const closeInfoPanel = () => {

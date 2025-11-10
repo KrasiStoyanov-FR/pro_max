@@ -12,13 +12,24 @@
       :class="[isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none']"
       :style="{ transitionDelay: isOpen ? '150ms' : '0ms' }">
       <!-- Header -->
-      <div class="flex items-center justify-between p-4 border-b border-white/10">
-        <h3 class="font-semibold text-white">{{ selectedPin ? selectedPin.title : 'Select a Target' }}</h3>
+      <div class="flex items-center justify-between p-4 border-b border-white/10 space-x-3">
+        <h3 class="font-semibold text-white truncate">{{ selectedPin ? selectedPin.title : 'Select a Target' }}</h3>
 
-        <button @click="$emit('close')"
-          class="p-1 text-neutral-200 hover:text-white focus:outline-none focus:ring-2 focus:ring-neutral-500 rounded-md">
-          <PhX :size="20" />
-        </button>
+        <div class="flex items-center space-x-2">
+          <button v-if="focusModeActive" @click="$emit('exit-focus')"
+            class="px-2 py-1 text-xs font-medium rounded-md bg-primary-500/20 text-primary-200 hover:bg-primary-500/30 transition-colors">
+            Exit focus
+          </button>
+          <button v-else-if="selectedPin?.type === 'drone'"
+            @click="$emit('enter-focus')"
+            class="px-2 py-1 text-xs font-medium rounded-md bg-primary-500/20 text-primary-200 hover:bg-primary-500/30 transition-colors">
+            Enter focus
+          </button>
+          <button @click="$emit('close')"
+            class="p-1 text-neutral-200 hover:text-white focus:outline-none focus:ring-2 focus:ring-neutral-500 rounded-md">
+            <PhX :size="20" />
+          </button>
+        </div>
       </div>
 
       <!-- Panel Content -->
@@ -203,6 +214,70 @@
             <p class="text-sm text-white">{{ selectedPin.data.zone }}</p>
           </div>
         </div>
+
+        <div v-if="detectionCheckpoints.length" class="space-y-2">
+          <div class="flex items-start space-x-3">
+            <PhMapTrifold :size="16" class="text-primary-50 mt-0.5" />
+            <div class="flex-1">
+              <p class="text-xs text-primary-200 uppercase tracking-wide">Detections</p>
+              <p class="text-sm text-white">{{ detectionCheckpoints.length }} checkpoints</p>
+            </div>
+          </div>
+
+          <ul class="space-y-2 max-h-40 overflow-y-auto pr-1">
+            <li
+              v-for="detection in detectionCheckpoints"
+              :key="detection.id"
+              :class="[
+                'bg-white/5 rounded-lg p-3 border border-white/10 space-y-1 cursor-pointer transition-colors',
+                focusModeActive && isDetectionFocused(detection) ? 'bg-primary-500/20 border-primary-400/60' : 'hover:bg-white/10'
+              ]"
+              @click="handleDetectionClick(detection)"
+            >
+              <div class="flex items-center justify-between text-xs text-neutral-200">
+                <span>#{{ detection.id }}</span>
+                <span>{{ formatDetectionTimestamp(detection.timestamp) }}</span>
+              </div>
+              <div class="flex flex-wrap gap-3 text-xs text-white/80">
+                <span v-if="detection.frequency !== null">Freq: {{ detection.frequency }} MHz</span>
+                <span v-if="detection.signalStrength !== null">Signal: {{ detection.signalStrength }} dBm</span>
+                <span>Status: <span :class="detection.status ? 'text-green-400' : 'text-red-400'">{{ detection.status ? 'Active' : 'Inactive' }}</span></span>
+              </div>
+            </li>
+          </ul>
+        </div>
+
+        <div v-if="trajectoryPoints.length" class="space-y-2">
+          <div class="flex items-start space-x-3">
+            <PhMapTrifold :size="16" class="text-primary-50 mt-0.5" />
+            <div class="flex-1">
+              <p class="text-xs text-primary-200 uppercase tracking-wide">Trajectory</p>
+              <p class="text-sm text-white">Last {{ Math.min(trajectoryPoints.length, 20) }} points</p>
+            </div>
+          </div>
+
+          <ul class="space-y-2 max-h-48 overflow-y-auto pr-1">
+            <li
+              v-for="(point, index) in trajectoryPoints.slice(-20)"
+              :key="`${point.timestamp}-${index}`"
+              :class="[
+                'bg-white/5 rounded-lg p-3 border border-white/10 space-y-1 cursor-pointer transition-colors',
+                activeTrajectoryTimestamp === point.timestamp ? 'bg-primary-500/20 border-primary-400/60' : 'hover:bg-white/10'
+              ]"
+              @click="handleTrajectoryPointClick(point)"
+            >
+              <div class="flex items-center justify-between text-xs text-neutral-200">
+                <span>{{ formatTrajectoryTimestamp(point.timestamp) }}</span>
+                <span v-if="index === trajectoryPoints.slice(-20).length - 1"
+                  class="text-primary-300 font-medium">Latest</span>
+              </div>
+              <div class="flex flex-wrap gap-3 text-xs text-white/80">
+                <span>Lat: {{ formatCoordinate(point.lat) }}</span>
+                <span>Lng: {{ formatCoordinate(point.lng) }}</span>
+              </div>
+            </li>
+          </ul>
+        </div>
       </div>
 
       <!-- Empty state -->
@@ -228,23 +303,32 @@
 
 
 <script setup lang="ts">
+import { computed, watch } from 'vue'
 import { PhX, PhPaperPlaneTilt, PhCube, PhGauge, PhIdentificationCard, PhWifiHigh, PhMapTrifold, PhMapPin, PhWarning } from '@phosphor-icons/vue'
-import type { MapPin } from '@/types/map'
+import { useMapStore } from '@/store/map'
+import type { MapPin, DetectionCheckpoint, DroneTrajectoryPoint } from '@/types/map'
 
 // Props
 interface Props {
   isOpen: boolean
   selectedPin: MapPin | null
   hasClusterPanel?: boolean
+  focusModeActive?: boolean
 }
 
 const props = defineProps<Props>()
+
+const mapStore = useMapStore()
 
 // Emits
 const emit = defineEmits<{
   'close': []
   'pin-deselected': []
   'zoom-to-map-pin': [selectedPin: MapPin]
+  'exit-focus': []
+  'enter-focus': []
+  'focus-trajectory-point': [point: DroneTrajectoryPoint]
+  'focus-detection': [detection: DetectionCheckpoint]
 }>()
 
 // Methods
@@ -253,4 +337,55 @@ const zoomToMapPin = () => {
     emit('zoom-to-map-pin', props.selectedPin)
   }
 }
+
+const detectionCheckpoints = computed<DetectionCheckpoint[]>(() => {
+  const rawDetections = props.selectedPin?.data?.detections
+  if (!Array.isArray(rawDetections)) return []
+  return rawDetections as DetectionCheckpoint[]
+})
+
+const trajectoryPoints = computed<DroneTrajectoryPoint[]>(() => {
+  const rawTrajectory = props.selectedPin?.data?.trajectory
+  if (!Array.isArray(rawTrajectory)) return []
+  return rawTrajectory as DroneTrajectoryPoint[]
+})
+
+const formatDetectionTimestamp = (timestamp?: string) => {
+  if (!timestamp) return 'Unknown'
+  const date = new Date(timestamp)
+  if (Number.isNaN(date.getTime())) return 'Invalid'
+  return `${date.toLocaleDateString()} ${date.toLocaleTimeString()}`
+}
+
+const formatTrajectoryTimestamp = (timestamp?: string) => {
+  if (!timestamp) return 'Unknown'
+  const date = new Date(timestamp)
+  if (Number.isNaN(date.getTime())) return 'Invalid'
+  return date.toLocaleTimeString()
+}
+
+const formatCoordinate = (value: number) => {
+  return Number.isFinite(value) ? value.toFixed(5) : 'N/A'
+}
+
+const activeTrajectoryTimestamp = computed(() => mapStore.focusedTrajectoryTimestamp)
+
+const handleTrajectoryPointClick = (point: DroneTrajectoryPoint) => {
+  mapStore.setFocusedTrajectoryTimestamp(point.timestamp)
+  emit('focus-trajectory-point', point)
+}
+
+const handleDetectionClick = (detection: DetectionCheckpoint) => {
+  emit('enter-focus')
+  emit('focus-detection', detection)
+}
+
+const isDetectionFocused = (detection: DetectionCheckpoint) => {
+  return mapStore.focusedDetectionId === detection.id
+}
+
+watch(() => props.selectedPin?.data?.trajectory, () => {
+  mapStore.setFocusedTrajectoryTimestamp(null)
+  mapStore.setFocusedDetectionId(null)
+})
 </script>

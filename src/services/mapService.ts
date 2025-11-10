@@ -1,5 +1,5 @@
 import L from 'leaflet'
-import type { MapPin, MapViewport, MapControl } from '@/types/map'
+import type { MapPin, MapViewport, MapControl, DroneTrajectory, DroneTrajectoryPoint } from '@/types/map'
 import { getActiveZones, type DroneZone } from './droneZones'
 
 // Clustering configuration
@@ -61,6 +61,12 @@ class MapService {
   private clusters: Map<string, PinCluster> = new Map()
   private allPins: MapPin[] = []
   private highlightMarker: L.Marker | null = null
+  private focusState: { active: boolean; dronePinId: string | null; droneTargetId: string | null } = { active: false, dronePinId: null, droneTargetId: null }
+  private checkpointMarkers: Map<string, L.Marker[]> = new Map()
+  private droneTrajectories: Map<string, L.Polyline> = new Map()
+  private onTrajectoryPointClickCallback: ((point: DroneTrajectoryPoint) => void) | null = null
+  private detectionsById: Map<number, { marker: L.Marker, pin: MapPin }> = new Map()
+  private highlightedDetectionId: number | null = null
 
   async init(container: HTMLElement, options: MapServiceOptions): Promise<L.Map> {
     // Lazy load Leaflet to enable code-splitting
@@ -149,9 +155,203 @@ class MapService {
 
     // Apply clustering based on zoom level (this will clear and redraw everything)
     this.applyClustering()
+    this.registerDetectionMarkers(pins)
 
     // Add drone operation zones
     // this.addDroneZones() // Disabled - using only real data from database
+
+    this.updateMarkerFocusStyles()
+  }
+
+  applyFocusMode(dronePinId: string | null, droneTargetId: string | number | null = null): void {
+    this.focusState = {
+      active: !!dronePinId,
+      dronePinId,
+      droneTargetId: droneTargetId !== null && droneTargetId !== undefined ? String(droneTargetId) : null
+    }
+
+    this.updateMarkerFocusStyles()
+  }
+
+  private updateMarkerFocusStyles(): void {
+    if (!this.focusState.active) {
+      this.markers.forEach(marker => {
+        const element = marker.getElement()
+        if (element) {
+          element.classList.remove('marker--faded')
+          element.classList.remove('marker--hidden')
+          element.classList.remove('marker--focus')
+        }
+      })
+      this.detectionsById.forEach(({ marker }) => {
+        const element = marker.getElement()
+        if (element) {
+          element.classList.remove('marker--hidden')
+          element.classList.remove('marker--detection-focus')
+          element.classList.remove('marker--detection-selected')
+        }
+      })
+      return
+    }
+
+    this.markers.forEach(marker => {
+      const element = marker.getElement()
+      if (!element) return
+
+      const pinData = (marker as any).pinData as MapPin | undefined
+
+      const matchesDronePin = pinData?.id === this.focusState.dronePinId
+      const pinDroneTargetId = pinData?.data?.drone_id !== undefined && pinData?.data?.drone_id !== null
+        ? String(pinData.data.drone_id)
+        : null
+      const matchesDroneTarget = this.focusState.droneTargetId !== null && pinDroneTargetId === this.focusState.droneTargetId
+
+      if (matchesDronePin || matchesDroneTarget) {
+        element.classList.add('marker--focus')
+        element.classList.remove('marker--faded')
+        element.classList.remove('marker--hidden')
+      } else {
+        element.classList.remove('marker--focus')
+        element.classList.remove('marker--faded')
+        element.classList.add('marker--hidden')
+      }
+    })
+
+    this.detectionsById.forEach(({ marker, pin }, key) => {
+      const element = marker.getElement()
+      if (!element) return
+
+      const pinDroneTargetId = pin.data?.drone_id !== undefined && pin.data?.drone_id !== null
+        ? String(pin.data.drone_id)
+        : null
+
+      if (
+        pin.id === this.focusState.dronePinId ||
+        (this.focusState.droneTargetId !== null && pinDroneTargetId === this.focusState.droneTargetId)
+      ) {
+        element.classList.remove('marker--hidden')
+        element.classList.add('marker--detection-focus')
+        if (this.highlightedDetectionId !== null) {
+          if (key === this.highlightedDetectionId) {
+            element.classList.add('marker--detection-selected')
+          } else {
+            element.classList.remove('marker--detection-selected')
+          }
+        } else {
+          element.classList.remove('marker--detection-selected')
+        }
+      } else {
+        element.classList.add('marker--hidden')
+        element.classList.remove('marker--detection-focus')
+        element.classList.remove('marker--detection-selected')
+      }
+    })
+  }
+
+  showTrajectoryCheckpoints(dronePinId: string, points: DroneTrajectoryPoint[]): void {
+    if (!this.map) return
+
+    this.clearTrajectoryCheckpoints(dronePinId)
+
+    const markers: L.Marker[] = points.map(point => {
+      const marker = L.marker([point.lat, point.lng], {
+        icon: L.divIcon({
+          className: 'trajectory-checkpoint',
+          html: `
+            <div class="trajectory-checkpoint__wrapper">
+              <div class="trajectory-checkpoint__pulse"></div>
+              <div class="trajectory-checkpoint__dot"></div>
+            </div>
+          `,
+          iconSize: [16, 16],
+          iconAnchor: [8, 8]
+        })
+      })
+
+      ; (marker as any).checkpointData = point
+
+      marker.on('click', () => {
+        if (this.map) {
+          const zoom = this.map.getZoom()
+          console.log('[Map] trajectory checkpoint click', { zoom, lat: point.lat, lng: point.lng })
+          this.map.panTo([point.lat, point.lng], { animate: false })
+        }
+        this.highlightTrajectoryCheckpoint(dronePinId, point.timestamp)
+        this.onTrajectoryPointClickCallback?.(point)
+      })
+
+      return marker.addTo(this.map!)
+    })
+
+    this.checkpointMarkers.set(dronePinId, markers)
+  }
+
+  clearTrajectoryCheckpoints(dronePinId?: string): void {
+    if (!this.map) return
+
+    if (dronePinId) {
+      const markers = this.checkpointMarkers.get(dronePinId)
+      markers?.forEach(marker => this.map!.removeLayer(marker))
+      this.checkpointMarkers.delete(dronePinId)
+      return
+    }
+
+    this.checkpointMarkers.forEach(markers => {
+      markers.forEach(marker => this.map!.removeLayer(marker))
+    })
+    this.checkpointMarkers.clear()
+  }
+
+  highlightTrajectoryCheckpoint(dronePinId: string, timestamp: string): void {
+    const markers = this.checkpointMarkers.get(dronePinId)
+    if (!markers) return
+
+    markers.forEach(marker => {
+      const element = marker.getElement()
+      if (!element) return
+      const data = (marker as any).checkpointData as DroneTrajectoryPoint | undefined
+      if (data && data.timestamp === timestamp) {
+        element.classList.add('trajectory-checkpoint--active')
+      } else {
+        element.classList.remove('trajectory-checkpoint--active')
+      }
+    })
+  }
+
+  onTrajectoryPointClick(callback: (point: DroneTrajectoryPoint) => void): void {
+    this.onTrajectoryPointClickCallback = callback
+  }
+
+  panToDetection(detectionId: number): void {
+    const detection = this.detectionsById.get(detectionId)
+    if (!detection || !this.map) return
+
+    const { marker } = detection
+    const latLng = marker.getLatLng()
+    const zoom = this.map.getZoom()
+    console.log('[Map] detection pan', { detectionId, zoom })
+    this.map.panTo(latLng, { animate: false })
+    this.highlightDetection(detectionId)
+  }
+
+  highlightDetection(detectionId: number | null): void {
+    this.highlightedDetectionId = detectionId
+
+    this.detectionsById.forEach(({ marker }, key) => {
+      const element = marker.getElement()
+      if (!element) return
+
+      if (detectionId !== null && key === detectionId) {
+        element.classList.add('marker--detection-selected')
+        element.classList.add('marker--detection-focus')
+        element.classList.remove('marker--hidden')
+      } else {
+        element.classList.remove('marker--detection-selected')
+        if (!this.focusState.active) {
+          element.classList.remove('marker--detection-focus')
+        }
+      }
+    })
   }
 
   highlightSelectedPin(selectedPin: MapPin | null): void {
@@ -206,6 +406,8 @@ class MapService {
       // If selectedPin is null, clear the fade effect
       this.clearFadeEffect()
     }
+
+    this.updateMarkerFocusStyles()
   }
 
   private clearHighlightMarker(): void {
@@ -891,6 +1093,56 @@ class MapService {
     // this.clearHighlightMarker()
   }
 
+  updateDroneTrajectories(trajectories: DroneTrajectory[]): void {
+    if (!this.map) return
+
+    const activeIds = new Set<string>()
+
+    trajectories.forEach(trajectory => {
+      // Only draw polylines when we have at least two points
+      if (!trajectory.points || trajectory.points.length < 2) {
+        this.removeDroneTrajectory(trajectory.droneId)
+        return
+      }
+
+      const latLngs: L.LatLngExpression[] = trajectory.points.map(point => [point.lat, point.lng])
+      activeIds.add(trajectory.droneId)
+
+      let polyline = this.droneTrajectories.get(trajectory.droneId)
+      if (!polyline) {
+        polyline = L.polyline(latLngs, {
+          color: '#22c55e',
+          weight: 3,
+          opacity: 0.8,
+          dashArray: '4 6',
+          lineCap: 'round'
+        })
+        polyline.addTo(this.map)
+        this.droneTrajectories.set(trajectory.droneId, polyline)
+      } else {
+        polyline.setLatLngs(latLngs)
+        if (!this.map.hasLayer(polyline)) {
+          polyline.addTo(this.map)
+        }
+      }
+    })
+
+    // Remove any trajectories that are no longer active
+    Array.from(this.droneTrajectories.keys()).forEach(droneId => {
+      if (!activeIds.has(droneId)) {
+        this.removeDroneTrajectory(droneId)
+      }
+    })
+  }
+
+  private removeDroneTrajectory(droneId: string): void {
+    const polyline = this.droneTrajectories.get(droneId)
+    if (polyline && this.map) {
+      this.map.removeLayer(polyline)
+    }
+    this.droneTrajectories.delete(droneId)
+  }
+
   getBounds(): L.LatLngBounds | null {
     return this.map ? this.map.getBounds() : null
   }
@@ -972,13 +1224,44 @@ class MapService {
 
   destroy(): void {
     if (this.map) {
+      this.clearTrajectoryCheckpoints()
+      this.droneTrajectories.forEach(polyline => {
+        if (polyline) {
+          this.map!.removeLayer(polyline)
+        }
+      })
+      this.droneTrajectories.clear()
+      this.detectionsById.clear()
       this.map.remove()
       this.map = null
     }
     this.markers.clear()
     this.controls.clear()
     this.onPinClickCallback = null
+    this.onTrajectoryPointClickCallback = null
     this.currentTileLayer = null
+    this.focusState = { active: false, dronePinId: null, droneTargetId: null }
+    this.highlightedDetectionId = null
+  }
+
+  private registerDetectionMarkers(pins: MapPin[]): void {
+    this.detectionsById.clear()
+
+    pins.forEach(pin => {
+      if (pin.type === 'target') {
+        const marker = this.markers.get(pin.id)
+        if (!marker) return
+
+        const detectionId =
+          typeof pin.data?.id === 'number'
+            ? pin.data.id
+            : Number(String(pin.id).replace('rf-detection-', ''))
+
+        if (!Number.isNaN(detectionId)) {
+          this.detectionsById.set(detectionId, { marker, pin })
+        }
+      }
+    })
   }
 }
 
