@@ -234,14 +234,38 @@
               ]"
               @click="handleDetectionClick(detection)"
             >
-              <div class="flex items-center justify-between text-xs text-neutral-200">
-                <span>#{{ detection.id }}</span>
+              <div class="flex items-center justify-between text-xs text-neutral-200 mb-2">
+                <span class="font-semibold">Detection #{{ detection.id }}</span>
                 <span>{{ formatDetectionTimestamp(detection.timestamp) }}</span>
               </div>
-              <div class="flex flex-wrap gap-3 text-xs text-white/80">
-                <span v-if="detection.frequency !== null">Freq: {{ detection.frequency }} MHz</span>
-                <span v-if="detection.signalStrength !== null">Signal: {{ detection.signalStrength }} dBm</span>
-                <span>Status: <span :class="detection.status ? 'text-green-400' : 'text-red-400'">{{ detection.status ? 'Active' : 'Inactive' }}</span></span>
+              
+              <!-- Signal Information - Prominent Display -->
+              <div v-if="detection.frequency !== null || detection.signalStrength !== null" class="grid grid-cols-2 gap-3 mb-2">
+                <div v-if="detection.frequency !== null" class="bg-white/5 rounded-md p-2 border border-white/10">
+                  <div class="flex items-center space-x-1.5 mb-1">
+                    <PhWifiHigh :size="12" class="text-yellow-400" />
+                    <span class="text-xs text-primary-200 uppercase tracking-wide">Frequency</span>
+                  </div>
+                  <p class="text-sm font-semibold text-yellow-400">{{ formatFrequency(detection.frequency) }}</p>
+                </div>
+                
+                <div v-if="detection.signalStrength !== null" class="bg-white/5 rounded-md p-2 border border-white/10">
+                  <div class="flex items-center space-x-1.5 mb-1">
+                    <PhWifiHigh :size="12" :class="getSignalStrengthColor(detection.signalStrength)" />
+                    <span class="text-xs text-primary-200 uppercase tracking-wide">Signal Strength</span>
+                  </div>
+                  <p class="text-sm font-semibold" :class="getSignalStrengthColor(detection.signalStrength)">
+                    {{ formatSignalStrength(detection.signalStrength) }}
+                  </p>
+                </div>
+              </div>
+              
+              <!-- Status -->
+              <div class="flex items-center space-x-2 text-xs">
+                <span class="text-primary-200">Status:</span>
+                <span :class="detection.status ? 'text-green-400 font-semibold' : 'text-red-400 font-semibold'">
+                  {{ detection.status ? 'Active' : 'Inactive' }}
+                </span>
               </div>
             </li>
           </ul>
@@ -366,6 +390,35 @@ const formatTrajectoryTimestamp = (timestamp?: string) => {
 
 const formatCoordinate = (value: number) => {
   return Number.isFinite(value) ? value.toFixed(5) : 'N/A'
+}
+
+const formatFrequency = (frequency: number | null): string => {
+  if (frequency === null || !Number.isFinite(frequency)) return 'N/A'
+  // Format frequency: if >= 1000, show in GHz, otherwise MHz
+  if (frequency >= 1000) {
+    return `${(frequency / 1000).toFixed(2)} GHz`
+  }
+  return `${frequency.toFixed(1)} MHz`
+}
+
+const formatSignalStrength = (signalStrength: number | null): string => {
+  if (signalStrength === null || !Number.isFinite(signalStrength)) return 'N/A'
+  return `${signalStrength.toFixed(1)} dBm`
+}
+
+const getSignalStrengthColor = (signalStrength: number | null): string => {
+  if (signalStrength === null || !Number.isFinite(signalStrength)) return 'text-neutral-400'
+  // Signal strength color coding:
+  // Excellent: > -50 dBm (green)
+  // Good: -50 to -60 dBm (green-yellow)
+  // Fair: -60 to -70 dBm (yellow)
+  // Weak: -70 to -80 dBm (orange)
+  // Very Weak: < -80 dBm (red)
+  if (signalStrength > -50) return 'text-green-400'
+  if (signalStrength > -60) return 'text-green-300'
+  if (signalStrength > -70) return 'text-yellow-400'
+  if (signalStrength > -80) return 'text-orange-400'
+  return 'text-red-400'
 }
 
 const activeTrajectoryTimestamp = computed(() => mapStore.focusedTrajectoryTimestamp)

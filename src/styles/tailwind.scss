@@ -275,11 +275,40 @@
     @apply relative w-2 h-2 rounded-full bg-primary-400 border border-white shadow;
   }
 
-  &--active .trajectory-checkpoint__dot {
-    @apply bg-primary-300 scale-125;
-  }
-
   &--active {
-    @apply scale-110;
+    @apply scale-125 z-50;
+    
+    .trajectory-checkpoint__dot {
+      @apply bg-yellow-400 ring-2 ring-yellow-300 ring-offset-2;
+    }
+    
+    .trajectory-checkpoint__pulse {
+      @apply bg-yellow-400 opacity-75;
+      animation: trajectoryPulse 2s ease-in-out infinite;
+    }
+  }
+  
+  &--detection-selected {
+    @apply scale-150 z-50;
+    
+    .trajectory-checkpoint__dot {
+      @apply bg-yellow-500 ring-4 ring-yellow-400 ring-offset-2 shadow-lg;
+    }
+    
+    .trajectory-checkpoint__pulse {
+      @apply bg-yellow-500 opacity-100;
+      animation: trajectoryPulse 1.5s ease-in-out infinite;
+    }
+  }
+}
+
+@keyframes trajectoryPulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.75;
+  }
+  50% {
+    transform: scale(1.5);
+    opacity: 0.3;
   }
 }

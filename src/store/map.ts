@@ -131,6 +131,8 @@ export const useMapStore = defineStore('map', () => {
     selectedPin.value = null
     selectedCluster.value = null
     exitFocusMode()
+    // Note: mapService.clearSelectedCluster() should be called from component
+    // to ensure cluster markers are shown again when appropriate
   }
 
   const updateAvailableViewport = (panelWidths: { cluster: number, info: number }) => {
@@ -218,6 +220,19 @@ export const useMapStore = defineStore('map', () => {
         mapInstance.value?.setView([pin.lat, pin.lng], preferredZoom, { animate: false })
       })
     }
+    
+    // If this is a detection marker (target type), extract and set the detection ID
+    if (pin.type === 'target') {
+      const detectionId = typeof pin.data?.id === 'number'
+        ? pin.data.id
+        : Number(String(pin.id).replace('rf-detection-', ''))
+      
+      if (!Number.isNaN(detectionId)) {
+        setFocusedDetectionId(detectionId)
+        // Note: Map highlighting will be handled by the composable to avoid circular dependencies
+      }
+    }
+    
     const keepCluster = selectedCluster.value !== null
     selectPin(pin, keepCluster)
   }

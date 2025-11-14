@@ -634,6 +634,95 @@ The Defense Radar Dashboard continues to evolve. Planned enhancements include:
 
 ---
 
+## Next Steps: Growing the Platform Beyond the MVP
+
+The current release proves the concept—a live operational map with drones, RF detections, operators, and zones in one place. To support long-term adoption and higher operational tempo, we should expand in four complementary directions: fill the gaps that block mission-critical scenarios, refine existing workflows, explore net-new experiences, and benchmark against advanced competitors.
+
+### 1. Acknowledge the MVP’s Strengths
+
+- Real-time 2D map with interactive markers for drones, operators, and detections.
+- Clustering and focus modes that already reduce clutter in busy airspace.
+- RF signal capture with basic frequency and signal-strength metadata.
+- Configurable airspace zones and visual overlays.
+- Trajectory replay for individual drones, including historical breadcrumbs.
+- Operator and sensor location tracking for situational context.
+
+This foundation is solid, but many mission profiles require deeper insight, faster triage, and richer collaboration than the MVP can provide today.
+
+### 2. Identify Critical Gaps
+
+| Gap | Why It Matters | High-Value Enhancements |
+|-----|----------------|-------------------------|
+| **Limited perspective** | Operators see one flat map; no way to view multiple regions or perspectives simultaneously. | Split-screen layouts, multi-monitor presets, picture-in-picture, view templates for routine missions. |
+| **No coverage awareness** | Radar health and blind spots are invisible, limiting trust in detections. | Coverage heat maps, sensor network dashboards, detection confidence layers, auto gap analysis. |
+| **Missing altitude context** | Vertical separation is key for aircraft deconfliction and threat analysis. | 3D map toggle, altitude band filters, vertical profile views, 3D trajectory tubes with terrain shading. |
+| **No radar scope (PPI) mode** | Many operators are trained on classic radar sweeps; the UI should feel familiar. | Circular PPI display, multi-radar fusion scope, historical sweep playback, scope-to-map synchronization. |
+| **Shallow asset inspection** | Serious investigations require deeper timelines, comparisons, and data fusion. | Multi-tab asset sheets, comparative analysis tools, synchronized timelines, sensor-specific dashboards. |
+| **Time navigation is basic** | Analysts need to scrub, bookmark, export and correlate events across assets. | Precision timeline, event markers, multi-speed playback, time-range filters, replays export. |
+| **Alerting & incident workflow missing** | Operators still rely on manual monitoring; critical events could be missed. | Rule builder, severity tiers, incident lifecycle, alert analytics, integrations with ticketing/dispatch systems. |
+| **Security & governance gaps** | Single-client deployments are manageable, but larger programs need controls. | Role-based access control, organization scoping, full audit logs, MFA, session and device management. |
+| **Reporting & analytics minimal** | Stakeholders want daily summaries, regulatory reports, trend analysis. | Report templates, custom report builder, scheduled exports, interactive analytics dashboards. |
+| **Sensor fusion primitive** | Relying on a single RF feed limits credibility and accuracy. | Fusion engine combining ADS-B, primary radar, radiolocation, optical, acoustic feeds with confidence scoring. |
+
+### 3. Elevate Existing Capabilities
+
+1. **Map Interaction**
+   - Introduce map layer presets (Overview, Tactical, Sensor Ops) and measurement tools.
+   - Let users annotate the map with shapes, pins, callouts, and share those annotations.
+   - Add live overlays (weather, terrain, airspace restrictions, NOTAMs).
+
+2. **Clustering & Focus Mode**
+   - Keep high-severity targets visible even when clustered.
+  - Smooth animations and keyboard shortcuts (Tab to cycle, F to focus, Esc to exit).
+  - Provide focus profiles (Trajectory Analysis, Signal Diagnosis, Incident Review) that change the surrounding panels.
+
+3. **RF Detection Experience**
+   - Signal history charts, frequency spectrograms, correlation engine to auto-link detections to aircraft.
+   - Signal quality metrics (SNR, interference) and heat maps for signal coverage.
+   - Differential view comparing detections from different sensors in the network.
+
+4. **Zone Management**
+   - Dynamic (draw-to-create) zones, time-based activation, templates for common scenarios.
+   - Zone analytics to measure violation frequency, dwell time, and compliance trends.
+   - Zone overlap warnings and import/export workflows for multi-site deployments.
+
+5. **Trajectory Analysis**
+   - Predictive pathing, anomaly detection (loitering, repeated patterns).
+   - Comparative overlays across missions, waypoint clustering, statistics (distance, speed, altitude ranges).
+   - Export trajectories for offline simulation tools (KML, GPX, JSON).
+
+### 4. What Mature Platforms Already Offer (and We Should Too)
+
+- **Integrated Command & Control (C2):** Tight coupling with effector systems (RF jammers, interceptors), automated checklists, and voice/dispatch integration.
+- **AI Threat Classification:** Machine learning to separate drones from birds, identify hostile patterns, and prioritize operator attention with explainable confidence scores.
+- **UTM/U-space Integration:** Bidirectional links with flight plans, strategic deconfliction services, real-time clearances, and enforcement of airspace authorizations.
+- **Evidence & Chain of Custody:** Automatic incident packets—screenshots, telemetry, logs—packaged for law enforcement or regulatory review with tamper-proof signatures.
+- **Mobile & Field Ops:** Native tablet/phone experiences, push notifications, offline-friendly field apps for responders and radar technicians.
+
+### 5. Creative Visualization Concepts
+
+1. **Radar Network Topology Graph:** A graph view showing how sensors overlap, share data, and where blind spots exist. Click a node to highlight coverage on the map.
+2. **Time-Space Matrix:** Heat map grid with time versus geographic region to reveal temporal hotspots.
+3. **Altitude-Time Profile:** Cross-sectional timeline showing altitude bands, zone ceilings, and aircraft climbs/descents.
+4. **Sensor Coverage Mosaic:** Territory divided into cells colored by detection confidence, animating over time to reveal dynamic coverage.
+5. **Mission Timeline Cockpit:** Multi-panel view combining map, alerts, asset details, and comms feed in one operator preset.
+6. **Comparative Replay Mode:** View two time windows or two aircraft side-by-side for forensics and training.
+7. **3D Volume Explorer:** Rich 3D environment with drone models, zone volumes, terrain, obstacles, and the ability to “fly through” the scenario.
+8. **Signal Propagation Animator:** Visualize RF energy, interference, and terrain shadows to explain coverage gaps.
+
+### 6. Suggested Delivery Roadmap (Illustrative)
+
+| Phase | Focus | Key Outcomes |
+|-------|-------|--------------|
+| **Phase 1: Foundation (0–3 months)** | Alerting, RBAC, enhanced detail panels, smart clustering | Operators gain trust in alerting and governance; basic workflow coverage. |
+| **Phase 2: Visualization Leap (4–6 months)** | 3D views, radar scope, advanced timeline, sensor health dashboards | Rich situational awareness and parity with traditional radar consoles. |
+| **Phase 3: Intelligence & Analytics (7–9 months)** | AI threat scoring, sensor fusion engine, incident evidence management, analytics dashboards | Faster triage, better documentation, data-driven decision support. |
+| **Phase 4: Integration & Scale (10–12 months)** | UTM integration, C2 interfaces, mobile apps, partner APIs, multi-region deployment tooling | Platform becomes central nervous system for airspace security programs. |
+
+Progress measurements should be data-driven: reduction in threat assessment time, increase in detection confidence, improved operator satisfaction, uptime, and successful integrations with external systems.
+
+---
+
 ## Offline Operations Vision
 
 Ensuring that the Defense Radar Dashboard performs reliably in environments with limited or intermittent connectivity is a critical extension of the platform. Below is a draft outline of what an offline-first capability could include. Treat this as an idea backlog—everything can be reprioritized during planning.
