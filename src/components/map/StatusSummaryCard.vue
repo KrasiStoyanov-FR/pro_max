@@ -30,14 +30,6 @@
         <div class="w-3 h-3 bg-cyan-400 rounded-full"></div>
         <span class="text-white text-sm">{{ sensors }} Receivers</span>
       </div>
-
-      <!-- Unavailable markers when back to live API -->
-      <div v-if="!isMockMode && operators === 0" class="text-[11px] text-neutral-300/80">
-        Operators unavailable with current API data
-      </div>
-      <div v-if="!isMockMode && sensors === 0" class="text-[11px] text-neutral-300/80">
-        Receiver positions unavailable with current API data
-      </div>
     </div>
   </div>
 </template>
@@ -46,7 +38,6 @@
 import { ref, onMounted, onUnmounted, watch } from 'vue'
 import { useMapStore } from '@/store/map'
 import { databaseApi } from '@/services/api'
-import { USE_MOCK_DATA } from '@/services/mockData'
 
 // Status summary card component for the floating status display
 // This replaces the old sidebar functionality
@@ -58,7 +49,6 @@ const databaseStatus = ref<'connected' | 'disconnected'>('disconnected')
 const activeDrones = ref(0)
 const rfDetections = ref(0)
 const operators = ref(0)
-const isMockMode = USE_MOCK_DATA === true
 const sensors = ref(0)
 
 // Update statistics from map store data (no additional API calls)

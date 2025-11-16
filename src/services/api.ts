@@ -16,18 +16,6 @@ import type {
   RFDetectionsResponse,
   GpsUnitPositionsResponse
 } from '@/types/database'
-// ============================================================================
-// MOCK DATA MODE: Import mock data service for documentation screenshots
-// ============================================================================
-import { 
-  USE_MOCK_DATA, 
-  mockDronePositions, 
-  mockRFDetections, 
-  mockOperatorPositions, 
-  mockGpsUnitPositions,
-  mockDrones,
-  mockReceiverLogs
-} from './mockData'
 
 // Create axios instance with base configuration
 const api: AxiosInstance = axios.create({
@@ -153,15 +141,6 @@ export const databaseApi = {
   
   // Get all drones from database
   async getDrones(): Promise<DronesResponse> {
-    // MOCK DATA MODE: Use mock data for documentation screenshots
-    if (USE_MOCK_DATA) {
-      console.log('[API] Using MOCK DATA for documentation screenshots')
-      return {
-        success: true,
-        data: mockDrones() as Drone[]
-      }
-    }
-    
     // REAL DATA: Original API call (commented out when using mock data)
     return getCachedData('drones', async () => {
       try {
@@ -182,15 +161,6 @@ export const databaseApi = {
   
   // Get drone positions from database
   async getDronePositions(limit: number = 100): Promise<DronePositionsResponse> {
-    // MOCK DATA MODE: Use mock data for documentation screenshots
-    if (USE_MOCK_DATA) {
-      console.log('[API] Using MOCK DATA for drone positions (documentation screenshots)')
-      return {
-        success: true,
-        data: mockDronePositions().slice(0, limit) as DronePosition[]
-      }
-    }
-    
     // REAL DATA: Original API call (commented out when using mock data)
     return getCachedData(`drone_positions_${limit}`, async () => {
       try {
@@ -211,15 +181,6 @@ export const databaseApi = {
   
   // Get RF detections from database
   async getRFDetections(limit: number = 100): Promise<RFDetectionsResponse> {
-    // MOCK DATA MODE: Use mock data for documentation screenshots
-    if (USE_MOCK_DATA) {
-      console.log('[API] Using MOCK DATA for RF detections (documentation screenshots)')
-      return {
-        success: true,
-        data: mockRFDetections().slice(0, limit) as RFDetection[]
-      }
-    }
-    
     // REAL DATA: Original API call (commented out when using mock data)
     return getCachedData(`rf_detections_${limit}`, async () => {
       try {
@@ -257,15 +218,6 @@ export const databaseApi = {
   
   // Get operator positions from database
   async getOperatorPositions(limit: number = 50): Promise<{ success: boolean; data?: OperatorPosition[]; error?: string }> {
-    // MOCK DATA MODE: Use mock data for documentation screenshots
-    if (USE_MOCK_DATA) {
-      console.log('[API] Using MOCK DATA for operator positions (documentation screenshots)')
-      return {
-        success: true,
-        data: mockOperatorPositions().slice(0, limit) as OperatorPosition[]
-      }
-    }
-    
     // REAL DATA: Original API call (commented out when using mock data)
     return getCachedData(`operator_positions_${limit}`, async () => {
       try {
@@ -285,15 +237,6 @@ export const databaseApi = {
   },
 
   async getGpsUnitPositions(limit: number = 100): Promise<GpsUnitPositionsResponse> {
-    // MOCK DATA MODE: Use mock data for documentation screenshots
-    if (USE_MOCK_DATA) {
-      console.log('[API] Using MOCK DATA for GPS unit positions (documentation screenshots)')
-      return {
-        success: true,
-        data: mockGpsUnitPositions().slice(0, limit) as GpsUnitPosition[]
-      }
-    }
-    
     // REAL DATA: Original API call (commented out when using mock data)
     return getCachedData(`gps_unit_position_${limit}`, async () => {
       try {
@@ -315,15 +258,6 @@ export const databaseApi = {
   // Get receiver logs from database
   // TOOD: show history of what happened to the device (only for the engineer role of the user)
   async getReceiverLogs(limit: number = 50): Promise<{ success: boolean; data?: ReceiverLog[]; error?: string }> {
-    // MOCK DATA MODE: Use mock data for documentation screenshots
-    if (USE_MOCK_DATA) {
-      console.log('[API] Using MOCK DATA for receiver logs (documentation screenshots)')
-      return {
-        success: true,
-        data: mockReceiverLogs().slice(0, limit) as ReceiverLog[]
-      }
-    }
-    
     // REAL DATA: Original API call (commented out when using mock data)
     try {
       const response = await api.get(`/table/receiver_logs?database=drone_monitoring&limit=${limit}`)
@@ -438,18 +372,6 @@ export const databaseApi = {
   },
   
   async getHealth() {
-    // MOCK DATA MODE: Return healthy status for documentation screenshots
-    if (USE_MOCK_DATA) {
-      console.log('[API] Using MOCK DATA for health check (documentation screenshots)')
-      return {
-        data: {
-          success: true,
-          message: 'Database API server is running (MOCK MODE)',
-          timestamp: new Date().toISOString()
-        }
-      }
-    }
-    
     // REAL DATA: Original API call (commented out when using mock data)
     try {
       const response = await api.get('/health')
