@@ -114,6 +114,10 @@ export function useMapPins() {
       const map = await mapService.init(container, mapOptions)
       mapStore.setMapInstance(map)
 
+      // Enable clustering behavior (panel remains hidden)
+      const serviceWithClusterToggle = mapService as unknown as { setClusteringEnabled?: (enabled: boolean) => void }
+      serviceWithClusterToggle.setClusteringEnabled?.(true)
+
       mapService.onTrajectoryPointClick((point) => {
         focusTrajectoryPoint(point)
       })
@@ -425,9 +429,10 @@ export function useMapPins() {
         })
       }
       
-      // Convert operator positions to map pins
+      // Convert operator positions to map pins (with near-duplicate de-duplication)
       if (operatorPositionsResponse.success && operatorPositionsResponse.data) {
-        const operatorPins = operatorPositionsResponse.data.reduce<MapPin[]>((acc, position: OperatorPosition) => {
+        // First, map raw operator positions to tentative pins
+        const rawOperatorPins = operatorPositionsResponse.data.reduce<MapPin[]>((acc, position: OperatorPosition) => {
           const lat = parseFloat(position.latitude.toString())
           const lng = parseFloat(position.longitude.toString())
 
@@ -440,7 +445,7 @@ export function useMapPins() {
             : 'Operator (unassigned)'
 
           acc.push({
-          id: `operator-pos-${position.id}`,
+            id: `operator-pos-${position.id}`,
             lat,
             lng,
             title: label,
@@ -450,17 +455,86 @@ export function useMapPins() {
             type: 'friendly',
             status: 'active',
             priority: 'low',
-          data: {
-            drone_id: position.drone_id,
+            data: {
+              drone_id: position.drone_id,
               system_id: position.system_id ?? null,
+              timestamp: position.time
+            },
             timestamp: position.time
-          },
-          timestamp: position.time
           })
 
           return acc
         }, [])
-        pins.push(...operatorPins)
+
+        // De-duplicate operators with same/nearly same location and same key modifiers
+        const MERGE_DISTANCE_KM = 0.02 // ~20 meters
+        const mergedOperatorPins: MapPin[] = []
+
+        // Helper: try to find an existing cluster this pin belongs to
+        const findClusterIndex = (pin: MapPin): number => {
+          for (let i = 0; i < mergedOperatorPins.length; i++) {
+            const cluster = mergedOperatorPins[i]
+            const sameDrone =
+              (cluster.data?.drone_id ?? null) === (pin.data?.drone_id ?? null)
+            const sameSystem =
+              (cluster.data?.system_id ?? null) === (pin.data?.system_id ?? null)
+
+            if (sameDrone && sameSystem) {
+              const distanceKm = haversineDistanceKm(
+                { lat: cluster.lat, lng: cluster.lng, timestamp: cluster.timestamp! },
+                { lat: pin.lat, lng: pin.lng, timestamp: pin.timestamp! }
+              )
+              if (distanceKm <= MERGE_DISTANCE_KM) {
+                return i
+              }
+            }
+          }
+          return -1
+        }
+
+        rawOperatorPins.forEach((pin) => {
+          const idx = findClusterIndex(pin)
+          if (idx === -1) {
+            // Create new cluster baseline with aggregation meta
+            mergedOperatorPins.push({
+              ...pin,
+              // Track aggregation count and sample ids inside data
+              data: {
+                ...pin.data,
+                _aggregate_count: 1,
+                _ids: [pin.id]
+              }
+            })
+          } else {
+            const cluster = mergedOperatorPins[idx]
+            const count = (cluster.data?._aggregate_count as number) ?? 1
+            const ids = (cluster.data?._ids as string[]) ?? [cluster.id]
+
+            // Update centroid minimally by simple averaging for stability
+            const newCount = count + 1
+            const newLat = (cluster.lat * count + pin.lat) / newCount
+            const newLng = (cluster.lng * count + pin.lng) / newCount
+
+            mergedOperatorPins[idx] = {
+              ...cluster,
+              lat: newLat,
+              lng: newLng,
+              title: count >= 1
+                ? `Operators (${newCount})`
+                : cluster.title,
+              description: cluster.data?.drone_id
+                ? `Operators near drone ${cluster.data.drone_id}`
+                : 'Operators (aggregated)',
+              data: {
+                ...cluster.data,
+                _aggregate_count: newCount,
+                _ids: [...ids, pin.id]
+              }
+            }
+          }
+        })
+
+        pins.push(...mergedOperatorPins)
       }
 
       if (gpsUnitPositionsResponse.success && gpsUnitPositionsResponse.data) {

@@ -10,9 +10,9 @@
 
       <div class="flex-1 flex overflow-hidden relative">
         <div class="flex justify-start p-4 absolute top-0 right-0 bottom-0 left-0 z-10 pointer-events-none lg:p-6">
-          <!-- Cluster info panel -->
-          <ClusterInfoPanel :cluster="selectedCluster as any" @close="handleClusterClose"
-            @select-pin="handlePinFromCluster" @zoom-to-cluster="handleZoomToCluster" />
+          <!-- Cluster info panel disabled for spiderfy-only UX -->
+          <!-- <ClusterInfoPanel :cluster="selectedCluster as any" @close="handleClusterClose"
+            @select-pin="handlePinFromCluster" @zoom-to-cluster="handleZoomToCluster" /> -->
 
           <!-- Info Panel -->
           <InfoPanel :is-open="isInfoPanelOpen" :selected-pin="selectedPin"
@@ -38,7 +38,6 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { useMapStore } from '@/store/map'
-import ClusterInfoPanel from '@/components/map/ClusterInfoPanel.vue'
 import DetectionDetailsPanel from '@/components/map/DetectionDetailsPanel.vue'
 import { mapService } from '@/services/mapService'
 import InfoPanel from './InfoPanel.vue'
@@ -66,7 +65,7 @@ const mapStore = useMapStore()
 
 // Computed
 const selectedPin = computed(() => mapStore.selectedPin)
-const selectedCluster = computed(() => mapStore.selectedCluster)
+// const selectedCluster = computed(() => mapStore.selectedCluster)
 const focusedDetectionId = computed(() => mapStore.focusedDetectionId)
 
 // Get selected detection from the selected pin's detections
@@ -89,22 +88,21 @@ const selectedDetection = computed<DetectionCheckpoint | null>(() => {
 
 // Methods
 
-const handleClusterClose = () => {
-  mapStore.clearSelection()
-  // Clear selected cluster in map service to show cluster markers again
-  mapService.clearSelectedCluster()
-}
+// const handleClusterClose = () => {
+//   mapStore.clearSelection()
+//   // Clear selected cluster in map service to show cluster markers again
+//   mapService.clearSelectedCluster()
+// }
 
-const handlePinFromCluster = (pin: any) => {
-  // Select the individual pin but keep the cluster selection
-  mapStore.selectPin(pin, true) // keepCluster = true
-  // TODO: Implement the expandable side panel for individual pin details
-}
+// const handlePinFromCluster = (pin: any) => {
+//   // Select the individual pin but keep the cluster selection
+//   mapStore.selectPin(pin, true) // keepCluster = true
+// }
 
-const handleZoomToCluster = (cluster: any) => {
-  // Use the expandCluster method to show individual pins
-  mapService.expandCluster(cluster)
-}
+// const handleZoomToCluster = (cluster: any) => {
+//   // Use the expandCluster method to show individual pins
+//   mapService.expandCluster(cluster)
+// }
 
 const handleExitFocusMode = () => {
   mapStore.exitFocusMode()
@@ -210,9 +208,9 @@ watch(() => mapStore.selectedPin, (newPin: any) => {
 })
 
 // Watch for panel visibility changes to update available viewport
-watch([() => mapStore.hasSelectedCluster, isInfoPanelOpen], () => {
+watch([() => false /* mapStore.hasSelectedCluster disabled */, isInfoPanelOpen], () => {
   // Calculate panel widths based on visibility
-  const clusterWidth = mapStore.hasSelectedCluster ? 320 : 0 // w-64 lg:w-80 = 256px + 64px = 320px
+  const clusterWidth = 0
   const infoWidth = isInfoPanelOpen.value ? 320 : 0 // w-64 lg:w-80 = 256px + 64px = 320px
 
   // Update the available viewport

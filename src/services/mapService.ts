@@ -4,13 +4,13 @@ import { getActiveZones, type DroneZone } from './droneZones'
 
 // Clustering configuration
 const CLUSTER_CONFIG = {
-  maxClusterRadius: 50, // pixels - even tighter clustering
-  minClusterDistance: 200, // pixels - much larger minimum distance between clusters
-  minZoom: 8, // minimum zoom level for clustering
-  maxZoom: 12, // maximum zoom level for clustering (reduced to hide clusters near max zoom)
+  maxClusterRadius: 50, // pixels - cluster markers that are visually close
+  minClusterDistance: 200, // pixels - minimum distance between clusters
+  minZoom: 1, // cluster even when fully zoomed out
+  maxZoom: 14, // cluster up to near max zoom; hide clusters very close-in
   clusterIconSize: 40,
   zoomIncrement: 3, // more zoom levels to better isolate cluster
-  minPinsForCluster: 3 // minimum pins required to form a cluster
+  minPinsForCluster: 2 // cluster pairs and larger groups
 }
 
 // Clustering state
@@ -58,6 +58,10 @@ class MapService {
   private onPinClickCallback: PinClickCallback | null = null
   private onClusterClickCallback: ClusterClickCallback | null = null
   private currentTileLayer: L.TileLayer | null = null
+  // Spiderfy state for overlapping markers
+  private spiderfiedActive: boolean = false
+  private spiderfiedMembers: Map<string, { originalLatLng: L.LatLng }> = new Map()
+  private spiderfiedCenterId: string | null = null
   private currentLayerType: 'dark' | 'light' | 'satellite' = 'satellite'
   private clusters: Map<string, PinCluster> = new Map()
   private allPins: MapPin[] = []
@@ -71,6 +75,7 @@ class MapService {
   private selectedClusterId: string | null = null // Track selected cluster to hide its marker
   private selectedPin: MapPin | null = null // Track selected pin to maintain selection state during zoom/pan
   private detectionRangeCircles: Map<string, L.Circle> = new Map() // Detection range visualization
+  private clusteringEnabled: boolean = false
 
   async init(container: HTMLElement, options: MapServiceOptions): Promise<L.Map> {
     // Lazy load Leaflet to enable code-splitting
@@ -90,6 +95,10 @@ class MapService {
       // Add zoom change handler for re-clustering with debouncing
       let zoomTimeout: NodeJS.Timeout
       this.map.on('zoom', () => {
+        // Clear spiderfy when zooming
+        if (this.spiderfiedActive) {
+          this.unspiderfy()
+        }
         // Clear existing timeout
         if (zoomTimeout) {
           clearTimeout(zoomTimeout)
@@ -108,9 +117,29 @@ class MapService {
           this.applyClustering(this.selectedPin)
         }, 150) // 150ms debounce
       })
+      // Clear spiderfy when panning
+      this.map.on('movestart', () => {
+        if (this.spiderfiedActive) {
+          this.unspiderfy()
+        }
+      })
+      // Clear spiderfy on general map click
+      this.map.on('click', () => {
+        if (this.spiderfiedActive) {
+          this.unspiderfy()
+        }
+      })
     }
 
     return this.map
+  }
+
+  setClusteringEnabled(enabled: boolean): void {
+    this.clusteringEnabled = enabled
+    // Re-apply clustering state immediately
+    if (this.map) {
+      this.applyClustering(this.selectedPin)
+    }
   }
 
   private addZoomControl() {
@@ -198,12 +227,7 @@ class MapService {
         dashArray: '5, 5' // Dashed line
       })
       
-      // Add tooltip showing detection source info
-      const sourceName = source.title || 'Detection Source'
-      rangeCircle.bindTooltip(`Detection Range: ${sourceName}<br>Range: ${(DETECTION_RANGE_METERS / 1000).toFixed(1)} km`, {
-        permanent: false,
-        direction: 'top'
-      })
+      // Do not bind Leaflet tooltip to circles to avoid UX disruption
       
       rangeCircle.addTo(this.map!)
       this.detectionRangeCircles.set(source.id, rangeCircle)
@@ -510,6 +534,77 @@ class MapService {
     // This allows selection to persist during zoom/pan operations
   }
 
+  // Detect overlapping markers (by pixel distance)
+  private getOverlappingMarkerIds(centerPinId: string, thresholdPx: number): string[] {
+    if (!this.map) return [centerPinId]
+    const centerMarker = this.markers.get(centerPinId)
+    if (!centerMarker) return [centerPinId]
+    const centerPoint = this.map.latLngToContainerPoint(centerMarker.getLatLng())
+    const result: string[] = []
+    this.markers.forEach((marker, id) => {
+      const pt = this.map!.latLngToContainerPoint(marker.getLatLng())
+      const dx = pt.x - centerPoint.x
+      const dy = pt.y - centerPoint.y
+      const dist = Math.sqrt(dx * dx + dy * dy)
+      if (dist <= thresholdPx) {
+        result.push(id)
+      }
+    })
+    return result
+  }
+
+  // Expand overlapping markers around the center marker with small offsets (spiderfy)
+  private spiderfyGroup(memberIds: string[], centerId: string): void {
+    if (!this.map) return
+    // Clear any existing spiderfy state
+    this.unspiderfy()
+    const centerMarker = this.markers.get(centerId)
+    if (!centerMarker) return
+    const centerLatLng = centerMarker.getLatLng()
+    const centerPoint = this.map.latLngToLayerPoint(centerLatLng)
+
+    const count = memberIds.length
+    const radiusPx = 28 // ring radius in pixels
+    const angleStep = (2 * Math.PI) / count
+    let startAngle = -Math.PI / 2 // start at top
+
+    // Record originals and compute new positions
+    memberIds.forEach((id, idx) => {
+      const marker = this.markers.get(id)
+      if (!marker) return
+      // Save original
+      this.spiderfiedMembers.set(id, { originalLatLng: marker.getLatLng() })
+      // Place at center for the centerId, or on ring for others
+      if (count === 1) return
+      const angle = startAngle + idx * angleStep
+      const offsetX = Math.cos(angle) * radiusPx
+      const offsetY = Math.sin(angle) * radiusPx
+      const newPoint = L.point(centerPoint.x + offsetX, centerPoint.y + offsetY)
+      const newLatLng = this.map.layerPointToLatLng(newPoint)
+      marker.setLatLng(newLatLng)
+      const el = marker.getElement()
+      if (el) el.classList.add('marker--spiderfied')
+    })
+
+    this.spiderfiedActive = true
+    this.spiderfiedCenterId = centerId
+  }
+
+  // Restore spiderfied markers to their original positions
+  private unspiderfy(): void {
+    if (!this.map || !this.spiderfiedActive) return
+    this.spiderfiedMembers.forEach(({ originalLatLng }, id) => {
+      const marker = this.markers.get(id)
+      if (!marker) return
+      marker.setLatLng(originalLatLng)
+      const el = marker.getElement()
+      if (el) el.classList.remove('marker--spiderfied')
+    })
+    this.spiderfiedMembers.clear()
+    this.spiderfiedActive = false
+    this.spiderfiedCenterId = null
+  }
+
   // Public method to clear highlight marker (called from outside)
   public clearHighlight(): void {
     this.clearHighlightMarker()
@@ -665,21 +760,17 @@ class MapService {
       // Store pin data on marker for easy access
       ; (marker as any).pinData = pin
 
-    // Add popup
-    const popupContent = `
-      <div class="p-2">
-        <h3 class="font-semibold text-sm">${pin.title}</h3>
-        <p class="text-xs text-neutral-600">${pin.type} • ${pin.status}</p>
-        ${pin.description ? `<p class="text-xs mt-1">${pin.description}</p>` : ''}
-      </div>
-    `
-    marker.bindPopup(popupContent)
+    // Intentionally no Leaflet popup/tooltip bound to markers (UX requirement)
 
     // Add click handler
     marker.on('click', () => {
-      if (this.onPinClickCallback) {
-        this.onPinClickCallback(pin)
+      // If many markers overlap here, first click spiderfies them instead of immediate selection
+      const overlappingIds = this.getOverlappingMarkerIds(pin.id, 12) // 12px threshold for overlap
+      if (!this.spiderfiedActive && overlappingIds.length > 1) {
+        this.spiderfyGroup(overlappingIds, pin.id)
+        return
       }
+      if (this.onPinClickCallback) this.onPinClickCallback(pin)
     })
 
     // Add hover effects for faded markers
@@ -716,7 +807,8 @@ class MapService {
     // 1. Zoom is too high (near max zoom)
     // 2. A cluster is currently selected (show individual pins)
     // 3. Zoom is too low (below min zoom)
-    const shouldCluster = zoom >= CLUSTER_CONFIG.minZoom && 
+    const shouldCluster = this.clusteringEnabled &&
+                         zoom >= CLUSTER_CONFIG.minZoom && 
                          zoom <= CLUSTER_CONFIG.maxZoom && 
                          !this.selectedClusterId &&
                          zoom < (maxZoom - 2) // Hide clusters near max zoom
@@ -1198,7 +1290,12 @@ class MapService {
       maxZoom: 16 // Don't zoom too close
     })
 
-    // Force immediate re-clustering to ensure the marker is gone
+    // Clear selected cluster to allow other clusters to remain interactive
+    this.selectedClusterId = null
+    expandedClusters.delete(cluster.id)
+    expandedClusterPins.delete(cluster.id)
+
+    // Force immediate re-clustering so other clusters remain clickable
     setTimeout(() => {
       this.applyClustering()
     }, 50)
@@ -1394,6 +1491,18 @@ class MapService {
     if (this.map) {
       this.map.setView(center, zoom)
     }
+  }
+
+  // Check if a lat/lng is visible in the current map viewport considering left panel padding
+  isLatLngVisible(lat: number, lng: number, leftPaddingPx: number = 0): boolean {
+    if (!this.map) return false
+    const point = this.map.latLngToContainerPoint([lat, lng])
+    const size = this.map.getSize()
+    const minX = Math.max(0, leftPaddingPx)
+    const maxX = size.x
+    const minY = 0
+    const maxY = size.y
+    return point.x >= minX && point.x <= maxX && point.y >= minY && point.y <= maxY
   }
 
   private setTileLayer(type: 'dark' | 'light' | 'satellite'): void {
