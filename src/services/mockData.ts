@@ -11,7 +11,7 @@
 // ============================================================================
 // CONFIGURATION: Set to true to use mock data for screenshots
 // ============================================================================
-export const USE_MOCK_DATA = true
+export const USE_MOCK_DATA = false
 
 // ============================================================================
 // BULGARIAN LOCATIONS (Sofia and surrounding areas)
