@@ -36,7 +36,44 @@ export function useMapPins() {
     mapService.flyTo(point.lat, point.lng, zoomLevel)
     mapService.highlightTrajectoryCheckpoint(dronePinId, point.timestamp)
     mapStore.setFocusedTrajectoryTimestamp(point.timestamp)
-    mapStore.setFocusedDetectionId(null)
+    
+    // Try to find a matching detection for this trajectory point
+    // Look for a detection with a timestamp close to this trajectory point's timestamp
+    const selectedPin = mapStore.selectedPin
+    if (selectedPin && Array.isArray(selectedPin.data?.detections)) {
+      const detections = selectedPin.data.detections as DetectionCheckpoint[]
+      const pointTime = toTimeValue(point.timestamp)
+      
+      // Find detection with closest timestamp (within 5 seconds)
+      let closestDetection: DetectionCheckpoint | null = null
+      let closestTimeDiff = Infinity
+      
+      detections.forEach((detection) => {
+        const detectionTime = toTimeValue(detection.timestamp)
+        const timeDiff = Math.abs(detectionTime - pointTime)
+        // Match if within 5 seconds
+        if (timeDiff < 5000 && timeDiff < closestTimeDiff) {
+          closestTimeDiff = timeDiff
+          closestDetection = detection
+        }
+      })
+      
+      if (closestDetection) {
+        mapStore.setFocusedDetectionId(closestDetection.id)
+        highlightDetections(closestDetection.id)
+        // Also highlight the checkpoint marker with timestamp for precise matching
+        const service = mapService as unknown as { highlightDetectionCheckpoint?: (dronePinId: string, detectionId: number | null, detectionTimestamp?: string) => void }
+        service.highlightDetectionCheckpoint?.(dronePinId, closestDetection.id, closestDetection.timestamp)
+      } else {
+        mapStore.setFocusedDetectionId(null)
+        highlightDetections(null)
+        const service = mapService as unknown as { highlightDetectionCheckpoint?: (dronePinId: string, detectionId: number | null, detectionTimestamp?: string) => void }
+        service.highlightDetectionCheckpoint?.(dronePinId, null)
+      }
+    } else {
+      mapStore.setFocusedDetectionId(null)
+      highlightDetections(null)
+    }
   }
 
   const initializeMap = async (container: HTMLElement, options?: Partial<MapViewport>) => {
@@ -85,6 +122,14 @@ export function useMapPins() {
       mapService.onPinClick((pin: MapPin) => {
         if (pin.type === 'target') {
           mapStore.focusDetectionPin(pin)
+          // Highlight the detection on the map
+          const detectionId = typeof pin.data?.id === 'number'
+            ? pin.data.id
+            : Number(String(pin.id).replace('rf-detection-', ''))
+          if (!Number.isNaN(detectionId)) {
+            highlightDetections(detectionId)
+            mapService.panToDetection(detectionId)
+          }
         } else {
         mapStore.flyToPin(pin) // This will also call selectPin internally
         }
@@ -430,13 +475,19 @@ export function useMapPins() {
           const unitLabel = unit.system_id ?? unit.unit_id ?? unit.name ?? unit.id
           const statusRaw = typeof unit.status === 'string' ? unit.status.toLowerCase() : null
           const status = statusRaw === 'inactive' || statusRaw === 'offline' ? 'inactive' : 'active'
+          
+          // Use unit name if available, otherwise construct label
+          const displayName = unit.name || `RF Receiver ${unitLabel}`
+          const description = unit.status 
+            ? `Detection Source - Status: ${unit.status}` 
+            : 'RF Detection Receiver - Active monitoring'
 
           acc.push({
             id: `gps-unit-${unitLabel}`,
             lat,
             lng,
-            title: `GPS Unit ${unitLabel}`,
-            description: unit.status ? `Status: ${unit.status}` : 'Static GPS device position',
+            title: displayName,
+            description,
             type: 'sensor',
             status,
             priority: 'medium',
@@ -444,7 +495,8 @@ export function useMapPins() {
               unit_id: unit.unit_id,
               system_id: unit.system_id ?? null,
               status: unit.status,
-              timestamp: unit.time ?? null
+              timestamp: unit.time ?? null,
+              detection_range_km: 3 // 3km detection range
             },
             timestamp: unit.time ?? new Date().toISOString()
           })
@@ -603,6 +655,22 @@ export function useMapPins() {
   watch(focusedDetectionId, (newId) => {
     if (!isMapReady.value) return
     highlightDetections(newId ?? null)
+    // Also highlight the checkpoint if there's a focused drone
+    if (focusedDronePinId.value && newId) {
+      // Find the detection to get its timestamp
+      const selectedPin = mapStore.selectedPin
+      if (selectedPin && Array.isArray(selectedPin.data?.detections)) {
+        const detections = selectedPin.data.detections as DetectionCheckpoint[]
+        const detection = detections.find(d => d.id === newId)
+        if (detection) {
+          const service = mapService as unknown as { highlightDetectionCheckpoint?: (dronePinId: string, detectionId: number | null, detectionTimestamp?: string) => void }
+          service.highlightDetectionCheckpoint?.(focusedDronePinId.value, newId, detection.timestamp)
+        }
+      }
+    } else if (focusedDronePinId.value) {
+      const service = mapService as unknown as { highlightDetectionCheckpoint?: (dronePinId: string, detectionId: number | null, detectionTimestamp?: string) => void }
+      service.highlightDetectionCheckpoint?.(focusedDronePinId.value, null)
+    }
   })
 
   // Cleanup
