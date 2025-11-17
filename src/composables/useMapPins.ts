@@ -3,7 +3,7 @@ import { useMapStore } from '@/store/map'
 import { mapService } from '@/services/mapService'
 import { databaseApi } from '@/services/api'
 import type { MapPin, MapViewport, DroneTrajectory, DroneTrajectoryPoint, DetectionCheckpoint } from '@/types/map'
-import type { DronePosition, RFDetection, OperatorPosition, GpsUnitPosition } from '@/types/database'
+import type { DronePosition, RFDetection, OperatorPosition, GpsUnitPosition, Drone } from '@/types/database'
 
 export function useMapPins() {
   const mapStore = useMapStore()
@@ -21,6 +21,7 @@ export function useMapPins() {
   const focusedDroneTargetId = computed(() => mapStore.focusedDroneTargetId)
   const focusedDetectorPinId = computed(() => mapStore.focusedDetectorPinId)
   const focusModeType = computed(() => mapStore.focusModeType)
+  const linkedSensorDroneIds = computed(() => mapStore.linkedSensorDroneIds)
   const focusedDetectionId = computed(() => mapStore.focusedDetectionId)
 
   const highlightDetections = (id: number | null) => {
@@ -29,6 +30,8 @@ export function useMapPins() {
   }
 
   // Initialize map
+const toTimeValue = (value: string | undefined | null) => value ? new Date(value).getTime() : 0
+
   const focusTrajectoryPoint = (point: DroneTrajectoryPoint) => {
     if (!isMapReady.value) return
     const dronePinId = focusedDronePinId.value
@@ -167,8 +170,6 @@ export function useMapPins() {
   const loadPins = async () => {
     try {
       mapStore.setLoading(true)
-      
-      const toTimeValue = (value: string | undefined | null) => value ? new Date(value).getTime() : 0
       const haversineDistanceKm = (pointA: DroneTrajectoryPoint, pointB: DroneTrajectoryPoint) => {
         const toRadians = (deg: number) => deg * (Math.PI / 180)
         const R = 6371 // Earth radius in km
@@ -228,16 +229,31 @@ export function useMapPins() {
       
       // Fetch real data from database
       const [
+        dronesResponse,
         dronePositionsResponse,
         rfDetectionsResponse,
         operatorPositionsResponse,
         gpsUnitPositionsResponse
       ] = await Promise.all([
+        databaseApi.getDrones(),
         databaseApi.getDronePositions(100),
         databaseApi.getRFDetections(50),
         databaseApi.getOperatorPositions(50),
         databaseApi.getGpsUnitPositions(100)
       ])
+
+      const droneMetadata = new Map<string, Drone>()
+      if (dronesResponse.success && Array.isArray(dronesResponse.data)) {
+        dronesResponse.data.forEach((drone) => {
+          const key = String(drone.id)
+          droneMetadata.set(key, drone)
+        })
+      } else {
+        console.warn('[MapPins] Unable to load drones metadata', {
+          success: dronesResponse.success,
+          error: dronesResponse.error
+        })
+      }
       
       const pins: MapPin[] = []
       const droneTrajectoryMap = new Map<string, { points: DroneTrajectoryPoint[], positions: DronePosition[], latestPosition: DronePosition | null }>()
@@ -404,24 +420,49 @@ export function useMapPins() {
             return
           }
 
+        const metadata = droneMetadata.get(droneId)
+          const resolvedSystemId = (markerPosition.system_id ?? entry.latestPosition?.system_id ?? metadata?.system_id) ?? null
+          const displayName = metadata?.uas_id
+            ? `Drone ${metadata.uas_id}`
+            : `Drone ${droneId}`
+          const descriptor: string[] = []
+          if (markerPosition.altitude !== undefined && markerPosition.altitude !== null) {
+            descriptor.push(`Altitude: ${Number(markerPosition.altitude).toFixed(1)}m`)
+          }
+          if (markerPosition.speed !== undefined && markerPosition.speed !== null) {
+            descriptor.push(`Speed: ${Number(markerPosition.speed).toFixed(1)} km/h`)
+          }
+          if (metadata?.serial_number) {
+            descriptor.push(`Serial: ${metadata.serial_number}`)
+          }
+          if (metadata?.mac_address) {
+            descriptor.push(`MAC: ${metadata.mac_address}`)
+          }
+
           pins.push({
             id: `drone-${droneId}`,
             lat: pinLat,
             lng: pinLng,
-            title: `Drone ${droneId}`,
-            description: `Altitude: ${markerPosition.altitude}m, Speed: ${markerPosition.speed} km/h`,
+            title: displayName,
+            description: descriptor.join(' • '),
             type: 'drone',
-            status: 'active',
+            status: metadata?.is_active ? 'active' : 'inactive',
             priority: 'medium',
-          data: {
+            data: {
               drone_id: markerPosition.drone_id,
               altitude: markerPosition.altitude,
               speed: markerPosition.speed,
               receiver_type: markerPosition.receiver_type,
-              system_id: markerPosition.system_id ?? entry.latestPosition?.system_id ?? null,
+              system_id: resolvedSystemId ? String(resolvedSystemId) : null,
               timestamp: markerPosition.time,
               trajectory: filteredPoints,
-              detections
+              detections,
+              serialNumber: metadata?.serial_number ?? null,
+              uasId: metadata?.uas_id ?? null,
+              firstSeen: metadata?.first_seen ?? null,
+              lastSeen: metadata?.last_seen ?? null,
+              macAddress: metadata?.mac_address ?? null,
+              isActive: metadata?.is_active ?? null
             },
             timestamp: markerPosition.time
           })
@@ -429,6 +470,8 @@ export function useMapPins() {
       }
       
       // Aggregate RF detections per drone
+      const detectionPins: MapPin[] = []
+
       if (rfDetectionsResponse.success && rfDetectionsResponse.data) {
         const seenDetectionKeys = new Set<string>()
 
@@ -453,6 +496,43 @@ export function useMapPins() {
 
           seenDetectionKeys.add(key)
           return true
+        }
+
+        const getDetectionCoordinates = (droneRef: number | null | undefined, timestamp: string): { lat: number; lng: number } | null => {
+          if (droneRef === null || droneRef === undefined) {
+            return null
+          }
+          const trajectory = droneTrajectoryPoints.get(String(droneRef))
+          const detectionTime = toTimeValue(timestamp)
+
+          if (trajectory && trajectory.length > 0) {
+            let closestPoint = trajectory[trajectory.length - 1]
+            let closestDiff = Math.abs(toTimeValue(closestPoint.timestamp) - detectionTime)
+
+            if (Number.isFinite(detectionTime)) {
+              trajectory.forEach(point => {
+                const diff = Math.abs(toTimeValue(point.timestamp) - detectionTime)
+                if (diff < closestDiff) {
+                  closestDiff = diff
+                  closestPoint = point
+                }
+              })
+            }
+
+            return { lat: closestPoint.lat, lng: closestPoint.lng }
+          }
+
+          const trajectoryEntry = droneTrajectoryMap.get(String(droneRef))
+          const fallbackPosition = trajectoryEntry?.latestPosition
+          if (fallbackPosition) {
+            const lat = parseFloat(fallbackPosition.latitude.toString())
+            const lng = parseFloat(fallbackPosition.longitude.toString())
+            if (isValidCoordinate(lat, lng)) {
+              return { lat, lng }
+            }
+          }
+
+          return null
         }
 
         rfDetectionsResponse.data.forEach((detection: RFDetection) => {
@@ -482,6 +562,32 @@ export function useMapPins() {
           if (detection.system_id !== null && detection.system_id !== undefined) {
             addDetectionToMap(`system:${detection.system_id}`)
           }
+
+          const coordinates = getDetectionCoordinates(detection.drone_id, detection.time)
+          if (coordinates) {
+            detectionPins.push({
+              id: `rf-detection-${detection.id}`,
+              lat: coordinates.lat,
+              lng: coordinates.lng,
+              title: `Detection #${detection.id}`,
+              description: detection.system_id
+                ? `Detected by system ${detection.system_id}`
+                : 'RF Detection',
+              type: 'target',
+              status: detection.detection_status ? 'active' : 'inactive',
+              priority: detection.detection_status ? 'medium' : 'low',
+              data: {
+                id: detection.id,
+                drone_id: detection.drone_id,
+                system_id: detection.system_id ?? null,
+                timestamp: detection.time,
+                frequency: detection.frequency,
+                signal_strength: detection.signal_strength,
+                detection_status: detection.detection_status
+              },
+              timestamp: detection.time
+            })
+          }
         })
       }
       
@@ -491,6 +597,11 @@ export function useMapPins() {
         gpsUnitPositionsResponse.data.forEach((unit: GpsUnitPosition) => {
           if (typeof (unit as any)?.system_id === 'string') {
             systemIdToDetector.set((unit as any).system_id as string, {
+              name: (unit as any).name ?? null,
+              unit_id: (unit as any).unit_id ?? null
+            })
+          } else if (typeof (unit as any)?.unit_id !== 'undefined') {
+            systemIdToDetector.set(String((unit as any).unit_id), {
               name: (unit as any).name ?? null,
               unit_id: (unit as any).unit_id ?? null
             })
@@ -509,8 +620,11 @@ export function useMapPins() {
             return acc
           }
 
-          const detectorMeta = (position.system_id !== null && position.system_id !== undefined)
-            ? systemIdToDetector.get(String(position.system_id)) ?? null
+          const detectorKey = position.system_id !== null && position.system_id !== undefined
+            ? String(position.system_id)
+            : (position.drone_id !== null && position.drone_id !== undefined ? String(position.drone_id) : null)
+          const detectorMeta = detectorKey
+            ? (systemIdToDetector.get(detectorKey) ?? null)
             : null
 
           const label = (() => {
@@ -629,30 +743,29 @@ export function useMapPins() {
             return acc
           }
 
-          const unitKeyRaw = unit.system_id ?? unit.unit_id ?? unit.id
-          const unitKey = unitKeyRaw !== undefined && unitKeyRaw !== null ? String(unitKeyRaw) : String(unit.id)
+          const canonicalSystemId = unit.system_id ?? (typeof unit.unit_id !== 'undefined' ? String(unit.unit_id) : null)
+          const unitKey = canonicalSystemId ?? (unit.name ?? String(unit.id))
           if (seenSensorKeys.has(unitKey)) {
             return acc
           }
           seenSensorKeys.add(unitKey)
 
-          const unitLabel = unitKey
           const statusRaw = typeof unit.status === 'string' ? unit.status.toLowerCase() : null
           const status = statusRaw === 'inactive' || statusRaw === 'offline' ? 'inactive' : 'active'
           
           // Use unit name if available, otherwise construct label
-          const displayName = unit.name || `RF Receiver ${unitLabel}`
+          const displayName = unit.name || `RF Receiver ${unitKey}`
           const description = unit.status 
-            ? `Detection Source - Status: ${unit.status}` 
-            : 'RF Detection Receiver - Active monitoring'
+            ? `Detection Source • Status: ${unit.status}` 
+            : 'RF Detection Receiver • Active monitoring'
 
-          // Remember detector by system_id for operator/drone association
-          if (typeof unit.system_id === 'string') {
-            systemIdToDetector.set(unit.system_id, { name: unit.name ?? null, unit_id: unit.unit_id ?? null })
+          // Remember detector by system or unit id for association
+          if (canonicalSystemId) {
+            systemIdToDetector.set(String(canonicalSystemId), { name: unit.name ?? null, unit_id: unit.unit_id ?? null })
           }
 
           acc.push({
-            id: `gps-unit-${unitLabel}`,
+            id: `gps-unit-${unitKey}`,
             lat,
             lng,
             title: displayName,
@@ -661,8 +774,8 @@ export function useMapPins() {
             status,
             priority: 'medium',
             data: {
-              unit_id: unit.unit_id,
-              system_id: unit.system_id ?? null,
+              unit_id: unit.unit_id ?? null,
+              system_id: canonicalSystemId ?? null,
               status: unit.status,
               timestamp: unit.time ?? null,
               detection_range_km: 1.5 // 1.5km detection range
@@ -679,6 +792,10 @@ export function useMapPins() {
           success: gpsUnitPositionsResponse.success,
           error: gpsUnitPositionsResponse.error
         })
+      }
+
+      if (detectionPins.length > 0) {
+        pins.push(...detectionPins)
       }
       
 
@@ -789,62 +906,63 @@ export function useMapPins() {
   const syncFocusModeVisuals = () => {
     if (!isMapReady.value) return
 
-    if (focusModeActive.value) {
-      if (focusModeType.value === 'sensor' && focusedDetectorPinId.value) {
-        const detectorPin = mapStore.pins.find(pin => pin.id === focusedDetectorPinId.value)
-        const detectorSystemId = detectorPin?.data?.system_id ?? null
-        const detectorRangeMeters = detectorPin?.data?.detection_range_km
-          ? Number(detectorPin.data.detection_range_km) * 1000
-          : 1500
+      if (focusModeActive.value) {
+        if (focusModeType.value === 'sensor' && focusedDetectorPinId.value) {
+          const detectorPin = mapStore.pins.find(pin => pin.id === focusedDetectorPinId.value)
+          const detectorSystemId = detectorPin?.data?.system_id ?? null
+          const detectorRangeMeters = detectorPin?.data?.detection_range_km
+            ? Number(detectorPin.data.detection_range_km) * 1000
+            : 1500
 
-        mapService.applyFocusMode({
-          focusPinId: focusedDetectorPinId.value,
-          systemId: detectorSystemId,
-          detectorPinId: focusedDetectorPinId.value,
-          mode: 'sensor',
-          detectorRangeMeters
-        })
+          mapService.applyFocusMode({
+            focusPinId: focusedDetectorPinId.value,
+            systemId: detectorSystemId,
+            detectorPinId: focusedDetectorPinId.value,
+            mode: 'sensor',
+            detectorRangeMeters,
+            linkedDroneIds: linkedSensorDroneIds.value
+          })
 
-        mapService.clearTrajectoryCheckpoints()
-        mapStore.setFocusedTrajectoryTimestamp(null)
-        highlightDetections(null)
-      } else if (focusedDronePinId.value) {
-        const focusedPin = mapStore.pins.find(pin => pin.id === focusedDronePinId.value)
-        const trajectoryPoints = (focusedPin?.data?.trajectory ?? []) as DroneTrajectoryPoint[]
-        const droneSystemId = focusedPin?.data?.system_id ?? null
-
-        mapService.applyFocusMode({
-          focusPinId: focusedDronePinId.value,
-          droneTargetId: focusedDroneTargetId.value,
-          systemId: droneSystemId,
-          detectorPinId: focusedDetectorPinId.value,
-          mode: 'drone'
-        })
-
-        if (trajectoryPoints.length > 0) {
-          mapService.showTrajectoryCheckpoints(focusedDronePinId.value, trajectoryPoints)
-          mapService.highlightTrajectoryCheckpoint(focusedDronePinId.value, trajectoryPoints[trajectoryPoints.length - 1].timestamp)
-          mapStore.setFocusedTrajectoryTimestamp(trajectoryPoints[trajectoryPoints.length - 1].timestamp)
-        } else {
-          mapService.clearTrajectoryCheckpoints(focusedDronePinId.value)
+          mapService.clearTrajectoryCheckpoints()
           mapStore.setFocusedTrajectoryTimestamp(null)
+          highlightDetections(null)
+        } else if (focusedDronePinId.value) {
+          const focusedPin = mapStore.pins.find(pin => pin.id === focusedDronePinId.value)
+          const trajectoryPoints = (focusedPin?.data?.trajectory ?? []) as DroneTrajectoryPoint[]
+          const droneSystemId = focusedPin?.data?.system_id ?? null
+
+          mapService.applyFocusMode({
+            focusPinId: focusedDronePinId.value,
+            droneTargetId: focusedDroneTargetId.value,
+            systemId: droneSystemId,
+            detectorPinId: focusedDetectorPinId.value,
+            mode: 'drone'
+          })
+
+          if (trajectoryPoints.length > 0) {
+            mapService.showTrajectoryCheckpoints(focusedDronePinId.value, trajectoryPoints)
+            mapService.highlightTrajectoryCheckpoint(focusedDronePinId.value, trajectoryPoints[trajectoryPoints.length - 1].timestamp)
+            mapStore.setFocusedTrajectoryTimestamp(trajectoryPoints[trajectoryPoints.length - 1].timestamp)
+          } else {
+            mapService.clearTrajectoryCheckpoints(focusedDronePinId.value)
+            mapStore.setFocusedTrajectoryTimestamp(null)
+          }
+          highlightDetections(focusedDetectionId.value ?? null)
+        } else {
+          mapService.applyFocusMode({ focusPinId: null })
+          mapService.clearTrajectoryCheckpoints()
+          mapStore.setFocusedTrajectoryTimestamp(null)
+          highlightDetections(null)
         }
-        highlightDetections(focusedDetectionId.value ?? null)
       } else {
         mapService.applyFocusMode({ focusPinId: null })
         mapService.clearTrajectoryCheckpoints()
         mapStore.setFocusedTrajectoryTimestamp(null)
         highlightDetections(null)
       }
-    } else {
-      mapService.applyFocusMode({ focusPinId: null })
-      mapService.clearTrajectoryCheckpoints()
-      mapStore.setFocusedTrajectoryTimestamp(null)
-      highlightDetections(null)
-    }
   }
 
-  watch([focusModeActive, focusModeType, focusedDronePinId, focusedDroneTargetId, focusedDetectorPinId], () => {
+  watch([focusModeActive, focusModeType, focusedDronePinId, focusedDroneTargetId, focusedDetectorPinId, linkedSensorDroneIds], () => {
     syncFocusModeVisuals()
   })
 

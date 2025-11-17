@@ -18,6 +18,7 @@ export const useMapStore = defineStore('map', () => {
   const focusedDronePinId = ref<string | null>(null)
   const focusedDroneTargetId = ref<string | null>(null)
   const focusedDetectorPinId = ref<string | null>(null)
+  const linkedSensorDroneIds = ref<string[]>([])
   const isFocusMode = ref(false)
   const focusModeType = ref<'none' | 'drone' | 'sensor'>('none')
   const focusedTrajectoryTimestamp = ref<string | null>(null)
@@ -101,9 +102,30 @@ export const useMapStore = defineStore('map', () => {
       }
       setFocusedDetectionId(null)
     } else if (pin?.type === 'sensor') {
+      const detectorRangeMeters = typeof pin.data?.detection_range_km === 'number'
+        ? pin.data.detection_range_km * 1000
+        : 1500
+      const detectorSystemId = pin.data?.system_id !== undefined && pin.data?.system_id !== null
+        ? String(pin.data.system_id)
+        : null
+
+      const dronesInRange = pins.value.filter(candidate => {
+        if (candidate.type !== 'drone') return false
+        const candidateSystemId = candidate.data?.system_id !== undefined && candidate.data?.system_id !== null
+          ? String(candidate.data.system_id)
+          : null
+        const systemMatches = detectorSystemId && candidateSystemId && detectorSystemId === candidateSystemId
+        return systemMatches || calculateDistanceMeters(pin, candidate) <= detectorRangeMeters
+      })
+      const droneTargetIds = dronesInRange
+        .map(drone => drone.data?.drone_id)
+        .filter((id): id is number | string => id !== null && id !== undefined)
+        .map(id => String(id))
+
       enterFocusMode(pin.id, {
         detectorPinId: pin.id,
-        mode: 'sensor'
+        mode: 'sensor',
+        linkedDroneIds: droneTargetIds
       })
       setFocusedTrajectoryTimestamp(null)
       setFocusedDetectionId(null)
@@ -304,6 +326,7 @@ export const useMapStore = defineStore('map', () => {
     focusedDetectorPinId.value = null
     isFocusMode.value = false
     focusModeType.value = 'none'
+    linkedSensorDroneIds.value = []
     viewport.value = {
       center: [42.6977, 23.3219], // Sofia, Bulgaria (where most drones are located)
       zoom: 10
@@ -313,7 +336,7 @@ export const useMapStore = defineStore('map', () => {
 
   const enterFocusMode = (
     pinId: string,
-    options: { droneTargetId?: string | null; detectorPinId?: string | null; mode?: 'drone' | 'sensor' } = {}
+    options: { droneTargetId?: string | null; detectorPinId?: string | null; mode?: 'drone' | 'sensor'; linkedDroneIds?: string[] } = {}
   ) => {
     const mode = options.mode ?? 'drone'
     focusModeType.value = mode
@@ -321,10 +344,12 @@ export const useMapStore = defineStore('map', () => {
       focusedDetectorPinId.value = options.detectorPinId ?? pinId
       focusedDronePinId.value = null
       focusedDroneTargetId.value = null
+      linkedSensorDroneIds.value = options.linkedDroneIds ?? []
     } else {
       focusedDronePinId.value = pinId
       focusedDroneTargetId.value = options.droneTargetId ?? null
       focusedDetectorPinId.value = options.detectorPinId ?? null
+      linkedSensorDroneIds.value = []
     }
     isFocusMode.value = true
   }
@@ -335,6 +360,7 @@ export const useMapStore = defineStore('map', () => {
     focusedDetectorPinId.value = null
     isFocusMode.value = false
     focusModeType.value = 'none'
+    linkedSensorDroneIds.value = []
     focusedTrajectoryTimestamp.value = null
     focusedDetectionId.value = null
   }
@@ -371,6 +397,9 @@ export const useMapStore = defineStore('map', () => {
     hasSelectedCluster,
     availableViewportData,
     focusModeActive,
+    focusModeType,
+    focusedDetectorPinId,
+    linkedSensorDroneIds,
     
     // Actions
     setMapInstance,
@@ -396,4 +425,17 @@ export const useMapStore = defineStore('map', () => {
     focusDetectionPin
   }
 })
+
+function calculateDistanceMeters(a: MapPin, b: MapPin): number {
+  const toRadians = (deg: number) => deg * (Math.PI / 180)
+  const dLat = toRadians(b.lat - a.lat)
+  const dLng = toRadians(b.lng - a.lng)
+  const lat1 = toRadians(a.lat)
+  const lat2 = toRadians(b.lat)
+  const sinLat = Math.sin(dLat / 2)
+  const sinLng = Math.sin(dLng / 2)
+  const h = sinLat * sinLat + Math.cos(lat1) * Math.cos(lat2) * sinLng * sinLng
+  const c = 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h))
+  return 6371000 * c
+}
 

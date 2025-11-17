@@ -75,6 +75,7 @@ class MapService {
     detectorRangeMeters: number | null
     detectorLatLng: [number, number] | null
     mode: 'drone' | 'sensor'
+    linkedDroneIds: string[]
   } = {
     active: false,
     dronePinId: null,
@@ -83,7 +84,8 @@ class MapService {
     detectorPinId: null,
     detectorRangeMeters: null,
     detectorLatLng: null,
-    mode: 'drone'
+    mode: 'drone',
+    linkedDroneIds: []
   }
   private checkpointMarkers: Map<string, L.Marker[]> = new Map()
   private droneTrajectories: Map<string, L.Polyline> = new Map()
@@ -269,6 +271,7 @@ class MapService {
     detectorPinId?: string | null
     mode?: 'drone' | 'sensor'
     detectorRangeMeters?: number | null
+    linkedDroneIds?: string[] | null
   }): void {
     const focusPinId = params.focusPinId
     const detectorPinId = params.detectorPinId ?? null
@@ -283,7 +286,8 @@ class MapService {
       detectorPinId,
       detectorRangeMeters: detectorRange,
       detectorLatLng,
-      mode: params.mode ?? 'drone'
+      mode: params.mode ?? 'drone',
+      linkedDroneIds: params.linkedDroneIds ? params.linkedDroneIds.map(String) : []
     }
 
     this.updateMarkerFocusStyles()
@@ -299,6 +303,7 @@ class MapService {
     const mode = this.focusState.mode ?? 'drone'
     const detectorCoords = this.focusState.detectorLatLng
     const detectorRange = this.focusState.detectorRangeMeters ?? 1500
+    const linkedDroneIds = this.focusState.linkedDroneIds ?? []
 
     this.markers.forEach(marker => {
       const pinData = (marker as any).pinData as MapPin | undefined
@@ -349,7 +354,8 @@ class MapService {
 
       if (
         pin.id === this.focusState.dronePinId ||
-        (this.focusState.droneTargetId !== null && pinDroneTargetId === this.focusState.droneTargetId)
+        (this.focusState.droneTargetId !== null && pinDroneTargetId === this.focusState.droneTargetId) ||
+        (mode === 'sensor' && pinDroneTargetId !== null && linkedDroneIds.includes(pinDroneTargetId))
       ) {
         element.classList.add('marker--detection-focus')
         if (this.highlightedDetectionId !== null) {

@@ -390,8 +390,31 @@ const zoomToMapPin = () => {
 
 const detectionCheckpoints = computed<DetectionCheckpoint[]>(() => {
   const rawDetections = props.selectedPin?.data?.detections
-  if (!Array.isArray(rawDetections)) return []
-  return rawDetections as DetectionCheckpoint[]
+
+  if (Array.isArray(rawDetections)) {
+    return rawDetections as DetectionCheckpoint[]
+  }
+
+  // If a detector is selected, show detections for drones in range
+  if (props.selectedPin?.type === 'sensor') {
+    const linkedDroneIds = mapStore.linkedSensorDroneIds
+    if (!linkedDroneIds.length) return []
+
+    const droneDetections: DetectionCheckpoint[] = []
+    linkedDroneIds.forEach(droneTargetId => {
+      const dronePin = mapStore.pins.find(pin => {
+        return pin.type === 'drone' && String(pin.data?.drone_id ?? '') === droneTargetId
+      })
+
+      if (dronePin && Array.isArray(dronePin.data?.detections)) {
+        droneDetections.push(...(dronePin.data.detections as DetectionCheckpoint[]))
+      }
+    })
+
+    return droneDetections
+  }
+
+  return []
 })
 
 const trajectoryPoints = computed<DroneTrajectoryPoint[]>(() => {
@@ -437,31 +460,63 @@ const highlightedMarkers = computed(() => {
           .forEach(operator => addHighlight(operator, 'Operator'))
       }
 
-      if (detectorPin) {
-        const detectionRangeKm = typeof detectorPin.data?.detection_range_km === 'number'
-          ? detectorPin.data.detection_range_km
-          : 1.5
-        const rangeMeters = detectionRangeKm * 1000
-        dronePins
-          .filter(drone => isWithinRange(detectorPin, drone, rangeMeters))
-          .forEach(drone => addHighlight(drone, 'Drone'))
-      }
+      const linkedDroneIds = mapStore.linkedSensorDroneIds
+      linkedDroneIds.forEach(droneId => {
+        const dronePin = pins.find(pin => pin.type === 'drone' && String(pin.data?.drone_id ?? '') === droneId)
+        addHighlight(dronePin, 'Drone')
+
+        pins
+          .filter(pin => pin.type === 'target' && String(pin.data?.drone_id ?? '') === droneId)
+          .forEach(detectionPin => addHighlight(detectionPin, 'Detection'))
+      })
     } else {
       addHighlight(props.selectedPin)
-      const detectorPin = pins.find(pin => pin.id === mapStore.focusedDetectorPinId)
-      addHighlight(detectorPin, 'Detector')
-
-      const systemId = mapStore.focusedDetectorPinId
-        ? getSystemId(detectorPin)
-        : getSystemId(props.selectedPin)
+      const systemId = getSystemId(props.selectedPin)
       if (systemId) {
+        const detectorPin = pins.find(pin =>
+          pin.type === 'sensor' &&
+          (String(pin.data?.system_id ?? '') === systemId || String(pin.data?.unit_id ?? '') === systemId)
+        )
+        addHighlight(detectorPin, 'Detector')
+
         operatorPins
           .filter(pin => String(pin.data?.system_id ?? '') === systemId)
           .forEach(operator => addHighlight(operator, 'Operator'))
       }
+
+      const droneId = props.selectedPin?.data?.drone_id !== undefined && props.selectedPin?.data?.drone_id !== null
+        ? String(props.selectedPin.data.drone_id)
+        : null
+      if (droneId) {
+        pins
+          .filter(pin => pin.type === 'target' && String(pin.data?.drone_id ?? '') === droneId)
+          .forEach(detectionPin => addHighlight(detectionPin, 'Detection'))
+      }
     }
   } else {
     addHighlight(props.selectedPin)
+
+    const systemId = getSystemId(props.selectedPin)
+    if (systemId) {
+      const detectorPin = pins.find(pin =>
+        pin.type === 'sensor' &&
+        (String(pin.data?.system_id ?? '') === systemId || String(pin.data?.unit_id ?? '') === systemId)
+      )
+      addHighlight(detectorPin, 'Detector')
+
+      operatorPins
+        .filter(pin => String(pin.data?.system_id ?? '') === systemId)
+        .forEach(operator => addHighlight(operator, 'Operator'))
+    }
+
+    const droneId = props.selectedPin?.data?.drone_id !== undefined && props.selectedPin?.data?.drone_id !== null
+      ? String(props.selectedPin.data.drone_id)
+      : null
+    if (droneId) {
+      pins
+        .filter(pin => pin.type === 'target' && String(pin.data?.drone_id ?? '') === droneId)
+        .forEach(detectionPin => addHighlight(detectionPin, 'Detection'))
+    }
   }
 
   return highlights
