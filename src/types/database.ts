@@ -3,6 +3,7 @@
 // Main drone table
 export interface Drone {
   id: number
+  system_id?: string | null
   mac_address: string
   serial_number: string | null
   uas_id: string | null
@@ -21,7 +22,7 @@ export interface DronePosition {
   altitude: number // DECIMAL(8, 2)
   speed: number // DECIMAL(5, 2)
   receiver_type: string | null
-  system_id?: number | string | null
+  system_id?: string | null
 }
 
 // Operator positions table
@@ -31,14 +32,14 @@ export interface OperatorPosition {
   time: string // TIMESTAMP
   latitude: number // DECIMAL(10, 8)
   longitude: number // DECIMAL(11, 8)
-  system_id?: number | string | null
+  system_id?: string | null
 }
 
 // GPS unit positions table
 export interface GpsUnitPosition {
   id: number
   unit_id?: number | string | null
-  system_id?: number | string | null
+  system_id?: string | null
   name?: string | null
   status?: string | null
   time?: string | null // TIMESTAMP
@@ -60,12 +61,13 @@ export interface RFDetection {
   signal_strength: number | null // DECIMAL(8, 2)
   frequency: number | null // DECIMAL(10, 2)
   drone_id: number
-  system_id?: number | string | null
+  system_id?: string | null
 }
 
 // Receiver logs table
 export interface ReceiverLog {
   id: number
+  system_id?: string | null
   receiver_type: string | null
   status: string | null
   time: string // TIMESTAMP

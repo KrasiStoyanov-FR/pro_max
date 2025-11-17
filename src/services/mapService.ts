@@ -66,7 +66,25 @@ class MapService {
   private clusters: Map<string, PinCluster> = new Map()
   private allPins: MapPin[] = []
   private highlightMarker: L.Marker | null = null
-  private focusState: { active: boolean; dronePinId: string | null; droneTargetId: string | null } = { active: false, dronePinId: null, droneTargetId: null }
+  private focusState: {
+    active: boolean
+    dronePinId: string | null
+    droneTargetId: string | null
+    droneSystemId: string | null
+    detectorPinId: string | null
+    detectorRangeMeters: number | null
+    detectorLatLng: [number, number] | null
+    mode: 'drone' | 'sensor'
+  } = {
+    active: false,
+    dronePinId: null,
+    droneTargetId: null,
+    droneSystemId: null,
+    detectorPinId: null,
+    detectorRangeMeters: null,
+    detectorLatLng: null,
+    mode: 'drone'
+  }
   private checkpointMarkers: Map<string, L.Marker[]> = new Map()
   private droneTrajectories: Map<string, L.Polyline> = new Map()
   private onTrajectoryPointClickCallback: ((point: DroneTrajectoryPoint) => void) | null = null
@@ -209,8 +227,8 @@ class MapService {
     // Clear existing detection range circles
     this.clearDetectionRanges()
     
-    // Detection range in meters (typical RF detection range: 2-5km)
-    const DETECTION_RANGE_METERS = 3000 // 3km detection range
+    // Detection range in meters
+    const DETECTION_RANGE_METERS = 1500 // 1.5km detection range
     
     // Find GPS units (sensor type pins) - these are the detection sources
     const detectionSources = pins.filter(pin => pin.type === 'sensor' && pin.status === 'active')
@@ -244,11 +262,28 @@ class MapService {
     this.detectionRangeCircles.clear()
   }
 
-  applyFocusMode(dronePinId: string | null, droneTargetId: string | number | null = null): void {
+  applyFocusMode(params: {
+    focusPinId: string | null
+    droneTargetId?: string | number | null
+    systemId?: string | number | null
+    detectorPinId?: string | null
+    mode?: 'drone' | 'sensor'
+    detectorRangeMeters?: number | null
+  }): void {
+    const focusPinId = params.focusPinId
+    const detectorPinId = params.detectorPinId ?? null
+    const detectorRange = params.detectorRangeMeters ?? (detectorPinId ? 1500 : null)
+    const detectorLatLng = detectorPinId ? this.getPinLatLng(detectorPinId) : null
+
     this.focusState = {
-      active: !!dronePinId,
-      dronePinId,
-      droneTargetId: droneTargetId !== null && droneTargetId !== undefined ? String(droneTargetId) : null
+      active: !!focusPinId,
+      dronePinId: focusPinId,
+      droneTargetId: params.droneTargetId !== null && params.droneTargetId !== undefined ? String(params.droneTargetId) : null,
+      droneSystemId: params.systemId !== null && params.systemId !== undefined ? String(params.systemId) : null,
+      detectorPinId,
+      detectorRangeMeters: detectorRange,
+      detectorLatLng,
+      mode: params.mode ?? 'drone'
     }
 
     this.updateMarkerFocusStyles()
@@ -256,46 +291,52 @@ class MapService {
 
   private updateMarkerFocusStyles(): void {
     if (!this.focusState.active) {
-      this.markers.forEach(marker => {
-        const element = marker.getElement()
-        if (element) {
-          element.classList.remove('marker--faded')
-          element.classList.remove('marker--hidden')
-          element.classList.remove('marker--focus')
-        }
-      })
-      this.detectionsById.forEach(({ marker }) => {
-        const element = marker.getElement()
-        if (element) {
-          element.classList.remove('marker--hidden')
-          element.classList.remove('marker--detection-focus')
-          element.classList.remove('marker--detection-selected')
-        }
-      })
+      this.markers.forEach(marker => this.resetMarkerAppearance(marker))
+      this.detectionsById.forEach(({ marker }) => this.resetMarkerAppearance(marker))
       return
     }
 
+    const mode = this.focusState.mode ?? 'drone'
+    const detectorCoords = this.focusState.detectorLatLng
+    const detectorRange = this.focusState.detectorRangeMeters ?? 1500
+
     this.markers.forEach(marker => {
-      const element = marker.getElement()
-      if (!element) return
-
       const pinData = (marker as any).pinData as MapPin | undefined
+      if (!pinData) return
 
-      const matchesDronePin = pinData?.id === this.focusState.dronePinId
-      const pinDroneTargetId = pinData?.data?.drone_id !== undefined && pinData?.data?.drone_id !== null
+      const pinSystemId = pinData.data?.system_id !== undefined && pinData.data?.system_id !== null
+        ? String(pinData.data.system_id)
+        : null
+      const matchesFocusPin = pinData.id === this.focusState.dronePinId
+      const pinDroneTargetId = pinData.data?.drone_id !== undefined && pinData.data?.drone_id !== null
         ? String(pinData.data.drone_id)
         : null
       const matchesDroneTarget = this.focusState.droneTargetId !== null && pinDroneTargetId === this.focusState.droneTargetId
+      const isDetectionSelection = pinData.type === 'target' && matchesDroneTarget
 
-      if (matchesDronePin || matchesDroneTarget) {
-        element.classList.add('marker--focus')
-        element.classList.remove('marker--faded')
-        element.classList.remove('marker--hidden')
-      } else {
-        element.classList.remove('marker--focus')
-        element.classList.remove('marker--faded')
-        element.classList.add('marker--hidden')
+      let shouldHighlight = false
+
+      if (mode === 'drone') {
+        const linkedBySystem =
+          this.focusState.droneSystemId !== null &&
+          pinSystemId === this.focusState.droneSystemId &&
+          (pinData.type === 'sensor' || pinData.type === 'friendly')
+
+        shouldHighlight = matchesFocusPin || matchesDroneTarget || linkedBySystem || isDetectionSelection
+      } else if (mode === 'sensor') {
+        const isDetector = pinData.id === this.focusState.detectorPinId
+        const operatorMatches =
+          this.focusState.droneSystemId !== null &&
+          pinSystemId === this.focusState.droneSystemId &&
+          pinData.type === 'friendly'
+        let droneInRange = false
+        if (pinData.type === 'drone' && detectorCoords) {
+          droneInRange = this.calculateDistanceMeters(detectorCoords, [pinData.lat, pinData.lng]) <= detectorRange
+        }
+        shouldHighlight = isDetector || operatorMatches || droneInRange
       }
+
+      this.applyMarkerOpacity(marker, shouldHighlight)
     })
 
     this.detectionsById.forEach(({ marker, pin }, key) => {
@@ -310,7 +351,6 @@ class MapService {
         pin.id === this.focusState.dronePinId ||
         (this.focusState.droneTargetId !== null && pinDroneTargetId === this.focusState.droneTargetId)
       ) {
-        element.classList.remove('marker--hidden')
         element.classList.add('marker--detection-focus')
         if (this.highlightedDetectionId !== null) {
           if (key === this.highlightedDetectionId) {
@@ -322,11 +362,58 @@ class MapService {
           element.classList.remove('marker--detection-selected')
         }
       } else {
-        element.classList.add('marker--hidden')
         element.classList.remove('marker--detection-focus')
         element.classList.remove('marker--detection-selected')
       }
     })
+  }
+
+  private applyMarkerOpacity(marker: L.Marker, highlighted: boolean): void {
+    const element = marker.getElement()
+    if (!element) return
+    ;(marker as any).__focusLock = true
+
+    element.classList.remove('marker--hidden')
+    if (highlighted) {
+      element.classList.add('marker--focus')
+      element.classList.remove('marker--faded')
+      element.style.opacity = '1'
+      ;(marker as any).isFaded = false
+    } else {
+      element.classList.remove('marker--focus')
+      element.classList.add('marker--faded')
+      element.style.opacity = '0.15'
+      ;(marker as any).isFaded = true
+    }
+  }
+
+  private resetMarkerAppearance(marker: L.Marker): void {
+    const element = marker.getElement()
+    if (!element) return
+    element.classList.remove('marker--faded')
+    element.classList.remove('marker--focus')
+    element.classList.remove('marker--hidden')
+    element.style.opacity = ''
+    ;(marker as any).isFaded = false
+    ;(marker as any).__focusLock = false
+  }
+
+  private getPinLatLng(pinId: string): [number, number] | null {
+    const pin = this.allPins.find(p => p.id === pinId)
+    return pin ? [pin.lat, pin.lng] : null
+  }
+
+  private calculateDistanceMeters(a: [number, number], b: [number, number]): number {
+    const toRadians = (deg: number) => deg * (Math.PI / 180)
+    const dLat = toRadians(b[0] - a[0])
+    const dLng = toRadians(b[1] - a[1])
+    const lat1 = toRadians(a[0])
+    const lat2 = toRadians(b[0])
+    const sinLat = Math.sin(dLat / 2)
+    const sinLng = Math.sin(dLng / 2)
+    const h = sinLat * sinLat + Math.cos(lat1) * Math.cos(lat2) * sinLng * sinLng
+    const c = 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h))
+    return 6371000 * c
   }
 
   showTrajectoryCheckpoints(dronePinId: string, points: DroneTrajectoryPoint[]): void {
@@ -684,6 +771,9 @@ class MapService {
   }
 
   private fadeMarker(marker: L.Marker): void {
+    if ((marker as any).__focusLock) {
+      return
+    }
     const element = marker.getElement()
     console.log('fadeMarker called, element found:', !!element)
     if (element) {
@@ -838,6 +928,11 @@ class MapService {
         }, 50)
       }
     }
+
+    // Re-apply focus styles after clustering alters markers
+    requestAnimationFrame(() => {
+      this.updateMarkerFocusStyles()
+    })
   }
 
   private createClusters(): void {

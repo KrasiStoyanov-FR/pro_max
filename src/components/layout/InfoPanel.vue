@@ -1,6 +1,6 @@
 <template>
   <div
-    class="h-full max-h-80 md:min-h-80 flex self-end rounded-2xl bg-neutral-900/70 backdrop-blur-3xl transition-all duration-300 ease-out pointer-events-auto overflow-hidden"
+    class="h-full max-h-800 md:min-h-80 flex self-end rounded-2xl bg-neutral-900/70 backdrop-blur-3xl transition-all duration-300 ease-out pointer-events-auto overflow-hidden"
     :class="[
       // Size and visibility
       isOpen ? 'w-64 lg:w-80 opacity-100 visible translate-x-0 scale-100 pointer-events-auto' : 'w-0 opacity-0 -translate-x-full invisible scale-95 pointer-events-none',
@@ -34,6 +34,32 @@
 
       <!-- Panel Content -->
       <div v-if="selectedPin" class="flex flex-1 flex-col p-4 space-y-4 overflow-y-auto bg-neutral-900/30">
+        <!-- Highlight summary -->
+        <div v-if="highlightedMarkers.length" class="bg-white/5 rounded-xl border border-white/10 p-3 space-y-2">
+          <div class="flex items-center justify-between text-xs text-primary-200 uppercase tracking-wide">
+            <span>Currently Highlighted</span>
+            <span>{{ highlightedMarkers.length }} item{{ highlightedMarkers.length === 1 ? '' : 's' }}</span>
+          </div>
+          <ul class="space-y-2">
+            <li
+              v-for="marker in highlightedMarkers"
+              :key="marker.id"
+              class="bg-neutral-900/60 rounded-lg px-3 py-2 border border-white/10 flex items-start justify-between space-x-3"
+            >
+              <div class="flex-1 min-w-0">
+                <p class="text-sm text-white truncate">{{ marker.title }}</p>
+                <p v-if="marker.subtitle" class="text-xs text-neutral-400 truncate">{{ marker.subtitle }}</p>
+              </div>
+              <span
+                class="text-xs font-semibold px-2 py-0.5 rounded-full whitespace-nowrap"
+                :class="marker.badgeClass"
+              >
+                {{ marker.typeLabel }}
+              </span>
+            </li>
+          </ul>
+        </div>
+
         <!-- Target Details -->
         <div v-if="selectedPin.data?.serialNumber" class="flex items-start space-x-3">
           <PhIdentificationCard :size="16" class="text-primary-50 mt-0.5" />
@@ -280,7 +306,7 @@
             </div>
           </div>
 
-          <ul class="space-y-2 max-h-48 overflow-y-auto pr-1">
+          <ul class="space-y-2 max-h-480 overflow-y-auto pr-1">
             <li
               v-for="(point, index) in trajectoryPoints.slice(-20)"
               :key="`${point.timestamp}-${index}`"
@@ -373,6 +399,111 @@ const trajectoryPoints = computed<DroneTrajectoryPoint[]>(() => {
   if (!Array.isArray(rawTrajectory)) return []
   return rawTrajectory as DroneTrajectoryPoint[]
 })
+
+const highlightedMarkers = computed(() => {
+  const highlights: Array<{ id: string; title: string; typeLabel: string; subtitle?: string; badgeClass: string }> = []
+  const pins = mapStore.pins
+  const addHighlight = (pin: MapPin | null | undefined, typeOverride?: string) => {
+    if (!pin) return
+    if (highlights.some(entry => entry.id === pin.id)) return
+    highlights.push({
+      id: pin.id,
+      title: pin.title,
+      typeLabel: typeOverride ?? getTypeLabel(pin.type),
+      subtitle: pin.description,
+      badgeClass: getBadgeClass(typeOverride ?? getTypeLabel(pin.type))
+    })
+  }
+
+  const getSystemId = (pin: MapPin | null | undefined) => {
+    const value = pin?.data?.system_id
+    return value !== undefined && value !== null ? String(value) : null
+  }
+
+  const dronePins = pins.filter(pin => pin.type === 'drone')
+  const operatorPins = pins.filter(pin => pin.type === 'friendly')
+
+  if (mapStore.focusModeActive) {
+    if (mapStore.focusModeType === 'sensor') {
+      const detectorPin = props.selectedPin?.type === 'sensor'
+        ? props.selectedPin
+        : pins.find(pin => pin.id === mapStore.focusedDetectorPinId)
+      addHighlight(detectorPin, 'Detector')
+
+      const systemId = getSystemId(detectorPin)
+      if (systemId) {
+        operatorPins
+          .filter(pin => String(pin.data?.system_id ?? '') === systemId)
+          .forEach(operator => addHighlight(operator, 'Operator'))
+      }
+
+      if (detectorPin) {
+        const detectionRangeKm = typeof detectorPin.data?.detection_range_km === 'number'
+          ? detectorPin.data.detection_range_km
+          : 1.5
+        const rangeMeters = detectionRangeKm * 1000
+        dronePins
+          .filter(drone => isWithinRange(detectorPin, drone, rangeMeters))
+          .forEach(drone => addHighlight(drone, 'Drone'))
+      }
+    } else {
+      addHighlight(props.selectedPin)
+      const detectorPin = pins.find(pin => pin.id === mapStore.focusedDetectorPinId)
+      addHighlight(detectorPin, 'Detector')
+
+      const systemId = mapStore.focusedDetectorPinId
+        ? getSystemId(detectorPin)
+        : getSystemId(props.selectedPin)
+      if (systemId) {
+        operatorPins
+          .filter(pin => String(pin.data?.system_id ?? '') === systemId)
+          .forEach(operator => addHighlight(operator, 'Operator'))
+      }
+    }
+  } else {
+    addHighlight(props.selectedPin)
+  }
+
+  return highlights
+})
+
+const getTypeLabel = (type: string) => {
+  switch (type) {
+    case 'drone': return 'Drone'
+    case 'sensor': return 'Detector'
+    case 'friendly': return 'Operator'
+    case 'target': return 'Detection'
+    default: return type.charAt(0).toUpperCase() + type.slice(1)
+  }
+}
+
+const getBadgeClass = (label: string) => {
+  switch (label) {
+    case 'Drone': return 'bg-green-500/20 text-green-200 border border-green-400/30'
+    case 'Detector': return 'bg-cyan-500/20 text-cyan-200 border border-cyan-400/30'
+    case 'Operator': return 'bg-blue-500/20 text-blue-200 border border-blue-400/30'
+    case 'Detection': return 'bg-yellow-500/20 text-yellow-200 border border-yellow-400/30'
+    default: return 'bg-white/10 text-white border border-white/20'
+  }
+}
+
+const isWithinRange = (source: MapPin, target: MapPin, rangeMeters: number) => {
+  const distance = calculateDistanceMeters(source.lat, source.lng, target.lat, target.lng)
+  return distance <= rangeMeters
+}
+
+const calculateDistanceMeters = (lat1: number, lng1: number, lat2: number, lng2: number) => {
+  const toRadians = (deg: number) => deg * (Math.PI / 180)
+  const dLat = toRadians(lat2 - lat1)
+  const dLng = toRadians(lng2 - lng1)
+  const latRad1 = toRadians(lat1)
+  const latRad2 = toRadians(lat2)
+  const sinLat = Math.sin(dLat / 2)
+  const sinLng = Math.sin(dLng / 2)
+  const h = sinLat * sinLat + Math.cos(latRad1) * Math.cos(latRad2) * sinLng * sinLng
+  const c = 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h))
+  return 6371000 * c
+}
 
 const formatDetectionTimestamp = (timestamp?: string) => {
   if (!timestamp) return 'Unknown'

@@ -17,7 +17,9 @@ export const useMapStore = defineStore('map', () => {
   const mapInstance = ref<any>(null) // Will hold Leaflet map instance
   const focusedDronePinId = ref<string | null>(null)
   const focusedDroneTargetId = ref<string | null>(null)
+  const focusedDetectorPinId = ref<string | null>(null)
   const isFocusMode = ref(false)
+  const focusModeType = ref<'none' | 'drone' | 'sensor'>('none')
   const focusedTrajectoryTimestamp = ref<string | null>(null)
   const focusedDetectionId = ref<number | null>(null)
 
@@ -37,7 +39,7 @@ export const useMapStore = defineStore('map', () => {
   const hasSelectedPin = computed(() => selectedPin.value !== null)
   const hasSelectedCluster = computed(() => selectedCluster.value !== null)
   const availableViewportData = computed(() => availableViewport.value)
-  const focusModeActive = computed(() => isFocusMode.value && !!focusedDronePinId.value)
+  const focusModeActive = computed(() => isFocusMode.value && (!!focusedDronePinId.value || !!focusedDetectorPinId.value))
 
   // Actions
   const setMapInstance = (map: any) => {
@@ -79,7 +81,17 @@ export const useMapStore = defineStore('map', () => {
       const droneTarget = pin.data?.drone_id !== undefined && pin.data?.drone_id !== null
         ? String(pin.data.drone_id)
         : null
-      enterFocusMode(pin.id, droneTarget)
+      const droneSystemId = pin.data?.system_id !== undefined && pin.data?.system_id !== null
+        ? String(pin.data.system_id)
+        : null
+      const linkedDetectorPin = droneSystemId
+        ? pins.value.find(p => p.type === 'sensor' && String(p.data?.system_id ?? '') === droneSystemId)
+        : null
+      enterFocusMode(pin.id, {
+        droneTargetId: droneTarget,
+        detectorPinId: linkedDetectorPin?.id ?? null,
+        mode: 'drone'
+      })
 
       if (Array.isArray(pin.data?.trajectory) && pin.data.trajectory.length > 0) {
         const lastPoint = pin.data.trajectory[pin.data.trajectory.length - 1]
@@ -87,6 +99,13 @@ export const useMapStore = defineStore('map', () => {
       } else {
         setFocusedTrajectoryTimestamp(null)
       }
+      setFocusedDetectionId(null)
+    } else if (pin?.type === 'sensor') {
+      enterFocusMode(pin.id, {
+        detectorPinId: pin.id,
+        mode: 'sensor'
+      })
+      setFocusedTrajectoryTimestamp(null)
       setFocusedDetectionId(null)
     } else if (pin?.type === 'target' && pin?.data) {
       const detectionId =
@@ -102,9 +121,16 @@ export const useMapStore = defineStore('map', () => {
         const droneTarget = String(pin.data.drone_id)
         const existingDronePin = pins.value.find(p => p.type === 'drone' && String(p.data?.drone_id) === droneTarget)
         const focusPinId = existingDronePin?.id ?? focusedDronePinId.value ?? `drone-${droneTarget}`
-        enterFocusMode(focusPinId, droneTarget)
+        const detectorForDrone = existingDronePin?.data?.system_id !== undefined && existingDronePin?.data?.system_id !== null
+          ? pins.value.find(p => p.type === 'sensor' && String(p.data?.system_id ?? '') === String(existingDronePin.data?.system_id))
+          : null
+        enterFocusMode(focusPinId, {
+          droneTargetId: droneTarget,
+          detectorPinId: detectorForDrone?.id ?? null,
+          mode: 'drone'
+        })
       } else if (!isFocusMode.value) {
-        enterFocusMode(pin.id, null)
+        enterFocusMode(pin.id, { mode: 'drone' })
       }
 
       setFocusedTrajectoryTimestamp(pin.data?.timestamp ?? null)
@@ -275,7 +301,9 @@ export const useMapStore = defineStore('map', () => {
     selectedPin.value = null
     focusedDronePinId.value = null
     focusedDroneTargetId.value = null
+    focusedDetectorPinId.value = null
     isFocusMode.value = false
+    focusModeType.value = 'none'
     viewport.value = {
       center: [42.6977, 23.3219], // Sofia, Bulgaria (where most drones are located)
       zoom: 10
@@ -283,16 +311,30 @@ export const useMapStore = defineStore('map', () => {
     mapInstance.value = null
   }
 
-  const enterFocusMode = (dronePinId: string, droneTargetId: string | null = null) => {
-    focusedDronePinId.value = dronePinId
-    focusedDroneTargetId.value = droneTargetId
+  const enterFocusMode = (
+    pinId: string,
+    options: { droneTargetId?: string | null; detectorPinId?: string | null; mode?: 'drone' | 'sensor' } = {}
+  ) => {
+    const mode = options.mode ?? 'drone'
+    focusModeType.value = mode
+    if (mode === 'sensor') {
+      focusedDetectorPinId.value = options.detectorPinId ?? pinId
+      focusedDronePinId.value = null
+      focusedDroneTargetId.value = null
+    } else {
+      focusedDronePinId.value = pinId
+      focusedDroneTargetId.value = options.droneTargetId ?? null
+      focusedDetectorPinId.value = options.detectorPinId ?? null
+    }
     isFocusMode.value = true
   }
 
   const exitFocusMode = () => {
     focusedDronePinId.value = null
     focusedDroneTargetId.value = null
+    focusedDetectorPinId.value = null
     isFocusMode.value = false
+    focusModeType.value = 'none'
     focusedTrajectoryTimestamp.value = null
     focusedDetectionId.value = null
   }
@@ -315,7 +357,9 @@ export const useMapStore = defineStore('map', () => {
     mapInstance,
     focusedDronePinId,
     focusedDroneTargetId,
+    focusedDetectorPinId,
     isFocusMode,
+    focusModeType,
     focusedTrajectoryTimestamp,
     focusedDetectionId,
     
