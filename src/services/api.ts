@@ -14,7 +14,8 @@ import type {
   DronePositionsResponse,
   DronesResponse,
   RFDetectionsResponse,
-  GpsUnitPositionsResponse
+  GpsUnitPositionsResponse,
+  DatabaseResponse
 } from '@/types/database'
 
 // Create axios instance with base configuration
@@ -247,6 +248,90 @@ export const databaseApi = {
         }
       } catch (error) {
         console.error('[API] Failed to fetch GPS unit positions from database:', error)
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        }
+      }
+    })
+  },
+
+  // Get individual items by ID
+  async getDroneById(id: number | string): Promise<DatabaseResponse<Drone>> {
+    return getCachedData(`drone_${id}`, async () => {
+      try {
+        const response = await api.get(`/table/drones?database=drone_monitoring&id=${id}`)
+        const drones = response.data.data as Drone[]
+        const drone = drones.find(d => d.id === Number(id) || String(d.id) === String(id))
+        if (drone) {
+          return {
+            success: true,
+            data: drone
+          }
+        }
+        return {
+          success: false,
+          error: `Drone with ID ${id} not found`
+        }
+      } catch (error) {
+        console.error(`[API] Failed to fetch drone ${id} from database:`, error)
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        }
+      }
+    })
+  },
+
+  async getDetectorById(id: number | string): Promise<DatabaseResponse<GpsUnitPosition>> {
+    return getCachedData(`detector_${id}`, async () => {
+      try {
+        const response = await api.get(`/table/gps_unit_position?database=drone_monitoring&id=${id}`)
+        const units = response.data.data as GpsUnitPosition[]
+        const unit = units.find(u => 
+          u.id === Number(id) || 
+          String(u.id) === String(id) ||
+          u.unit_id === Number(id) ||
+          String(u.unit_id) === String(id)
+        )
+        if (unit) {
+          return {
+            success: true,
+            data: unit
+          }
+        }
+        return {
+          success: false,
+          error: `Detector with ID ${id} not found`
+        }
+      } catch (error) {
+        console.error(`[API] Failed to fetch detector ${id} from database:`, error)
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        }
+      }
+    })
+  },
+
+  async getRFDetectionById(id: number): Promise<DatabaseResponse<RFDetection>> {
+    return getCachedData(`rf_detection_${id}`, async () => {
+      try {
+        const response = await api.get(`/table/rf_detections?database=drone_monitoring&id=${id}`)
+        const detections = response.data.data as RFDetection[]
+        const detection = detections.find(d => d.id === id)
+        if (detection) {
+          return {
+            success: true,
+            data: detection
+          }
+        }
+        return {
+          success: false,
+          error: `RF Detection with ID ${id} not found`
+        }
+      } catch (error) {
+        console.error(`[API] Failed to fetch RF detection ${id} from database:`, error)
         return {
           success: false,
           error: error instanceof Error ? error.message : 'Unknown error'
