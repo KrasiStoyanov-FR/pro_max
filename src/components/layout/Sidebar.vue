@@ -129,21 +129,15 @@ const route = useRoute()
 // Uncomment routes in router/index.ts and create corresponding page components
 const navigationItems = [
   {
-    name: 'Map',
-    label: 'Map',
+    name: 'Live View',
+    label: 'Live View',
     href: '/map',
     icon: PhCompass
   },
   {
-    name: 'Dashboard',
-    label: 'Dashboard',
-    href: '/dashboard',
-    icon: PhLayout
-  },
-  {
-    name: 'Account',
-    label: 'Account',
-    href: '/account',
+    name: 'Detections',
+    label: 'Detections',
+    href: '/detections',
     icon: PhLayout
   },
   {
@@ -153,9 +147,27 @@ const navigationItems = [
     icon: PhLayout
   },
   {
-    name: 'Controls',
-    label: 'Controls',
-    href: '/controls',
+    name: 'Incidents',
+    label: 'Incidents',
+    href: '/incidents',
+    icon: PhLayout
+  },
+  {
+    name: 'History',
+    label: 'History',
+    href: '/history',
+    icon: PhLayout
+  },
+  {
+    name: 'Reports',
+    label: 'Reports',
+    href: '/reports',
+    icon: PhLayout
+  },
+  {
+    name: 'Settings',
+    label: 'Settings',
+    href: '/settings',
     icon: PhLayout
   },
 ]

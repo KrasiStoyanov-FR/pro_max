@@ -29,7 +29,7 @@ const router = createRouter({
     },
     {
       path: '/map',
-      name: 'Map',
+      name: 'Live View',
       component: Map,
       meta: {
         requiresAuth: true,

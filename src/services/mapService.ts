@@ -65,6 +65,7 @@ class MapService {
   private currentLayerType: 'dark' | 'light' | 'satellite' = 'satellite'
   private clusters: Map<string, PinCluster> = new Map()
   private allPins: MapPin[] = []
+  private detectionPins: MapPin[] = []
   private highlightMarker: L.Marker | null = null
   private focusState: {
     active: boolean
@@ -143,6 +144,9 @@ class MapService {
           this.unspiderfy()
         }
       })
+      this.map.on('moveend', () => {
+        this.updateMarkerFocusStyles()
+      })
       // Clear spiderfy on general map click
       this.map.on('click', () => {
         if (this.spiderfiedActive) {
@@ -206,12 +210,14 @@ class MapService {
   addPins(pins: MapPin[]): void {
     if (!this.map) return
 
-    // Store all pins for clustering
-    this.allPins = pins
+    // Store detection pins separately so they don't appear by default
+    this.detectionPins = pins.filter(pin => pin.type === 'target')
+    // Remaining pins participate in clustering/normal rendering
+    this.allPins = pins.filter(pin => pin.type !== 'target')
 
     // Apply clustering based on zoom level (this will clear and redraw everything)
     this.applyClustering()
-    this.registerDetectionMarkers(pins)
+    this.registerDetectionMarkers(this.detectionPins)
 
     // Add detection range circles for GPS units/receivers
     this.addDetectionRanges(pins)
@@ -294,9 +300,25 @@ class MapService {
   }
 
   private updateMarkerFocusStyles(): void {
+    const resetDetections = () => {
+      this.detectionsById.forEach(({ marker }) => {
+        const element = marker.getElement()
+        if (!element) return
+        element.classList.remove('marker--detection-focus')
+        element.classList.remove('marker--detection-selected')
+        element.classList.add('marker--hidden')
+      })
+    }
+
     if (!this.focusState.active) {
       this.markers.forEach(marker => this.resetMarkerAppearance(marker))
-      this.detectionsById.forEach(({ marker }) => this.resetMarkerAppearance(marker))
+      resetDetections()
+      return
+    }
+
+    if (!this.isFocusContextVisible()) {
+      this.markers.forEach(marker => this.resetMarkerAppearance(marker))
+      resetDetections()
       return
     }
 
@@ -358,6 +380,7 @@ class MapService {
         (mode === 'sensor' && pinDroneTargetId !== null && linkedDroneIds.includes(pinDroneTargetId))
       ) {
         element.classList.add('marker--detection-focus')
+        element.classList.remove('marker--hidden')
         if (this.highlightedDetectionId !== null) {
           if (key === this.highlightedDetectionId) {
             element.classList.add('marker--detection-selected')
@@ -370,6 +393,7 @@ class MapService {
       } else {
         element.classList.remove('marker--detection-focus')
         element.classList.remove('marker--detection-selected')
+        element.classList.add('marker--hidden')
       }
     })
   }
@@ -388,7 +412,7 @@ class MapService {
     } else {
       element.classList.remove('marker--focus')
       element.classList.add('marker--faded')
-      element.style.opacity = '0.15'
+      element.style.opacity = '0.35'
       ;(marker as any).isFaded = true
     }
   }
@@ -407,6 +431,37 @@ class MapService {
   private getPinLatLng(pinId: string): [number, number] | null {
     const pin = this.allPins.find(p => p.id === pinId)
     return pin ? [pin.lat, pin.lng] : null
+  }
+
+  private getPinLatLngByDroneTarget(droneTargetId: string | null): [number, number] | null {
+    if (!droneTargetId) return null
+    const pin = this.allPins.find(p => p.type === 'drone' && String(p.data?.drone_id ?? '') === droneTargetId)
+    return pin ? [pin.lat, pin.lng] : null
+  }
+
+  private isFocusContextVisible(): boolean {
+    if (!this.map || !this.focusState.active) return true
+    const bounds = this.map.getBounds()
+    if (!bounds) return true
+
+    const contains = (coords: [number, number] | null): boolean => {
+      if (!coords) return false
+      return bounds.contains(coords as L.LatLngExpression)
+    }
+
+    if (this.focusState.mode === 'sensor') {
+      if (contains(this.getPinLatLng(this.focusState.detectorPinId ?? ''))) return true
+      if (this.focusState.linkedDroneIds?.length) {
+        return this.focusState.linkedDroneIds.some(droneId => contains(this.getPinLatLngByDroneTarget(droneId)))
+      }
+      return false
+    }
+
+    if (contains(this.getPinLatLng(this.focusState.dronePinId ?? ''))) return true
+    if (contains(this.getPinLatLng(this.focusState.detectorPinId ?? ''))) return true
+    if (contains(this.getPinLatLngByDroneTarget(this.focusState.droneTargetId))) return true
+
+    return false
   }
 
   private calculateDistanceMeters(a: [number, number], b: [number, number]): number {
@@ -566,6 +621,7 @@ class MapService {
         element.classList.remove('marker--detection-selected')
         if (!this.focusState.active) {
           element.classList.remove('marker--detection-focus')
+          element.classList.add('marker--hidden')
         }
       }
     })
@@ -1209,6 +1265,26 @@ class MapService {
   }
 
   private getIconForPinType(type: string, status: string, isSelected: boolean = false, isFaded: boolean = false): any {
+    // RF detections act as trajectory checkpoints, so render them as small dots instead of large markers
+    if (type === 'target') {
+      const size = isSelected ? 22 : 16
+      const activeClass = isSelected ? 'trajectory-checkpoint--active' : ''
+
+      return L.divIcon({
+        className: `custom-marker detection-marker ${activeClass}`,
+        html: `
+          <div class="trajectory-checkpoint--map">
+            <div class="trajectory-checkpoint__wrapper">
+              <div class="trajectory-checkpoint__pulse"></div>
+              <div class="trajectory-checkpoint__dot"></div>
+            </div>
+          </div>
+        `,
+        iconSize: [size, size],
+        iconAnchor: [size / 2, size / 2]
+      } as any)
+    }
+
     const color = this.getColorForStatus(status, type)
     const isAlarm = status === 'critical'
     const isWarning = status === 'warning'
@@ -1696,18 +1772,28 @@ class MapService {
     this.detectionsById.clear()
 
     pins.forEach(pin => {
-      if (pin.type === 'target') {
-        const marker = this.markers.get(pin.id)
-        if (!marker) return
+      // Ensure marker exists for detection pins even though they aren't part of clustering
+      let marker = this.markers.get(pin.id)
+      if (!marker) {
+        marker = this.createMarker(pin)
+        this.markers.set(pin.id, marker)
+        marker.addTo(this.map!)
+      }
 
-        const detectionId =
-          typeof pin.data?.id === 'number'
-            ? pin.data.id
-            : Number(String(pin.id).replace('rf-detection-', ''))
+      const element = marker.getElement()
+      if (element) {
+        element.classList.add('marker--hidden')
+        element.classList.remove('marker--detection-focus')
+        element.classList.remove('marker--detection-selected')
+      }
 
-        if (!Number.isNaN(detectionId)) {
-          this.detectionsById.set(detectionId, { marker, pin })
-        }
+      const detectionId =
+        typeof pin.data?.id === 'number'
+          ? pin.data.id
+          : Number(String(pin.id).replace('rf-detection-', ''))
+
+      if (!Number.isNaN(detectionId)) {
+        this.detectionsById.set(detectionId, { marker, pin })
       }
     })
   }

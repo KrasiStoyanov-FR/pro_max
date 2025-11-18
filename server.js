@@ -1,12 +1,19 @@
 import express from 'express'
 import cors from 'cors'
 import mysql from 'mysql2/promise'
+import fs from 'fs'
+import path from 'path'
 import dotenv from 'dotenv'
 
 dotenv.config()
 
 const app = express()
 const PORT = process.env.PORT || 3001
+
+// FOR DUMMY DATA - TODO: Remove this when we are done testing
+import sqlite3 from 'sqlite3'
+const USE_SQLITE = process.env.USE_SQLITE === 'true'
+const SQLITE_PATH = path.join(process.cwd(), 'database.sqlite')
 
 // Middleware
 app.use(cors())
@@ -33,7 +40,45 @@ const DB_CONFIG = {
 // Create connection pool
 let connectionPool = null
 
+// FOR DUMMY DATA - TODO: Remove this when we are done testing
+let sqliteDb = null
+
+const createSqliteConnection = () => {
+  if (!sqliteDb) {
+    sqliteDb = new sqlite3.Database(SQLITE_PATH)
+    console.log(`[SQLite] Connected to ${SQLITE_PATH}`)
+  }
+
+  return {
+    execute: (query, params = []) =>
+      new Promise((resolve, reject) => {
+        const trimmed = query.trim().toLowerCase()
+        if (trimmed.startsWith('select')) {
+          sqliteDb.all(query, params, (err, rows) => {
+            if (err) return reject(err)
+            resolve([rows])
+          })
+        } else {
+          sqliteDb.run(query, params, function (err) {
+            if (err) return reject(err)
+            resolve([[{ changes: this.changes, lastID: this.lastID }]])
+          })
+        }
+      }),
+    release: () => {}
+  }
+}
+
+const sqlitePool = {
+  getConnection: async () => createSqliteConnection()
+}
+
 const createConnectionPool = async () => {
+  if (USE_SQLITE) {
+    return sqlitePool
+  }
+
+  // REAL API DATA
   if (connectionPool) {
     return connectionPool
   }
@@ -75,18 +120,20 @@ const createConnectionPool = async () => {
 app.get('/api/db/health', async (req, res) => {
   try {
     console.log('[API] Testing database connection...')
-    
     const pool = await createConnectionPool()
     const connection = await pool.getConnection()
-    
-    // Test basic connection
-    const [rows] = await connection.execute('SELECT 1 as test, VERSION() as version')
-    
+
+    let query = 'SELECT 1 as test, VERSION() as version'
+    if (USE_SQLITE) {
+      query = 'SELECT 1 as test, sqlite_version() as version'
+    }
+
+    const [rows] = await connection.execute(query)
     connection.release()
     
     res.json({
       success: true,
-      message: 'MariaDB connection successful',
+      message: USE_SQLITE ? 'SQLite connection successful' : 'MariaDB connection successful',
       data: rows
     })
   } catch (error) {
@@ -212,17 +259,20 @@ app.get('/api/db/table/:tableName', async (req, res) => {
   try {
     const { tableName } = req.params
     const { database, limit = 100 } = req.query
-    
+
     console.log(`[API] Fetching data from table: ${tableName}${database ? ` in database: ${database}` : ''}`)
-    
     const pool = await createConnectionPool()
     const connection = await pool.getConnection()
-    
-    let query = `SELECT * FROM \`${tableName}\` LIMIT ${limit}`
-    if (database) {
+
+    let query = ''
+    if (USE_SQLITE) {
+      query = `SELECT * FROM ${tableName} LIMIT ${limit}`
+    } else if (database) {
       query = `SELECT * FROM \`${database}\`.\`${tableName}\` LIMIT ${limit}`
+    } else {
+      query = `SELECT * FROM \`${tableName}\` LIMIT ${limit}`
     }
-    
+
     const [rows] = await connection.execute(query)
     connection.release()
     
@@ -353,6 +403,55 @@ app.get('/api/db/all-data', async (req, res) => {
   }
 })
 
+
+// ===== Mock drone states for detections endpoint =====
+let droneStates = {}
+const mockDroneStatesPath = path.join(process.cwd(), 'scripts', 'mock_drone_states.json')
+
+const loadDroneStates = () => {
+  try {
+    if (fs.existsSync(mockDroneStatesPath)) {
+      const raw = fs.readFileSync(mockDroneStatesPath, 'utf-8')
+      droneStates = JSON.parse(raw)
+      console.log(`[API] Loaded ${Object.keys(droneStates).length} mock drone states`)
+    } else {
+      console.warn('[API] mock_drone_states.json not found; /api/detections will be empty')
+    }
+  } catch (error) {
+    console.error('[API] Failed to load mock drone states:', error)
+  }
+}
+
+loadDroneStates()
+
+app.get('/api/detections', (req, res) => {
+  const allDetections = {}
+  const now = new Date()
+
+  Object.entries(droneStates).forEach(([mac, state]) => {
+    if (!state.last_update) return
+    const lastUpdate = new Date(state.last_update)
+    if (Number.isNaN(lastUpdate.getTime())) return
+
+    // Include detections updated within last 10 minutes
+    if ((now - lastUpdate) / 1000 < 600) {
+      allDetections[mac] = {
+        mac_address: mac,
+        serial_number: state.serial_number ?? null,
+        uas_id: state.uas_id ?? null,
+        has_coordinates: state.has_coordinates ?? false,
+        drone_lat: state.drone_lat ?? null,
+        drone_lon: state.drone_lon ?? null,
+        receiver_type: state.receiver_type ?? 'unknown',
+        last_detection: state.last_update,
+        altitude: state.altitude ?? null,
+        speed: state.speed ?? null
+      }
+    }
+  })
+
+  res.json(allDetections)
+})
 
 // Health check
 app.get('/api/health', (req, res) => {

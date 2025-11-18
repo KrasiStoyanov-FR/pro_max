@@ -295,6 +295,7 @@ const toTimeValue = (value: string | undefined | null) => value ? new Date(value
       
       // Convert drone positions to map pins
       if (dronePositionsResponse.success && dronePositionsResponse.data) {
+        const processedPositionKeys = new Set<string>()
         dronePositionsResponse.data.forEach((position: DronePosition) => {
           const droneKey = String(position.drone_id)
           const lat = parseFloat(position.latitude.toString())
@@ -304,6 +305,18 @@ const toTimeValue = (value: string | undefined | null) => value ? new Date(value
            if (!isValidCoordinate(lat, lng)) {
              return
            }
+
+          const systemKey = position.system_id !== undefined && position.system_id !== null
+            ? String(position.system_id)
+            : 'unknown'
+          const compositeKey = `${droneKey}::${systemKey}`
+          const dedupeKey = `${compositeKey}::${timestamp ?? 'unknown'}`
+
+          // Skip duplicate entries from the same detector/drone combination
+          if (processedPositionKeys.has(dedupeKey)) {
+            return
+          }
+          processedPositionKeys.add(dedupeKey)
 
           const point: DroneTrajectoryPoint = { lat, lng, timestamp }
           const entry = droneTrajectoryMap.get(droneKey) || { points: [], positions: [], latestPosition: null }
