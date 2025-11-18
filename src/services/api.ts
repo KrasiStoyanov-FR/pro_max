@@ -17,6 +17,7 @@ import type {
   GpsUnitPositionsResponse,
   DatabaseResponse
 } from '@/types/database'
+import type { SystemStatusResponse } from '@/types/system'
 
 // Create axios instance with base configuration
 const api: AxiosInstance = axios.create({
@@ -470,6 +471,201 @@ export const databaseApi = {
         }
       }
     }
+  },
+
+  // Get system status aggregate endpoint
+  // Note: Bypasses cache to ensure fresh data every poll (5s interval)
+  async getSystemStatus(forceRefresh = false): Promise<SystemStatusResponse> {
+    // Check for pending request (request deduplication only)
+    const pendingKey = 'system_status_pending'
+    if (pendingRequests.has(pendingKey) && !forceRefresh) {
+      return await pendingRequests.get(pendingKey)
+    }
+    
+    const normalizeTimestamp = (value: string | null | undefined) => {
+      if (!value) return ''
+      const date = new Date(value)
+      return Number.isNaN(date.getTime()) ? value : date.toISOString()
+    }
+
+    const normalizeCoordinate = (value: number | string | null | undefined, precision = 4) => {
+      if (value === null || value === undefined) return ''
+      const numeric = typeof value === 'string' ? parseFloat(value) : value
+      if (!Number.isFinite(numeric)) return ''
+      return numeric.toFixed(precision)
+    }
+
+    const buildEntityKey = (...parts: Array<string | number | null | undefined>) => {
+      const sanitized = parts
+        .map(part => {
+          if (typeof part === 'string') return part.trim()
+          if (typeof part === 'number') return part.toString()
+          return part ?? ''
+        })
+        .filter(part => part !== '' && part !== null && part !== undefined)
+      return sanitized.length ? sanitized.join('|') : ''
+    }
+
+    const fetchFn = async () => {
+      try {
+        // Aggregate from individual endpoints
+        const [healthResponse, dronesResponse, dronePositionsResponse, detectionsResponse, operatorsResponse] = await Promise.allSettled([
+          this.getHealth(),
+          this.getDrones(),
+          this.getDronePositions(200),
+          this.getRFDetections(100),
+          this.getOperatorPositions(50)
+        ])
+
+        // Determine database status
+        let dbStatus: 'ok' | 'degraded' | 'down' = 'ok'
+        let dbMessage = 'Database connected'
+        
+        if (healthResponse.status === 'rejected') {
+          dbStatus = 'down'
+          dbMessage = 'Health check failed'
+        } else {
+          const health = healthResponse.value?.data
+          if (!health || health.status === 'error') {
+            dbStatus = 'down'
+            dbMessage = 'Database connection failed'
+          } else if (health.status === 'degraded') {
+            dbStatus = 'degraded'
+            dbMessage = 'Database performance degraded'
+          }
+        }
+
+        // Count active drones (deduplicated, recent positions)
+        let activeDrones = 0
+        const activeWindowMs = 10 * 60 * 1000 // 10 minutes
+        const cutoffTime = Date.now() - activeWindowMs
+
+        const uniqueActiveDrones = new Set<string>()
+
+        if (
+          dronePositionsResponse.status === 'fulfilled' &&
+          dronePositionsResponse.value.success &&
+          Array.isArray(dronePositionsResponse.value.data)
+        ) {
+          dronePositionsResponse.value.data.forEach(position => {
+            const timestamp = position.time ? new Date(position.time).getTime() : NaN
+            if (Number.isNaN(timestamp) || timestamp < cutoffTime) {
+              return
+            }
+
+            const key =
+              buildEntityKey(
+                position.system_id,
+                position.drone_id,
+                normalizeCoordinate(position.latitude, 3),
+                normalizeCoordinate(position.longitude, 3)
+              ) || `position:${position.id}`
+
+            if (!uniqueActiveDrones.has(key)) {
+              uniqueActiveDrones.add(key)
+            }
+          })
+        }
+
+        // Fallback to drone table active flags if no recent positions
+        if (
+          uniqueActiveDrones.size === 0 &&
+          dronesResponse.status === 'fulfilled' &&
+          dronesResponse.value.success &&
+          Array.isArray(dronesResponse.value.data)
+        ) {
+          dronesResponse.value.data.forEach(drone => {
+            if (!drone.is_active) return
+            const key =
+              buildEntityKey(drone.system_id, drone.serial_number, drone.mac_address, drone.uas_id) ||
+              `drone:${drone.id}`
+            if (!uniqueActiveDrones.has(key)) {
+              uniqueActiveDrones.add(key)
+            }
+          })
+        }
+
+        activeDrones = uniqueActiveDrones.size
+
+        // Count RF detections (deduplicated by system + drone + timestamp)
+        let rfDetections = 0
+        if (detectionsResponse.status === 'fulfilled' && detectionsResponse.value.success && Array.isArray(detectionsResponse.value.data)) {
+          const uniqueDetections = new Set<string>()
+          detectionsResponse.value.data.forEach(detection => {
+            const timestamp = normalizeTimestamp(detection.time)
+            const key =
+              buildEntityKey(detection.system_id, detection.drone_id, timestamp) ||
+              `detection:${detection.id}`
+            if (!uniqueDetections.has(key)) {
+              uniqueDetections.add(key)
+            }
+          })
+          rfDetections = uniqueDetections.size
+        }
+
+        // Count operators online (deduplicated within 5 minutes window)
+        let operatorsOnline = 0
+        if (operatorsResponse.status === 'fulfilled' && operatorsResponse.value.success && Array.isArray(operatorsResponse.value.data)) {
+          const fiveMinutesAgo = Date.now() - 5 * 60 * 1000
+          const uniqueOperators = new Set<string>()
+          operatorsResponse.value.data.forEach(operator => {
+            if (!operator.time) return
+            const operatorTime = new Date(operator.time).getTime()
+            if (Number.isNaN(operatorTime) || operatorTime < fiveMinutesAgo) return
+
+            const key =
+              buildEntityKey(
+                operator.system_id,
+                operator.drone_id,
+                normalizeCoordinate(operator.latitude, 3),
+                normalizeCoordinate(operator.longitude, 3)
+              ) || `operator:${operator.id}`
+
+            if (!uniqueOperators.has(key)) {
+              uniqueOperators.add(key)
+            }
+          })
+          operatorsOnline = uniqueOperators.size
+        }
+
+        return {
+          success: true,
+          data: {
+            database: {
+              status: dbStatus,
+              message: dbMessage,
+              lastCheck: new Date().toISOString()
+            },
+            metrics: {
+              activeDrones,
+              rfDetections,
+              operatorsOnline,
+              lastUpdated: new Date().toISOString()
+            }
+          },
+          timestamp: new Date().toISOString()
+        }
+      } catch (error) {
+        console.error('[API] Failed to fetch system status:', error)
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error',
+          timestamp: new Date().toISOString()
+        }
+      }
+    }
+
+    // Execute fetch with request deduplication (but no caching)
+    const requestPromise = fetchFn().then(data => {
+      pendingRequests.delete(pendingKey)
+      return data
+    }).catch(error => {
+      pendingRequests.delete(pendingKey)
+      throw error
+    })
+
+    pendingRequests.set(pendingKey, requestPromise)
+    return await requestPromise
   },
   
   // Clear cache to force fresh data fetch

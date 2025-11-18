@@ -1,96 +1,222 @@
 <template>
-  <div class="w-64 p-4 absolute top-4 lg:top-6 right-4 lg:right-6 z-20 rounded-2xl bg-neutral-900/40 backdrop-blur-3xl shadow-md">
-    <div class="space-y-3">
-      <!-- Database Status -->
-      <div class="flex items-center space-x-3">
-        <div class="w-3 h-3 rounded-full" :class="databaseStatus === 'connected' ? 'bg-green-500' : 'bg-red-500 animate-pulse'"></div>
-        <span class="text-white text-sm">{{ databaseStatus === 'connected' ? 'Database Connected' : 'Database Disconnected' }}</span>
-      </div>
-      
-      <!-- Active Drones -->
-      <div class="flex items-center space-x-3">
-        <div class="w-3 h-3 bg-blue-500 rounded-full"></div>
-        <span class="text-white text-sm">{{ activeDrones }} Active Drones</span>
-      </div>
-      
-      <!-- RF Detections -->
-      <div class="flex items-center space-x-3">
-        <div class="w-3 h-3 bg-yellow-500 rounded-full"></div>
-        <span class="text-white text-sm">{{ rfDetections }} RF Detections</span>
-      </div>
-      
-      <!-- Operators -->
-      <div class="flex items-center space-x-3">
-        <div class="w-3 h-3 bg-purple-500 rounded-full"></div>
-        <span class="text-white text-sm">{{ operators }} Operators</span>
+  <Transition
+    enter-active-class="transition-all duration-300 ease-out"
+    enter-from-class="opacity-0 translate-y-2"
+    enter-to-class="opacity-100 translate-y-0"
+    leave-active-class="transition-all duration-300 ease-in"
+    leave-from-class="opacity-100 translate-y-0"
+    leave-to-class="opacity-0 translate-y-2"
+  >
+    <div
+      v-if="!isFullscreenMode"
+      ref="widgetRef"
+      tabindex="0"
+      class="w-64 p-4 absolute top-4 lg:top-6 right-4 lg:right-6 z-20 rounded-2xl bg-neutral-900/40 backdrop-blur-3xl shadow-md border border-neutral-700/50 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 focus:ring-offset-neutral-900"
+      role="region"
+      aria-label="System Status"
+    >
+      <div class="flex flex-col space-y-3">
+        <!-- Database Status -->
+        <Tooltip
+          :content="databaseTooltip"
+          position="left"
+        >
+          <button
+            @click="handleDatabaseClick"
+            class="w-full flex items-center space-x-3 p-2 rounded-lg hover:bg-neutral-800/50 transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1"
+            :aria-label="`Database status: ${databaseStatusText}`"
+          >
+            <div
+              class="w-3 h-3 rounded-full flex-shrink-0"
+              :class="{
+                'bg-green-500': databaseStatus === 'ok',
+                'bg-yellow-500 animate-pulse': databaseStatus === 'degraded',
+                'bg-red-500 animate-pulse': databaseStatus === 'down'
+              }"
+              :aria-label="`Database is ${databaseStatusText}`"
+            ></div>
+            <span class="text-white text-sm flex-1 text-left">{{ databaseStatusText }}</span>
+            <span v-if="isStale" class="text-xs text-neutral-400" aria-label="Data may be stale">⚠</span>
+          </button>
+        </Tooltip>
+
+        <!-- Active Drones -->
+        <Tooltip
+          :content="`Active drones currently tracked: ${activeDrones}`"
+          position="left"
+        >
+          <button
+            @click="handleDronesClick"
+            class="w-full flex items-center space-x-3 p-2 rounded-lg hover:bg-neutral-800/50 transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1"
+            :aria-label="`${activeDrones} active drones`"
+            :disabled="isLoading"
+          >
+            <div class="w-3 h-3 bg-blue-500 rounded-full flex-shrink-0"></div>
+            <span class="text-white text-sm flex-1 text-left">
+              {{ activeDrones }} Active {{ activeDrones === 1 ? 'Drone' : 'Drones' }}
+            </span>
+            <span v-if="isLoading" class="text-xs text-neutral-400 animate-pulse">⟳</span>
+          </button>
+        </Tooltip>
+
+        <!-- RF Detections -->
+        <Tooltip
+          :content="`RF detections in the last hour: ${rfDetections}`"
+          position="left"
+        >
+          <button
+            @click="handleDetectionsClick"
+            class="w-full flex items-center space-x-3 p-2 rounded-lg hover:bg-neutral-800/50 transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1"
+            :aria-label="`${rfDetections} RF detections`"
+            :disabled="isLoading"
+          >
+            <div class="w-3 h-3 bg-yellow-500 rounded-full flex-shrink-0"></div>
+            <span class="text-white text-sm flex-1 text-left">
+              {{ rfDetections }} RF {{ rfDetections === 1 ? 'Detection' : 'Detections' }}
+            </span>
+            <span v-if="isLoading" class="text-xs text-neutral-400 animate-pulse">⟳</span>
+          </button>
+        </Tooltip>
+
+        <!-- Operators Online -->
+        <Tooltip
+          :content="`Operators currently online: ${operatorsOnline}`"
+          position="left"
+        >
+          <button
+            @click="handleOperatorsClick"
+            class="w-full flex items-center space-x-3 p-2 rounded-lg hover:bg-neutral-800/50 transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1"
+            :aria-label="`${operatorsOnline} operators online`"
+            :disabled="isLoading"
+          >
+            <div class="w-3 h-3 bg-purple-500 rounded-full flex-shrink-0"></div>
+            <span class="text-white text-sm flex-1 text-left">
+              {{ operatorsOnline }} {{ operatorsOnline === 1 ? 'Operator' : 'Operators' }} Online
+            </span>
+            <span v-if="isLoading" class="text-xs text-neutral-400 animate-pulse">⟳</span>
+          </button>
+        </Tooltip>
       </div>
 
-      <!-- Receivers (Sensors) -->
-      <div class="flex items-center space-x-3">
-        <div class="w-3 h-3 bg-cyan-400 rounded-full"></div>
-        <span class="text-white text-sm">{{ sensors }} Receivers</span>
+      <!-- Error State -->
+      <div v-if="error" class="mt-3 pt-3 border-t border-neutral-700/50">
+        <div class="flex items-center space-x-2 text-xs text-red-400">
+          <span>⚠</span>
+          <span>{{ error }}</span>
+        </div>
       </div>
     </div>
-  </div>
+  </Transition>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch } from 'vue'
-import { useMapStore } from '@/store/map'
-import { databaseApi } from '@/services/api'
+import { ref, computed, onMounted } from 'vue'
+import { useSystemStatus } from '@/composables/useSystemStatus'
+import Tooltip from '@/components/shared/Tooltip.vue'
+import type { DatabaseStatus } from '@/types/system'
 
-// Status summary card component for the floating status display
-// This replaces the old sidebar functionality
-
-const mapStore = useMapStore()
-
-// Reactive data
-const databaseStatus = ref<'connected' | 'disconnected'>('disconnected')
-const activeDrones = ref(0)
-const rfDetections = ref(0)
-const operators = ref(0)
-const sensors = ref(0)
-
-// Update statistics from map store data (no additional API calls)
-const updateStatistics = async () => {
-  try {
-    // Check database connection only once per minute
-    const healthResponse = await databaseApi.getHealth()
-    databaseStatus.value = healthResponse.data?.success === true ? 'connected' : 'disconnected'
-    
-    // Use map store data instead of making additional API calls
-    updateFromMapStore()
-  } catch (error) {
-    console.error('[StatusSummary] Error updating statistics:', error)
-    databaseStatus.value = 'disconnected'
-    updateFromMapStore()
-  }
+// Props
+interface Props {
+  isFullscreenMode?: boolean
 }
 
-// Update statistics when map store changes
-const updateFromMapStore = () => {
-  const pins = mapStore.pins
-  activeDrones.value = pins.filter(pin => pin.type === 'drone').length
-  rfDetections.value = pins.filter(pin => pin.type === 'target').length
-  operators.value = pins.filter(pin => pin.type === 'friendly').length
-  sensors.value = pins.filter(pin => pin.type === 'sensor').length
-}
-
-// Lifecycle
-onMounted(() => {
-  updateStatistics()
-  // Update every 60 seconds (reduced frequency)
-  const interval = setInterval(updateStatistics, 60000)
-  
-  // Cleanup interval on unmount
-  onUnmounted(() => {
-    clearInterval(interval)
-  })
+const props = withDefaults(defineProps<Props>(), {
+  isFullscreenMode: false
 })
 
-// Watch for map store changes
-watch(() => mapStore.pins, updateFromMapStore, { deep: true })
+// Emits
+const emit = defineEmits<{
+  openDronesPanel: []
+  openDetectionsPanel: []
+  openOperatorsPanel: []
+  openDatabaseStatus: []
+}>()
+
+// System status hook
+const {
+  status,
+  isLoading,
+  error,
+  isStale,
+  databaseStatus,
+  activeDrones,
+  rfDetections,
+  operatorsOnline
+} = useSystemStatus()
+
+const widgetRef = ref<HTMLElement | null>(null)
+
+// Computed values
+const databaseStatusText = computed(() => {
+  switch (databaseStatus.value) {
+    case 'ok':
+      return 'Database Connected'
+    case 'degraded':
+      return 'Database Degraded'
+    case 'down':
+      return 'Database Disconnected'
+    default:
+      return 'Database Unknown'
+  }
+})
+
+const databaseTooltip = computed(() => {
+  const statusData = status.value?.database
+  if (!statusData) {
+    return 'Database status unknown'
+  }
+
+  const parts: string[] = []
+  parts.push(`Status: ${databaseStatusText.value}`)
+  
+  if (statusData.message) {
+    parts.push(`Details: ${statusData.message}`)
+  }
+  
+  if (statusData.responseTime !== undefined) {
+    parts.push(`Response time: ${statusData.responseTime}ms`)
+  }
+  
+  if (statusData.lastCheck) {
+    const lastCheck = new Date(statusData.lastCheck)
+    const timeAgo = Math.round((Date.now() - lastCheck.getTime()) / 1000)
+    parts.push(`Last check: ${timeAgo}s ago`)
+  }
+
+  return parts.join('<br>')
+})
+
+// Click handlers
+const handleDatabaseClick = () => {
+  emit('openDatabaseStatus')
+  // TODO: Open database status panel/modal
+}
+
+const handleDronesClick = () => {
+  emit('openDronesPanel')
+  // TODO: Open drones list panel
+}
+
+const handleDetectionsClick = () => {
+  emit('openDetectionsPanel')
+  // TODO: Open RF detections list panel
+}
+
+const handleOperatorsClick = () => {
+  emit('openOperatorsPanel')
+  // TODO: Open operators list panel
+}
+
+// Focus management for keyboard navigation
+onMounted(() => {
+  // Widget is focusable by default via tabindex="0"
+  // Additional keyboard handling can be added here if needed
+})
 </script>
 
 <style scoped>
+/* Ensure smooth transitions without layout shift */
+.transition-all {
+  will-change: transform, opacity;
+}
 </style>
