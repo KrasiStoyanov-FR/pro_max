@@ -1,5 +1,6 @@
 <template>
   <div
+    data-map-overlay="right"
     class="h-full max-h-800 md:min-h-80 flex self-end rounded-2xl bg-neutral-900/70 backdrop-blur-3xl transition-all duration-300 ease-out pointer-events-auto overflow-hidden"
     :class="[
       // Size and visibility

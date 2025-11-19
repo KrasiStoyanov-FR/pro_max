@@ -47,7 +47,7 @@ const toTimeValue = (value: string | undefined | null) => value ? new Date(value
     // Keep current zoom level; only pan to the detection point
     const currentZoom = mapService.getZoom()
     const zoomLevel = typeof currentZoom === 'number' ? currentZoom : (viewport.value.zoom ?? 13)
-    mapService.flyTo(point.lat, point.lng, zoomLevel)
+    mapService.flyTo(point.lat, point.lng, zoomLevel, { adjustForOverlays: true })
     mapService.highlightTrajectoryCheckpoint(dronePinId, point.timestamp)
     mapStore.setFocusedTrajectoryTimestamp(point.timestamp)
     

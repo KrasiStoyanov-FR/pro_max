@@ -606,9 +606,9 @@ class MapService {
 
     const { marker } = detection
     const latLng = marker.getLatLng()
-    const zoom = this.map.getZoom()
+    const zoom = this.map.getZoom() ?? 15
     console.log('[Map] detection pan', { detectionId, zoom })
-    this.map.panTo(latLng, { animate: false })
+    this.flyTo(latLng.lat, latLng.lng, zoom, { adjustForOverlays: true })
     this.highlightDetection(detectionId)
   }
 
@@ -1536,10 +1536,24 @@ class MapService {
     }
   }
 
-  flyTo(lat: number, lng: number, zoom: number = 15): void {
-    if (this.map) {
+  flyTo(lat: number, lng: number, zoom: number = 15, options?: { adjustForOverlays?: boolean }): void {
+    if (!this.map) return
+
+    if (!options?.adjustForOverlays) {
       this.map.flyTo([lat, lng], zoom)
+      return
     }
+
+    const offset = this.getOverlayOffset()
+    if (offset.x === 0 && offset.y === 0) {
+      this.map.flyTo([lat, lng], zoom)
+      return
+    }
+
+    const pinPoint = this.map.latLngToContainerPoint([lat, lng])
+    const adjustedPoint = pinPoint.subtract(offset)
+    const adjustedLatLng = this.map.containerPointToLatLng(adjustedPoint)
+    this.map.flyTo(adjustedLatLng, zoom)
   }
 
   fitBounds(bounds: L.LatLngBounds): void {
@@ -1580,6 +1594,54 @@ class MapService {
     // Don't clear highlight marker here - it should be managed separately
     // this.clearHighlightMarker()
   }
+
+  private getOverlayOffset(): L.Point {
+    if (!this.map) {
+      return L.point(0, 0)
+    }
+
+    const container: HTMLElement = this.map.getContainer()
+    const rect = container.getBoundingClientRect()
+    let offsetX = 0
+    let offsetY = 0
+
+    const overlays = document.querySelectorAll<HTMLElement>('[data-map-overlay]')
+    overlays.forEach((overlay) => {
+      if (overlay.offsetWidth === 0 || overlay.offsetHeight === 0) {
+        return
+      }
+
+      const style = window.getComputedStyle(overlay)
+      if (style.visibility === 'hidden' || style.display === 'none' || Number(style.opacity) === 0) {
+        return
+      }
+
+      const overlayRect = overlay.getBoundingClientRect()
+      const overlapWidth = Math.max(0, Math.min(rect.right, overlayRect.right) - Math.max(rect.left, overlayRect.left))
+      const overlapHeight = Math.max(0, Math.min(rect.bottom, overlayRect.bottom) - Math.max(rect.top, overlayRect.top))
+
+      if (overlapWidth === 0 && overlapHeight === 0) {
+        return
+      }
+
+      const placement = overlay.dataset.mapOverlay ?? ''
+
+      if (placement.includes('right')) {
+        offsetX += overlapWidth / 2
+      } else if (placement.includes('left')) {
+        offsetX -= overlapWidth / 2
+      }
+
+      if (placement.includes('bottom')) {
+        offsetY += overlapHeight / 2
+      } else if (placement.includes('top')) {
+        offsetY -= overlapHeight / 2
+      }
+    })
+
+    return L.point(offsetX, offsetY)
+  }
+
 
   updateDroneTrajectories(trajectories: DroneTrajectory[]): void {
     if (!this.map) return

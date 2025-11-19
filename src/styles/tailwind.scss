@@ -261,7 +261,6 @@
 }
 
 .trajectory-checkpoint {
-  @apply transition-transform duration-200;
 
   &__wrapper {
     @apply relative w-3 h-3 flex items-center justify-center;

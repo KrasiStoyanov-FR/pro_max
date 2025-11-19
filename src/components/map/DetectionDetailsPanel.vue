@@ -1,6 +1,7 @@
 <template>
   <Transition name="slide-up">
     <div
+      data-map-overlay="bottom"
       v-if="selectedDetection"
       class="w-full bg-neutral-900/95 backdrop-blur-xl border-t border-white/10 shadow-2xl pointer-events-auto rounded-t-2xl"
       style="max-height: 40vh; min-height: 200px; z-index: 50;"
