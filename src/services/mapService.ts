@@ -1,6 +1,13 @@
 import L from 'leaflet'
 import type { MapPin, MapViewport, MapControl, DroneTrajectory, DroneTrajectoryPoint } from '@/types/map'
 import { getActiveZones, type DroneZone } from './droneZones'
+import DroneIconSvg from '@phosphor-icons/core/assets/fill/drone-fill.svg?raw'
+import UserIconSvg from '@phosphor-icons/core/assets/fill/user-fill.svg?raw'
+import CellTowerIconSvg from '@phosphor-icons/core/assets/fill/cell-tower-fill.svg?raw'
+import CrosshairIconSvg from '@phosphor-icons/core/assets/fill/crosshair-fill.svg?raw'
+import SkullIconSvg from '@phosphor-icons/core/assets/fill/skull-fill.svg?raw'
+import QuestionIconSvg from '@phosphor-icons/core/assets/fill/question-fill.svg?raw'
+import MapPinIconSvg from '@phosphor-icons/core/assets/fill/map-pin-fill.svg?raw'
 
 // Clustering configuration
 const CLUSTER_CONFIG = {
@@ -243,14 +250,13 @@ class MapService {
     
     detectionSources.forEach(source => {
       // Create a circle to show detection range
-      const rangeCircle = L.circle([source.lat, source.lng], {
-        radius: DETECTION_RANGE_METERS,
-        color: '#3b82f6', // Blue color for detection range
-        fillColor: '#3b82f6',
+        const rangeCircle = L.circle([source.lat, source.lng], {
+          radius: DETECTION_RANGE_METERS,
+          color: '#3b82f6', // Blue color for detection range
+          fillColor: '#3b82f6',
         fillOpacity: 0.1, // Very transparent fill
         weight: 2,
-        opacity: 0.4,
-        dashArray: '5, 5' // Dashed line
+        opacity: 1
       })
       
       // Do not bind Leaflet tooltip to circles to avoid UX disruption
@@ -1290,93 +1296,47 @@ class MapService {
     const isWarning = status === 'warning'
     const shouldPulse = isAlarm || isWarning // Only pulse for critical and warning status
 
-    console.log(`Creating icon for ${type}: isSelected=${isSelected}, shouldPulse=${shouldPulse}`)
-
-    // Create different icons based on pin type
-    let iconHtml = ''
-
-    // Get the appropriate icon for each type
-    let iconSvg = ''
-    let iconSize = 'w-4 h-4'
-    let markerSize = 'w-8 h-8'
-    
-    switch (type) {
-      case 'drone':
-        // Simple drone/airplane icon
-        iconSvg = `<svg class="${iconSize} text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z"/></svg>`
-        break
-      case 'target':
-        // Radio/wave icon for RF detections
-        iconSvg = `<svg class="${iconSize} text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"/></svg>`
-        break
-      case 'friendly':
-        // User/person icon for operators
-        iconSvg = `<svg class="${iconSize} text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>`
-        break
-      case 'sensor':
-        // GPS/static sensor icon
-        iconSvg = `<svg class="${iconSize} text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 0-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 0 0-7-7zm0 9.5a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5z"/></svg>`
-        break
-      default:
-        // Default circle icon
-        iconSvg = `<svg class="${iconSize} text-white" fill="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></svg>`
-    }
-
     // Determine sizes based on selection state (in pixels)
-    // Special handling for sensor/detector types - make them more prominent when selected
-    const isSensor = type === 'sensor'
+    const isSensor = type === 'sensor' || type === 'radar'
     const baseMarkerSize = type === 'drone' ? 32 : (isSensor ? 28 : 24)
     const selectedMarkerSize = type === 'drone' ? 48 : (isSensor ? 44 : 36)
     const markerSizePx = isSelected ? selectedMarkerSize : baseMarkerSize
-    const iconSizePx = isSelected ? (type === 'drone' ? 24 : (isSensor ? 22 : 20)) : (type === 'drone' ? 16 : (isSensor ? 14 : 16))
+    const iconSizePx = isSelected ? (type === 'drone' ? 26 : (isSensor ? 24 : 22)) : (type === 'drone' ? 20 : (isSensor ? 18 : 16))
+    const iconSvg = this.getSizedPhosphorSvg(type, iconSizePx)
     const pulseCircleSizePx = isSelected ? (type === 'drone' ? 64 : (isSensor ? 60 : 48)) : 0
     const pulseCircleBorderWidth = isSelected ? (type === 'drone' ? 4 : (isSensor ? 4 : 3)) : 0
-    const iconSizeClass = isSelected ? (type === 'drone' ? 'w-6 h-6' : 'w-5 h-5') : iconSize
-    const iconSizeStyle = isSelected && isSensor ? 'width: 22px; height: 22px;' : ''
 
     // Container size needs to accommodate the pulsing circle when selected
     const containerSizePx = isSelected ? pulseCircleSizePx : markerSizePx
     const markerOffsetPx = isSelected ? (pulseCircleSizePx - markerSizePx) / 2 : 0
 
-    if (type === 'drone') {
-      // Drone icon with enlarged version when selected
-      iconHtml = `
-        <div class="relative transition-all duration-300" style="width: ${containerSizePx}px; height: ${containerSizePx}px;">
-          <!-- Pulse animation circles (only for critical/warning) -->
-          ${shouldPulse ? `
-            <div class="absolute rounded-full" style="width: ${markerSizePx}px; height: ${markerSizePx}px; background-color: ${color}; animation: markerPulseOuter 4s ease-in-out infinite; left: ${markerOffsetPx}px; top: ${markerOffsetPx}px; opacity: ${isSelected ? '0.3' : '0.6'};"></div>
-            <div class="absolute rounded-full" style="width: ${markerSizePx}px; height: ${markerSizePx}px; background-color: ${color}; animation: markerPulseInner 4s ease-in-out infinite; animation-delay: 0.5s; left: ${markerOffsetPx}px; top: ${markerOffsetPx}px; opacity: ${isSelected ? '0.3' : '0.6'};"></div>
-          ` : ''}
-          
-          <!-- Main marker (enlarged when selected) -->
-          <div class="rounded-full border-2 border-white shadow-lg flex items-center justify-center relative z-10 transition-all duration-300" 
-               style="width: ${markerSizePx}px; height: ${markerSizePx}px; background-color: ${color}; left: ${markerOffsetPx}px; top: ${markerOffsetPx}px;">
-            ${iconSvg.replace(iconSize, iconSizeClass)}
-          </div>
-          
-          ${isSelected ? `<div class="absolute rounded-full border-4 border-blue-500 animate-pulse" style="width: ${pulseCircleSizePx}px; height: ${pulseCircleSizePx}px; left: 0; top: 0; border-color: #3b82f6; opacity: 0.6; animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; z-index: 5; box-shadow: 0 0 10px rgba(59, 130, 246, 0.5);"></div>` : ''}
+    const iconContainer = `
+      <div class="rounded-full border-2 border-white shadow-lg flex items-center justify-center relative z-10 transition-all duration-300" 
+           style="width: ${markerSizePx}px; height: ${markerSizePx}px; background-color: ${color}; left: ${markerOffsetPx}px; top: ${markerOffsetPx}px; ${isSelected && isSensor ? 'box-shadow: 0 0 8px rgba(34, 211, 238, 0.6), inset 0 0 8px rgba(34, 211, 238, 0.3);' : ''}">
+        <div style="width: ${iconSizePx}px; height: ${iconSizePx}px; color: #fff;">
+          ${iconSvg}
         </div>
+      </div>
+    `
+
+    const pulseMarkup = shouldPulse
+      ? `
+        <div class="absolute rounded-full" style="width: ${markerSizePx}px; height: ${markerSizePx}px; background-color: ${color}; animation: markerPulseOuter 4s ease-in-out infinite; left: ${markerOffsetPx}px; top: ${markerOffsetPx}px; opacity: ${isSelected ? '0.3' : '0.6'};"></div>
+        <div class="absolute rounded-full" style="width: ${markerSizePx}px; height: ${markerSizePx}px; background-color: ${color}; animation: markerPulseInner 4s ease-in-out infinite; animation-delay: 0.5s; left: ${markerOffsetPx}px; top: ${markerOffsetPx}px; opacity: ${isSelected ? '0.3' : '0.6'};"></div>
       `
-    } else {
-      // Other types with appropriate icons (enlarged when selected)
-      iconHtml = `
-        <div class="relative transition-all duration-300" style="width: ${containerSizePx}px; height: ${containerSizePx}px;">
-          <!-- Pulse animation circles (only for critical/warning) -->
-          ${shouldPulse ? `
-            <div class="absolute rounded-full" style="width: ${markerSizePx}px; height: ${markerSizePx}px; background-color: ${color}; animation: markerPulseOuter 4s ease-in-out infinite; left: ${markerOffsetPx}px; top: ${markerOffsetPx}px; opacity: ${isSelected ? '0.3' : '0.6'};"></div>
-            <div class="absolute rounded-full" style="width: ${markerSizePx}px; height: ${markerSizePx}px; background-color: ${color}; animation: markerPulseInner 4s ease-in-out infinite; animation-delay: 0.5s; left: ${markerOffsetPx}px; top: ${markerOffsetPx}px; opacity: ${isSelected ? '0.3' : '0.6'};"></div>
-          ` : ''}
-          
-          <!-- Main marker (enlarged when selected) -->
-          <div class="rounded-full border-2 border-white shadow-lg flex items-center justify-center relative z-10 transition-all duration-300" 
-               style="width: ${markerSizePx}px; height: ${markerSizePx}px; background-color: ${color}; left: ${markerOffsetPx}px; top: ${markerOffsetPx}px; ${isSelected && isSensor ? 'box-shadow: 0 0 8px rgba(34, 211, 238, 0.6), inset 0 0 8px rgba(34, 211, 238, 0.3);' : ''}">
-            ${iconSizeStyle ? iconSvg.replace(iconSize, iconSizeClass).replace(/class="([^"]*)"/, `style="${iconSizeStyle}" class="$1"`) : iconSvg.replace(iconSize, iconSizeClass)}
-          </div>
-          
-          ${isSelected ? `<div class="absolute rounded-full border-blue-500 animate-pulse" style="width: ${pulseCircleSizePx}px; height: ${pulseCircleSizePx}px; left: 0; top: 0; border: ${pulseCircleBorderWidth}px solid #3b82f6; opacity: ${isSensor ? '0.7' : '0.6'}; animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; z-index: 5; box-shadow: 0 0 ${isSensor ? '15px' : '10px'} rgba(59, 130, 246, ${isSensor ? '0.6' : '0.5'});"></div>` : ''}
-        </div>
-      `
-    }
+      : ''
+
+    const selectionPulse = isSelected
+      ? `<div class="absolute rounded-full border-blue-500 animate-pulse" style="width: ${pulseCircleSizePx}px; height: ${pulseCircleSizePx}px; left: 0; top: 0; border: ${pulseCircleBorderWidth}px solid #3b82f6; opacity: ${isSensor ? '0.7' : '0.6'}; animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; z-index: 5; box-shadow: 0 0 ${isSensor ? '15px' : '10px'} rgba(59, 130, 246, ${isSensor ? '0.6' : '0.5'});"></div>`
+      : ''
+
+    const iconHtml = `
+      <div class="relative transition-all duration-300" style="width: ${containerSizePx}px; height: ${containerSizePx}px;">
+        ${pulseMarkup}
+        ${iconContainer}
+        ${selectionPulse}
+      </div>
+    `
 
     // Update icon size and anchor based on selection state
     // Icon size includes the pulsing circle, so we need to account for that
@@ -1391,6 +1351,25 @@ class MapService {
       iconSize: leafletIconSize,
       iconAnchor: leafletIconAnchor
     } as any)
+  }
+
+  private getPhosphorIcon(type: string): string {
+    const iconMap: Record<string, string> = {
+      drone: DroneIconSvg,
+      friendly: UserIconSvg,
+      sensor: CellTowerIconSvg,
+      radar: CrosshairIconSvg,
+      threat: SkullIconSvg,
+      unknown: QuestionIconSvg
+    }
+
+    return iconMap[type] ?? MapPinIconSvg
+  }
+
+  private getSizedPhosphorSvg(type: string, size: number): string {
+    const svgRaw = this.getPhosphorIcon(type)
+    const withoutWidth = svgRaw.replace(/width="[^"]*"/g, '').replace(/height="[^"]*"/g, '')
+    return withoutWidth.replace('<svg ', `<svg width="${size}" height="${size}" `).replace('<svg', '<svg style="display:block"')
   }
 
   private getColorForStatus(status: string, type: string): string {
@@ -1622,8 +1601,7 @@ class MapService {
         polyline = L.polyline(latLngs, {
           color: '#22c55e',
           weight: 3,
-          opacity: 0.8,
-          dashArray: '4 6',
+          opacity: 1,
           lineCap: 'round'
         })
         polyline.addTo(this.map)

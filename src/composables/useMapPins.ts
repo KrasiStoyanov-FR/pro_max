@@ -33,9 +33,16 @@ export function useMapPins() {
 const toTimeValue = (value: string | undefined | null) => value ? new Date(value).getTime() : 0
 
   const focusTrajectoryPoint = (point: DroneTrajectoryPoint) => {
-    if (!isMapReady.value) return
+    console.log('[MapPins] focusTrajectoryPoint called:', { timestamp: point.timestamp, lat: point.lat, lng: point.lng })
+    if (!isMapReady.value) {
+      console.warn('[MapPins] Map not ready')
+      return
+    }
     const dronePinId = focusedDronePinId.value
-    if (!dronePinId) return
+    if (!dronePinId) {
+      console.warn('[MapPins] No focused drone pin ID')
+      return
+    }
 
     // Keep current zoom level; only pan to the detection point
     const currentZoom = mapService.getZoom()
@@ -47,39 +54,105 @@ const toTimeValue = (value: string | undefined | null) => value ? new Date(value
     // Try to find a matching detection for this trajectory point
     // Look for a detection with a timestamp close to this trajectory point's timestamp
     const selectedPin = mapStore.selectedPin
+    const pointTime = toTimeValue(point.timestamp)
+    console.log('[MapPins] Searching for detection matching timestamp:', point.timestamp, 'pointTime:', pointTime)
+    
+    // Search in selected pin's detections first
+    let closestDetection: DetectionCheckpoint | null = null
+    let closestTimeDiff = Infinity
+    
     if (selectedPin && Array.isArray(selectedPin.data?.detections)) {
       const detections = selectedPin.data.detections as DetectionCheckpoint[]
-      const pointTime = toTimeValue(point.timestamp)
-      
-      // Find detection with closest timestamp (within 5 seconds)
-      let closestDetection: DetectionCheckpoint | null = null
-      let closestTimeDiff = Infinity
+      console.log('[MapPins] Searching in selected pin detections:', detections.length, 'detections')
       
       detections.forEach((detection) => {
         const detectionTime = toTimeValue(detection.timestamp)
         const timeDiff = Math.abs(detectionTime - pointTime)
-        // Match if within 5 seconds
-        if (timeDiff < 5000 && timeDiff < closestTimeDiff) {
+        // Match if within 30 seconds (more lenient for better matching)
+        if (timeDiff < 30000 && timeDiff < closestTimeDiff) {
           closestTimeDiff = timeDiff
           closestDetection = detection
         }
       })
-      
-      if (closestDetection) {
-        mapStore.setFocusedDetectionId(closestDetection.id)
-        highlightDetections(closestDetection.id)
-        // Also highlight the checkpoint marker with timestamp for precise matching
-        const service = mapService as unknown as { highlightDetectionCheckpoint?: (dronePinId: string, detectionId: number | null, detectionTimestamp?: string) => void }
-        service.highlightDetectionCheckpoint?.(dronePinId, closestDetection.id, closestDetection.timestamp)
-      } else {
-        mapStore.setFocusedDetectionId(null)
-        highlightDetections(null)
-        const service = mapService as unknown as { highlightDetectionCheckpoint?: (dronePinId: string, detectionId: number | null, detectionTimestamp?: string) => void }
-        service.highlightDetectionCheckpoint?.(dronePinId, null)
+    }
+    
+    // If not found in selected pin, search all drone pins
+    if (!closestDetection) {
+      console.log('[MapPins] Not found in selected pin, searching all drone pins')
+      const allPins = mapStore.pins
+      let totalDetections = 0
+      for (const pin of allPins) {
+        if (pin.type === 'drone' && Array.isArray(pin.data?.detections)) {
+          const detections = pin.data.detections as DetectionCheckpoint[]
+          totalDetections += detections.length
+          detections.forEach((detection) => {
+            const detectionTime = toTimeValue(detection.timestamp)
+            const timeDiff = Math.abs(detectionTime - pointTime)
+            // Match if within 30 seconds (more lenient for better matching)
+            if (timeDiff < 30000 && timeDiff < closestTimeDiff) {
+              closestTimeDiff = timeDiff
+              closestDetection = detection
+            }
+          })
+        }
       }
+      console.log('[MapPins] Searched', totalDetections, 'total detections across all drone pins')
+    }
+    
+    if (closestDetection) {
+      console.log('[MapPins] Found matching detection for checkpoint:', {
+        detectionId: closestDetection.id,
+        timestamp: closestDetection.timestamp,
+        timeDiff: closestTimeDiff,
+        ms: 'ms',
+        selectedPin: mapStore.selectedPin?.id,
+        selectedPinType: mapStore.selectedPin?.type
+      })
+      
+      // Set the focused detection ID - this will trigger InfoPanel to show it
+      mapStore.setFocusedDetectionId(closestDetection.id)
+      console.log('[MapPins] Set focusedDetectionId to:', closestDetection.id)
+      
+      // Try to find and select the detection pin if it exists
+      const detectionPin = mapStore.pins.find(pin => {
+        if (pin.type !== 'target') return false
+        
+        // Check if this pin's detection ID matches
+        const pinDetectionId = typeof pin.data?.id === 'number'
+          ? pin.data.id
+          : (Array.isArray(pin.data?._ids) && pin.data._ids.length > 0
+              ? (typeof pin.data._ids[0] === 'number' ? pin.data._ids[0] : Number(pin.data._ids[0]))
+              : Number(String(pin.id).replace('rf-detection-', '')))
+        
+        return !Number.isNaN(pinDetectionId) && pinDetectionId === closestDetection.id
+      })
+      
+      if (detectionPin) {
+        console.log('[MapPins] Found detection pin on map:', detectionPin.id, '- selecting it')
+        mapStore.selectPin(detectionPin)
+      } else {
+        console.log('[MapPins] No detection pin found on map for detection', closestDetection.id, '- InfoPanel should find it in drone detections array')
+        // Keep the drone selected - InfoPanel will find the detection in its detections array
+        // Don't change the selected pin, just ensure it's still the drone
+        if (!mapStore.selectedPin || mapStore.selectedPin.type !== 'drone') {
+          const dronePin = mapStore.pins.find(p => p.id === dronePinId)
+          if (dronePin) {
+            console.log('[MapPins] Ensuring drone is selected:', dronePin.id)
+            mapStore.selectPin(dronePin)
+          }
+        }
+      }
+      
+      highlightDetections(closestDetection.id)
+      // Also highlight the checkpoint marker with timestamp for precise matching
+      const service = mapService as unknown as { highlightDetectionCheckpoint?: (dronePinId: string, detectionId: number | null, detectionTimestamp?: string) => void }
+      service.highlightDetectionCheckpoint?.(dronePinId, closestDetection.id, closestDetection.timestamp)
     } else {
+      console.log('[MapPins] No matching detection found for checkpoint at', point.timestamp)
       mapStore.setFocusedDetectionId(null)
       highlightDetections(null)
+      const service = mapService as unknown as { highlightDetectionCheckpoint?: (dronePinId: string, detectionId: number | null, detectionTimestamp?: string) => void }
+      service.highlightDetectionCheckpoint?.(dronePinId, null)
     }
   }
 
@@ -131,15 +204,41 @@ const toTimeValue = (value: string | undefined | null) => value ? new Date(value
 
       // Set up pin click handler
       mapService.onPinClick((pin: MapPin) => {
+        console.log('[MapPins] Pin clicked:', { type: pin.type, id: pin.id, dataId: pin.data?.id })
         if (pin.type === 'target') {
-          mapStore.focusDetectionPin(pin)
-          // Highlight the detection on the map
-          const detectionId = typeof pin.data?.id === 'number'
-            ? pin.data.id
-            : Number(String(pin.id).replace('rf-detection-', ''))
-          if (!Number.isNaN(detectionId)) {
+          // Extract detection ID - check multiple sources
+          let detectionId: number | null = null
+          
+          // First try: direct data.id
+          if (typeof pin.data?.id === 'number') {
+            detectionId = pin.data.id
+          }
+          // Second try: from _ids array (merged detections)
+          else if (Array.isArray(pin.data?._ids) && pin.data._ids.length > 0) {
+            const firstId = pin.data._ids[0]
+            detectionId = typeof firstId === 'number' ? firstId : Number(firstId)
+          }
+          // Third try: extract from pin.id string
+          else {
+            const extracted = Number(String(pin.id).replace('rf-detection-', ''))
+            if (!Number.isNaN(extracted)) {
+              detectionId = extracted
+            }
+          }
+          
+          console.log('[MapPins] Extracted detection ID:', detectionId)
+          
+          // Select the pin first so InfoPanel shows it
+          mapStore.selectPin(pin)
+          
+          // Then focus it (which sets focusedDetectionId)
+          if (detectionId !== null) {
+            mapStore.setFocusedDetectionId(detectionId)
             highlightDetections(detectionId)
             mapService.panToDetection(detectionId)
+          } else {
+            // Fallback: use focusDetectionPin which will try to extract ID
+            mapStore.focusDetectionPin(pin)
           }
         } else {
         mapStore.flyToPin(pin) // This will also call selectPin internally
@@ -386,7 +485,7 @@ const toTimeValue = (value: string | undefined | null) => value ? new Date(value
 
           // Cross-check by system_id and timestamp proximity to the markerPosition
           const markerTimeMs = toTimeValue(markerPosition.time)
-          const MAX_TIME_DIFF_MS = 5 * 60 * 1000 // 5 minutes
+          const MAX_TIME_DIFF_MS = 24 * 60 * 60 * 1000 // 24 hours window to capture historical detections
 
           // 1) Prefer detections from the same system_id within time window, sorted by closeness in time
           const sameSystemDetections = candidateDetections
@@ -559,7 +658,8 @@ const toTimeValue = (value: string | undefined | null) => value ? new Date(value
             frequency: detection.frequency,
             signalStrength: detection.signal_strength,
             status: detection.detection_status,
-            systemId: detection.system_id ?? null
+            systemId: detection.system_id ?? null,
+            droneId: detection.drone_id ?? null
           }
 
           const addDetectionToMap = (key: string) => {
@@ -807,8 +907,109 @@ const toTimeValue = (value: string | undefined | null) => value ? new Date(value
         })
       }
 
+      // Deduplicate detection pins: merge nearby detections with matching data
       if (detectionPins.length > 0) {
-        pins.push(...detectionPins)
+        const MERGE_DISTANCE_KM = 0.01 // ~10 meters - very close detections
+        const mergedDetectionPins: MapPin[] = []
+
+        // Helper: check if two detections have matching values
+        const detectionsMatch = (pin1: MapPin, pin2: MapPin): boolean => {
+          const d1 = pin1.data
+          const d2 = pin2.data
+          
+          // Match on key identifying fields
+          const sameDrone = (d1?.drone_id ?? null) === (d2?.drone_id ?? null)
+          const sameSystem = (d1?.system_id ?? null) === (d2?.system_id ?? null)
+          const sameFrequency = (d1?.frequency ?? null) === (d2?.frequency ?? null)
+          const sameSignalStrength = (d1?.signal_strength ?? null) === (d2?.signal_strength ?? null)
+          const sameStatus = (d1?.detection_status ?? null) === (d2?.detection_status ?? null)
+          
+          // All key fields must match
+          return sameDrone && sameSystem && sameFrequency && sameSignalStrength && sameStatus
+        }
+
+        // Helper: find an existing cluster this detection belongs to
+        const findClusterIndex = (pin: MapPin): number => {
+          for (let i = 0; i < mergedDetectionPins.length; i++) {
+            const cluster = mergedDetectionPins[i]
+            
+            // First check if values match
+            if (!detectionsMatch(cluster, pin)) {
+              continue
+            }
+            
+            // Then check if location is close enough
+            const distanceKm = haversineDistanceKm(
+              { lat: cluster.lat, lng: cluster.lng, timestamp: cluster.timestamp! },
+              { lat: pin.lat, lng: pin.lng, timestamp: pin.timestamp! }
+            )
+            
+            if (distanceKm <= MERGE_DISTANCE_KM) {
+              return i
+            }
+          }
+          return -1
+        }
+
+        // Merge detection pins
+        detectionPins.forEach((pin) => {
+          const idx = findClusterIndex(pin)
+          if (idx === -1) {
+            // Create new cluster
+            mergedDetectionPins.push({
+              ...pin,
+              data: {
+                ...pin.data,
+                _aggregate_count: 1,
+                _ids: [pin.data?.id ?? pin.id]
+              }
+            })
+          } else {
+            // Merge into existing cluster
+            const cluster = mergedDetectionPins[idx]
+            const count = (cluster.data?._aggregate_count as number) ?? 1
+            const ids = (cluster.data?._ids as (number | string)[]) ?? [cluster.data?.id ?? cluster.id]
+
+            // Update centroid by averaging
+            const newCount = count + 1
+            const newLat = (cluster.lat * count + pin.lat) / newCount
+            const newLng = (cluster.lng * count + pin.lng) / newCount
+
+            // Use the most recent timestamp
+            const clusterTime = new Date(cluster.timestamp).getTime()
+            const pinTime = new Date(pin.timestamp).getTime()
+            const newestTimestamp = pinTime > clusterTime ? pin.timestamp : cluster.timestamp
+
+            // Preserve the primary detection ID (first one)
+            const primaryId = typeof cluster.data?.id === 'number' 
+              ? cluster.data.id 
+              : (typeof ids[0] === 'number' ? ids[0] : Number(ids[0]) || 0)
+            
+            mergedDetectionPins[idx] = {
+              ...cluster,
+              lat: newLat,
+              lng: newLng,
+              timestamp: newestTimestamp,
+              title: count >= 1
+                ? `Detection #${ids[0]}${newCount > 1 ? ` (+${newCount - 1})` : ''}`
+                : cluster.title,
+              description: cluster.data?.system_id
+                ? `Detected by system ${cluster.data.system_id}${newCount > 1 ? ` (${newCount} detections)` : ''}`
+                : `RF Detection${newCount > 1 ? ` (${newCount} detections)` : ''}`,
+              data: {
+                ...cluster.data,
+                id: primaryId, // Explicitly preserve the primary detection ID
+                _aggregate_count: newCount,
+                _ids: [...ids, pin.data?.id ?? pin.id],
+                // Keep the most recent detection's detailed data
+                timestamp: newestTimestamp
+              }
+            }
+          }
+        })
+
+        console.log(`[MapPins] Deduplicated ${detectionPins.length} detection pins to ${mergedDetectionPins.length} markers`)
+        pins.push(...mergedDetectionPins)
       }
       
 

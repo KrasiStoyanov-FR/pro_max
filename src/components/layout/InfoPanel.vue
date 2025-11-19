@@ -34,32 +34,6 @@
 
       <!-- Panel Content -->
       <div v-if="selectedPin" class="flex flex-1 flex-col p-4 space-y-4 overflow-y-auto bg-neutral-900/30">
-        <!-- Highlight summary -->
-        <div v-if="highlightedMarkers.length" class="bg-white/5 rounded-xl border border-white/10 p-3 space-y-2">
-          <div class="flex items-center justify-between text-xs text-primary-200 uppercase tracking-wide">
-            <span>Currently Highlighted</span>
-            <span>{{ highlightedMarkers.length }} item{{ highlightedMarkers.length === 1 ? '' : 's' }}</span>
-          </div>
-          <ul class="space-y-2">
-            <li
-              v-for="marker in highlightedMarkers"
-              :key="marker.id"
-              class="bg-neutral-900/60 rounded-lg px-3 py-2 border border-white/10 flex items-start justify-between space-x-3"
-            >
-              <div class="flex-1 min-w-0">
-                <p class="text-sm text-white truncate">{{ marker.title }}</p>
-                <p v-if="marker.subtitle" class="text-xs text-neutral-400 truncate">{{ marker.subtitle }}</p>
-              </div>
-              <span
-                class="text-xs font-semibold px-2 py-0.5 rounded-full whitespace-nowrap"
-                :class="marker.badgeClass"
-              >
-                {{ marker.typeLabel }}
-              </span>
-            </li>
-          </ul>
-        </div>
-
         <!-- Target Details -->
         <div v-if="selectedPin.data?.serialNumber" class="flex items-start space-x-3">
           <PhIdentificationCard :size="16" class="text-primary-50 mt-0.5" />
@@ -241,32 +215,108 @@
           </div>
         </div>
 
-        <div v-if="detectionCheckpoints.length" class="space-y-2">
+        <!-- Detection Details (when clicking a detection marker or checkpoint) -->
+        <div v-if="focusedDetection || (selectedPin?.type === 'target' && selectedPin.data)" class="bg-primary-500/20 border-2 border-primary-400/60 rounded-xl p-4 space-y-3 mb-4">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center space-x-2">
+              <PhWifiHigh :size="20" class="text-yellow-400" />
+              <div>
+                <h4 class="text-sm font-semibold text-white">Selected Detection</h4>
+                <p class="text-xs text-primary-200">
+                  Detection #{{ focusedDetection?.id || 'N/A' }}
+                  <span v-if="selectedPin?.data?._aggregate_count && selectedPin.data._aggregate_count > 1" class="text-yellow-400">
+                    ({{ selectedPin.data._aggregate_count }} merged)
+                  </span>
+                </p>
+              </div>
+            </div>
+            <button
+              @click="clearFocusedDetection"
+              class="p-1 rounded hover:bg-white/10 transition-colors"
+              title="Clear selection"
+            >
+              <PhX :size="16" class="text-white" />
+            </button>
+          </div>
+
+          <div v-if="focusedDetection" class="grid grid-cols-2 gap-3 text-xs">
+            <div class="space-y-0.5">
+              <p class="text-primary-200 uppercase tracking-wide">Timestamp</p>
+              <p class="text-sm text-white">{{ formatDateTime(focusedDetection.timestamp) }}</p>
+            </div>
+            <div class="space-y-0.5">
+              <p class="text-primary-200 uppercase tracking-wide">Status</p>
+              <p class="text-sm" :class="focusedDetection.status ? 'text-green-400 font-semibold' : 'text-red-400 font-semibold'">
+                {{ focusedDetection.status ? 'Active' : 'Inactive' }}
+              </p>
+            </div>
+            <div v-if="focusedDetection.droneId" class="space-y-0.5">
+              <p class="text-primary-200 uppercase tracking-wide">Drone ID</p>
+              <p class="text-sm text-white">{{ focusedDetection.droneId }}</p>
+            </div>
+            <div v-if="focusedDetection.systemId" class="space-y-0.5">
+              <p class="text-primary-200 uppercase tracking-wide">Detector (System ID)</p>
+              <p class="text-sm text-white">{{ focusedDetection.systemId }}</p>
+            </div>
+            <div v-if="focusedDetection.frequency !== null" class="space-y-0.5">
+              <p class="text-primary-200 uppercase tracking-wide">Frequency</p>
+              <p class="text-sm font-semibold text-yellow-400">{{ formatFrequency(focusedDetection.frequency) }}</p>
+            </div>
+            <div v-if="focusedDetection.signalStrength !== null" class="space-y-0.5">
+              <p class="text-primary-200 uppercase tracking-wide">Signal Strength</p>
+              <p class="text-sm font-semibold" :class="getSignalStrengthColor(focusedDetection.signalStrength)">
+                {{ formatSignalStrength(focusedDetection.signalStrength) }}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="detections.length" class="space-y-3">
           <div class="flex items-start space-x-3">
             <PhMapTrifold :size="16" class="text-primary-50 mt-0.5" />
             <div class="flex-1">
-              <p class="text-xs text-primary-200 uppercase tracking-wide">Detections</p>
-              <p class="text-sm text-white">{{ detectionCheckpoints.length }} checkpoints</p>
+              <p class="text-xs text-primary-200 uppercase tracking-wide">RF Detections</p>
+              <p class="text-sm text-white">Total {{ detections.length }} event{{ detections.length === 1 ? '' : 's' }}</p>
             </div>
           </div>
 
-          <ul class="space-y-2 max-h-40 overflow-y-auto pr-1">
+          <ul class="space-y-3 max-h-64 overflow-y-auto pr-1">
             <li
-              v-for="detection in detectionCheckpoints"
+              v-for="detection in detections"
               :key="detection.id"
               :class="[
-                'bg-white/5 rounded-lg p-3 border border-white/10 space-y-1 cursor-pointer transition-colors',
+                'bg-white/5 rounded-lg p-3 border border-white/10 space-y-3 cursor-pointer transition-colors',
                 focusModeActive && isDetectionFocused(detection) ? 'bg-primary-500/20 border-primary-400/60' : 'hover:bg-white/10'
               ]"
               @click="handleDetectionClick(detection)"
             >
-              <div class="flex items-center justify-between text-xs text-neutral-200 mb-2">
-                <span class="font-semibold">Detection #{{ detection.id }}</span>
-                <span>{{ formatDetectionTimestamp(detection.timestamp) }}</span>
+              <div class="flex items-center justify-between text-xs text-neutral-200">
+                <div class="font-semibold text-white">Detection #{{ detection.id }}</div>
+                <span>{{ formatDateTime(detection.timestamp) }}</span>
               </div>
-              
-              <!-- Signal Information - Prominent Display -->
-              <div v-if="detection.frequency !== null || detection.signalStrength !== null" class="grid grid-cols-2 gap-3 mb-2">
+
+              <div class="grid grid-cols-2 gap-3 text-xs text-neutral-200">
+                <div class="space-y-0.5">
+                  <p class="text-primary-200 uppercase tracking-wide">Drone ID</p>
+                  <p class="text-sm text-white">{{ detection.droneId ?? 'Unknown' }}</p>
+                </div>
+                <div class="space-y-0.5">
+                  <p class="text-primary-200 uppercase tracking-wide">Detector (System ID)</p>
+                  <p class="text-sm text-white">{{ detection.systemId ?? 'Unknown' }}</p>
+                </div>
+                <div class="space-y-0.5">
+                  <p class="text-primary-200 uppercase tracking-wide">Status</p>
+                  <p class="text-sm" :class="detection.status ? 'text-green-400 font-semibold' : 'text-red-400 font-semibold'">
+                    {{ detection.status ? 'Active' : 'Inactive' }}
+                  </p>
+                </div>
+                <div class="space-y-0.5">
+                  <p class="text-primary-200 uppercase tracking-wide">Timestamp</p>
+                  <p class="text-sm text-white">{{ formatDateTime(detection.timestamp) }}</p>
+                </div>
+              </div>
+
+              <div class="grid grid-cols-2 gap-3">
                 <div v-if="detection.frequency !== null" class="bg-white/5 rounded-md p-2 border border-white/10">
                   <div class="flex items-center space-x-1.5 mb-1">
                     <PhWifiHigh :size="12" class="text-yellow-400" />
@@ -274,7 +324,6 @@
                   </div>
                   <p class="text-sm font-semibold text-yellow-400">{{ formatFrequency(detection.frequency) }}</p>
                 </div>
-                
                 <div v-if="detection.signalStrength !== null" class="bg-white/5 rounded-md p-2 border border-white/10">
                   <div class="flex items-center space-x-1.5 mb-1">
                     <PhWifiHigh :size="12" :class="getSignalStrengthColor(detection.signalStrength)" />
@@ -285,13 +334,60 @@
                   </p>
                 </div>
               </div>
-              
-              <!-- Status -->
-              <div class="flex items-center space-x-2 text-xs">
-                <span class="text-primary-200">Status:</span>
-                <span :class="detection.status ? 'text-green-400 font-semibold' : 'text-red-400 font-semibold'">
-                  {{ detection.status ? 'Active' : 'Inactive' }}
+            </li>
+          </ul>
+        </div>
+
+        <div v-if="detectorSightings.length" class="space-y-3">
+          <div class="flex items-start space-x-3">
+            <PhMapTrifold :size="16" class="text-primary-50 mt-0.5" />
+            <div class="flex-1">
+              <p class="text-xs text-primary-200 uppercase tracking-wide">Detectors That Sighted This Aircraft</p>
+              <p class="text-sm text-white">{{ detectorSightings.length }} detector{{ detectorSightings.length === 1 ? '' : 's' }}</p>
+            </div>
+          </div>
+
+          <ul class="space-y-3 max-h-64 overflow-y-auto pr-1">
+            <li
+              v-for="detector in detectorSightings"
+              :key="detector.systemId"
+              class="bg-white/5 rounded-lg p-3 border border-white/10 space-y-3"
+            >
+              <div class="flex items-center justify-between">
+                <div>
+                  <p class="text-sm font-semibold text-white">{{ detector.name }}</p>
+                  <p class="text-xs text-neutral-300">System ID {{ detector.systemId }}</p>
+                </div>
+                <span class="text-xs font-semibold text-primary-200">
+                  {{ detector.detectionCount }} detection{{ detector.detectionCount === 1 ? '' : 's' }}
                 </span>
+              </div>
+
+              <div class="grid grid-cols-2 gap-3 text-xs text-neutral-200">
+                <div class="space-y-0.5">
+                  <p class="text-primary-200 uppercase tracking-wide">Unit ID</p>
+                  <p class="text-sm text-white">{{ detector.unitId ?? 'Unknown' }}</p>
+                </div>
+                <div class="space-y-0.5">
+                  <p class="text-primary-200 uppercase tracking-wide">Status</p>
+                  <p class="text-sm font-semibold" :class="detector.status === 'active' ? 'text-green-400' : 'text-yellow-300'">
+                    {{ detector.status ?? 'Unknown' }}
+                  </p>
+                </div>
+                <div class="space-y-0.5">
+                  <p class="text-primary-200 uppercase tracking-wide">Detection Range</p>
+                  <p class="text-sm text-white">{{ formatRange(detector.rangeKm) }}</p>
+                </div>
+                <div class="space-y-0.5">
+                  <p class="text-primary-200 uppercase tracking-wide">Last Detection</p>
+                  <p class="text-sm text-white">{{ formatDateTime(detector.lastSeen) }}</p>
+                </div>
+                <div class="space-y-0.5 col-span-2">
+                  <p class="text-primary-200 uppercase tracking-wide">Coordinates</p>
+                  <p class="text-sm text-white">
+                    {{ formatCoordinate(detector.lat) }}, {{ formatCoordinate(detector.lng) }}
+                  </p>
+                </div>
               </div>
             </li>
           </ul>
@@ -388,7 +484,7 @@ const zoomToMapPin = () => {
   }
 }
 
-const detectionCheckpoints = computed<DetectionCheckpoint[]>(() => {
+const detections = computed<DetectionCheckpoint[]>(() => {
   const rawDetections = props.selectedPin?.data?.detections
 
   if (Array.isArray(rawDetections)) {
@@ -417,150 +513,128 @@ const detectionCheckpoints = computed<DetectionCheckpoint[]>(() => {
   return []
 })
 
+const focusedDetection = computed<DetectionCheckpoint | null>(() => {
+  const focusedId = mapStore.focusedDetectionId
+  console.log('[InfoPanel] focusedDetection computed:', {
+    focusedId,
+    selectedPinType: props.selectedPin?.type,
+    selectedPinId: props.selectedPin?.id,
+    detectionsCount: detections.value.length
+  })
+  
+  // If a detection pin is directly selected, use its data
+  if (props.selectedPin?.type === 'target' && props.selectedPin.data) {
+    const data = props.selectedPin.data
+    
+    // Extract detection ID - check multiple sources
+    let detectionId: number = 0
+    if (typeof data.id === 'number') {
+      detectionId = data.id
+    } else if (Array.isArray(data._ids) && data._ids.length > 0) {
+      const firstId = data._ids[0]
+      detectionId = typeof firstId === 'number' ? firstId : Number(firstId) || 0
+    } else {
+      detectionId = Number(String(props.selectedPin.id).replace('rf-detection-', '')) || 0
+    }
+    
+    console.log('[InfoPanel] Using detection pin data, detectionId:', detectionId)
+    return {
+      id: detectionId,
+      timestamp: data.time || data.timestamp || props.selectedPin.timestamp || '',
+      status: data.detection_status !== undefined ? Boolean(data.detection_status) : null,
+      droneId: data.drone_id !== undefined ? String(data.drone_id) : null,
+      systemId: data.system_id || null,
+      frequency: data.frequency !== undefined && data.frequency !== null ? Number(data.frequency) : null,
+      signalStrength: data.signal_strength !== undefined && data.signal_strength !== null ? Number(data.signal_strength) : null
+    } as DetectionCheckpoint
+  }
+  
+  // Otherwise, search by focusedDetectionId
+  if (!focusedId) {
+    console.log('[InfoPanel] No focusedDetectionId')
+    return null
+  }
+  
+  // Search in current detections list
+  const found = detections.value.find(d => d.id === focusedId)
+  if (found) {
+    console.log('[InfoPanel] Found detection in detections list:', found.id)
+    return found
+  }
+  
+  // If not found, search all pins
+  for (const pin of mapStore.pins) {
+    if (pin.type === 'drone' && Array.isArray(pin.data?.detections)) {
+      const detection = (pin.data.detections as DetectionCheckpoint[]).find(d => d.id === focusedId)
+      if (detection) {
+        console.log('[InfoPanel] Found detection in drone pin:', pin.id, 'detection:', detection.id)
+        return detection
+      }
+    }
+  }
+  
+  console.log('[InfoPanel] Detection not found for focusedId:', focusedId)
+  return null
+})
+
+const clearFocusedDetection = () => {
+  mapStore.setFocusedDetectionId(null)
+  // If the selected pin is a detection marker, deselect it
+  if (props.selectedPin?.type === 'target') {
+    mapStore.selectPin(null)
+  }
+}
+
 const trajectoryPoints = computed<DroneTrajectoryPoint[]>(() => {
   const rawTrajectory = props.selectedPin?.data?.trajectory
   if (!Array.isArray(rawTrajectory)) return []
   return rawTrajectory as DroneTrajectoryPoint[]
 })
 
-const highlightedMarkers = computed(() => {
-  const highlights: Array<{ id: string; title: string; typeLabel: string; subtitle?: string; badgeClass: string }> = []
-  const pins = mapStore.pins
-  const addHighlight = (pin: MapPin | null | undefined, typeOverride?: string) => {
-    if (!pin) return
-    if (highlights.some(entry => entry.id === pin.id)) return
-    highlights.push({
-      id: pin.id,
-      title: pin.title,
-      typeLabel: typeOverride ?? getTypeLabel(pin.type),
-      subtitle: pin.description,
-      badgeClass: getBadgeClass(typeOverride ?? getTypeLabel(pin.type))
+const sensorPins = computed(() => mapStore.pins.filter(pin => pin.type === 'sensor'))
+
+const detectorSightings = computed(() => {
+  const grouped = new Map<string, DetectionCheckpoint[]>()
+  detections.value.forEach(detection => {
+    if (!detection.systemId) return
+    const key = String(detection.systemId)
+    const current = grouped.get(key) ?? []
+    current.push(detection)
+    grouped.set(key, current)
+  })
+
+  return Array.from(grouped.entries()).map(([systemId, detectionList]) => {
+    const sensorPin = sensorPins.value.find(pin => {
+      const ids: string[] = []
+      const system = pin.data?.system_id
+      const unit = pin.data?.unit_id
+      if (system !== null && system !== undefined) ids.push(String(system))
+      if (unit !== null && unit !== undefined) ids.push(String(unit))
+      return ids.includes(systemId)
     })
-  }
 
-  const getSystemId = (pin: MapPin | null | undefined) => {
-    const value = pin?.data?.system_id
-    return value !== undefined && value !== null ? String(value) : null
-  }
+    const sortedDetections = detectionList.slice().sort((a, b) => {
+      return toTimeValue(b.timestamp) - toTimeValue(a.timestamp)
+    })
+    const latestDetection = sortedDetections[0] ?? null
 
-  const dronePins = pins.filter(pin => pin.type === 'drone')
-  const operatorPins = pins.filter(pin => pin.type === 'friendly')
-
-  if (mapStore.focusModeActive) {
-    if (mapStore.focusModeType === 'sensor') {
-      const detectorPin = props.selectedPin?.type === 'sensor'
-        ? props.selectedPin
-        : pins.find(pin => pin.id === mapStore.focusedDetectorPinId)
-      addHighlight(detectorPin, 'Detector')
-
-      const systemId = getSystemId(detectorPin)
-      if (systemId) {
-        operatorPins
-          .filter(pin => String(pin.data?.system_id ?? '') === systemId)
-          .forEach(operator => addHighlight(operator, 'Operator'))
-      }
-
-      const linkedDroneIds = mapStore.linkedSensorDroneIds
-      linkedDroneIds.forEach(droneId => {
-        const dronePin = pins.find(pin => pin.type === 'drone' && String(pin.data?.drone_id ?? '') === droneId)
-        addHighlight(dronePin, 'Drone')
-
-        pins
-          .filter(pin => pin.type === 'target' && String(pin.data?.drone_id ?? '') === droneId)
-          .forEach(detectionPin => addHighlight(detectionPin, 'Detection'))
-      })
-    } else {
-      addHighlight(props.selectedPin)
-      const systemId = getSystemId(props.selectedPin)
-      if (systemId) {
-        const detectorPin = pins.find(pin =>
-          pin.type === 'sensor' &&
-          (String(pin.data?.system_id ?? '') === systemId || String(pin.data?.unit_id ?? '') === systemId)
-        )
-        addHighlight(detectorPin, 'Detector')
-
-        operatorPins
-          .filter(pin => String(pin.data?.system_id ?? '') === systemId)
-          .forEach(operator => addHighlight(operator, 'Operator'))
-      }
-
-      const droneId = props.selectedPin?.data?.drone_id !== undefined && props.selectedPin?.data?.drone_id !== null
-        ? String(props.selectedPin.data.drone_id)
-        : null
-      if (droneId) {
-        pins
-          .filter(pin => pin.type === 'target' && String(pin.data?.drone_id ?? '') === droneId)
-          .forEach(detectionPin => addHighlight(detectionPin, 'Detection'))
-      }
+    return {
+      systemId,
+      unitId: sensorPin?.data?.unit_id ?? null,
+      name: sensorPin?.title ?? `Detector ${systemId}`,
+      status: sensorPin?.data?.status ?? 'unknown',
+      rangeKm: typeof sensorPin?.data?.detection_range_km === 'number' ? sensorPin.data.detection_range_km : null,
+      lastSeen: sensorPin?.data?.timestamp ?? latestDetection?.timestamp ?? null,
+      lat: sensorPin?.lat ?? null,
+      lng: sensorPin?.lng ?? null,
+      detectionCount: detectionList.length
     }
-  } else {
-    addHighlight(props.selectedPin)
-
-    const systemId = getSystemId(props.selectedPin)
-    if (systemId) {
-      const detectorPin = pins.find(pin =>
-        pin.type === 'sensor' &&
-        (String(pin.data?.system_id ?? '') === systemId || String(pin.data?.unit_id ?? '') === systemId)
-      )
-      addHighlight(detectorPin, 'Detector')
-
-      operatorPins
-        .filter(pin => String(pin.data?.system_id ?? '') === systemId)
-        .forEach(operator => addHighlight(operator, 'Operator'))
-    }
-
-    const droneId = props.selectedPin?.data?.drone_id !== undefined && props.selectedPin?.data?.drone_id !== null
-      ? String(props.selectedPin.data.drone_id)
-      : null
-    if (droneId) {
-      pins
-        .filter(pin => pin.type === 'target' && String(pin.data?.drone_id ?? '') === droneId)
-        .forEach(detectionPin => addHighlight(detectionPin, 'Detection'))
-    }
-  }
-
-  return highlights
+  }).sort((a, b) => b.detectionCount - a.detectionCount)
 })
 
-const getTypeLabel = (type: string) => {
-  switch (type) {
-    case 'drone': return 'Drone'
-    case 'sensor': return 'Detector'
-    case 'friendly': return 'Operator'
-    case 'target': return 'Detection'
-    default: return type.charAt(0).toUpperCase() + type.slice(1)
-  }
-}
+const toTimeValue = (value?: string | null) => value ? new Date(value).getTime() : 0
 
-const getBadgeClass = (label: string) => {
-  switch (label) {
-    case 'Drone': return 'bg-green-500/20 text-green-200 border border-green-400/30'
-    case 'Detector': return 'bg-cyan-500/20 text-cyan-200 border border-cyan-400/30'
-    case 'Operator': return 'bg-blue-500/20 text-blue-200 border border-blue-400/30'
-    case 'Detection': return 'bg-yellow-500/20 text-yellow-200 border border-yellow-400/30'
-    default: return 'bg-white/10 text-white border border-white/20'
-  }
-}
-
-const isWithinRange = (source: MapPin, target: MapPin, rangeMeters: number) => {
-  const distance = calculateDistanceMeters(source.lat, source.lng, target.lat, target.lng)
-  return distance <= rangeMeters
-}
-
-const calculateDistanceMeters = (lat1: number, lng1: number, lat2: number, lng2: number) => {
-  const toRadians = (deg: number) => deg * (Math.PI / 180)
-  const dLat = toRadians(lat2 - lat1)
-  const dLng = toRadians(lng2 - lng1)
-  const latRad1 = toRadians(lat1)
-  const latRad2 = toRadians(lat2)
-  const sinLat = Math.sin(dLat / 2)
-  const sinLng = Math.sin(dLng / 2)
-  const h = sinLat * sinLat + Math.cos(latRad1) * Math.cos(latRad2) * sinLng * sinLng
-  const c = 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h))
-  return 6371000 * c
-}
-
-const formatDetectionTimestamp = (timestamp?: string) => {
+const formatDateTime = (timestamp?: string | null) => {
   if (!timestamp) return 'Unknown'
   const date = new Date(timestamp)
   if (Number.isNaN(date.getTime())) return 'Invalid'
@@ -574,8 +648,13 @@ const formatTrajectoryTimestamp = (timestamp?: string) => {
   return date.toLocaleTimeString()
 }
 
-const formatCoordinate = (value: number) => {
-  return Number.isFinite(value) ? value.toFixed(5) : 'N/A'
+const formatCoordinate = (value?: number | null) => {
+  return value !== null && value !== undefined && Number.isFinite(value) ? value.toFixed(5) : 'N/A'
+}
+
+const formatRange = (value?: number | null) => {
+  if (value === null || value === undefined || Number.isNaN(value)) return '1.5 km'
+  return `${value.toFixed(1)} km`
 }
 
 const formatFrequency = (frequency: number | null): string => {

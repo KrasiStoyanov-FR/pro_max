@@ -217,8 +217,8 @@ export const useMapStore = defineStore('map', () => {
     }
 
     if (mapInstance.value) {
-      const currentZoom = mapInstance.value.getZoom()
-      const targetZoom = Math.min(Math.max(currentZoom + 2, 16), 18) // Zoom in by 2 levels, between 16-18
+      const currentZoom = mapInstance.value.getZoom() ?? viewport.value.zoom ?? 13
+      const targetZoom = currentZoom
 
       const hasClusterPanel = selectedCluster.value !== null
       const hasInfoPanel = selectedPin.value !== null
@@ -228,19 +228,19 @@ export const useMapStore = defineStore('map', () => {
       const infoWidth = hasInfoPanel ? 350 : (willHaveInfoPanel ? 350 : 0)
       const totalPanelWidth = clusterWidth + infoWidth
 
-      if (totalPanelWidth > 0) {
-        const pinLatLng = [pin.lat, pin.lng]
-        const bounds = L.latLngBounds([pinLatLng, pinLatLng])
+      const map = mapInstance.value
+      let targetLat = pin.lat
+      let targetLng = pin.lng
 
-        mapInstance.value.fitBounds(bounds, {
-          paddingTopLeft: [totalPanelWidth, 0],
-          paddingBottomRight: [0, 0],
-          maxZoom: targetZoom,
-          animate: true
-        })
-      } else {
-        mapInstance.value.flyTo([pin.lat, pin.lng], targetZoom)
+      if (totalPanelWidth > 0) {
+        const pinPoint = map.latLngToContainerPoint([pin.lat, pin.lng])
+        const offsetPoint = pinPoint.subtract(L.point(totalPanelWidth / 2, 0))
+        const adjustedLatLng = map.containerPointToLatLng(offsetPoint)
+        targetLat = adjustedLatLng.lat
+        targetLng = adjustedLatLng.lng
       }
+
+      map.flyTo([targetLat, targetLng], targetZoom, { animate: true })
       console.log('[Map] flyToPin', { pinId: pin.id, currentZoom, targetZoom })
     }
     // Keep cluster selection if there's an active cluster

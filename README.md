@@ -109,7 +109,7 @@ This application consists of three main components:
 
 ### Database Configuration
 
-The backend automatically connects to the configured MariaDB database:
+By default the backend attempts to connect to the remote MariaDB instance:
 - **Host**: `detect.pm99.site`
 - **Port**: `58591`
 - **User**: `drone_app`

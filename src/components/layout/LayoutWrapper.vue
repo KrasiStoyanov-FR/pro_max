@@ -18,7 +18,8 @@
           <InfoPanel :is-open="isInfoPanelOpen" :selected-pin="selectedPin"
             :has-cluster-panel="mapStore.hasSelectedCluster" :focus-mode-active="mapStore.focusModeActive"
             @close="closeInfoPanel" @pin-deselected="handlePinDeselected"
-            @exit-focus="handleExitFocusMode" @focus-detection="handleFocusDetection" />
+            @exit-focus="handleExitFocusMode" @focus-detection="handleFocusDetection"
+            @zoom-to-map-pin="handleZoomToPin" />
         </div>
 
         <!-- Detection Details Panel (bottom panel) -->
@@ -43,7 +44,7 @@ import { mapService } from '@/services/mapService'
 import InfoPanel from './InfoPanel.vue'
 import Sidebar from './Sidebar.vue'
 import TopNav from './TopNav.vue'
-import type { DetectionCheckpoint } from '@/types/map'
+import type { DetectionCheckpoint, MapPin } from '@/types/map'
 
 // Props
 interface Props {
@@ -68,22 +69,57 @@ const selectedPin = computed(() => mapStore.selectedPin)
 // const selectedCluster = computed(() => mapStore.selectedCluster)
 const focusedDetectionId = computed(() => mapStore.focusedDetectionId)
 
-// Get selected detection from the selected pin's detections
+// Get selected detection from the selected pin's detections or search all pins
 const selectedDetection = computed<DetectionCheckpoint | null>(() => {
-  if (!focusedDetectionId.value || !selectedPin.value) {
-    console.log('[LayoutWrapper] No selectedDetection - focusedDetectionId:', focusedDetectionId.value, 'selectedPin:', selectedPin.value?.id)
+  if (!focusedDetectionId.value) {
     return null
   }
   
-  const detections = selectedPin.value.data?.detections
-  if (!Array.isArray(detections)) {
-    console.log('[LayoutWrapper] No detections array in selectedPin.data')
-    return null
+  // First, check if the selected pin IS a detection (type: 'target')
+  if (selectedPin.value?.type === 'target' && selectedPin.value.data) {
+    const pinDetectionId = typeof selectedPin.value.data.id === 'number'
+      ? selectedPin.value.data.id
+      : Number(String(selectedPin.value.id).replace('rf-detection-', ''))
+    
+    if (pinDetectionId === focusedDetectionId.value) {
+      // Convert pin data to DetectionCheckpoint format
+      return {
+        id: pinDetectionId,
+        timestamp: selectedPin.value.data.timestamp ?? selectedPin.value.timestamp,
+        frequency: selectedPin.value.data.frequency ?? null,
+        signalStrength: selectedPin.value.data.signal_strength ?? null,
+        status: selectedPin.value.data.detection_status ?? false,
+        systemId: selectedPin.value.data.system_id ?? null,
+        droneId: selectedPin.value.data.drone_id ?? null
+      }
+    }
   }
   
-  const detection = detections.find((d: DetectionCheckpoint) => d.id === focusedDetectionId.value) || null
-  console.log('[LayoutWrapper] selectedDetection:', detection?.id, 'from', detections.length, 'detections')
-  return detection
+  // Second, try to find in selected pin's detections array
+  if (selectedPin.value) {
+    const detections = selectedPin.value.data?.detections
+    if (Array.isArray(detections)) {
+      const detection = detections.find((d: DetectionCheckpoint) => d.id === focusedDetectionId.value)
+      if (detection) {
+        return detection
+      }
+    }
+  }
+  
+  // If not found, search all pins for this detection
+  // This handles cases where a detector is selected and shows detections from linked drones
+  for (const pin of mapStore.pins) {
+    if (pin.type === 'drone' && Array.isArray(pin.data?.detections)) {
+      const detection = (pin.data.detections as DetectionCheckpoint[]).find(
+        (d: DetectionCheckpoint) => d.id === focusedDetectionId.value
+      )
+      if (detection) {
+        return detection
+      }
+    }
+  }
+  
+  return null
 })
 
 // Methods
@@ -113,6 +149,11 @@ const handleFocusDetection = (detection: DetectionCheckpoint) => {
   if (!detection) {
     console.warn('[LayoutWrapper] No detection provided')
     return
+  }
+  
+  // Ensure info panel is open
+  if (!isInfoPanelOpen.value) {
+    isInfoPanelOpen.value = true
   }
   
   // Set the focused detection ID first - this will trigger the panel
@@ -188,6 +229,22 @@ const handleDetectionClose = () => {
   service.highlightDetection?.(null)
 }
 
+const handleZoomToPin = (pin: MapPin) => {
+  if (!pin) return
+  mapStore.flyToPin(pin)
+}
+
+// Watch for detection focus changes (e.g., from trajectory checkpoint clicks)
+watch(focusedDetectionId, (newId) => {
+  if (newId !== null) {
+    // Ensure info panel is open when a detection is focused
+    if (!isInfoPanelOpen.value) {
+      isInfoPanelOpen.value = true
+    }
+    console.log('[LayoutWrapper] Detection focused via watch:', newId, 'selectedDetection:', selectedDetection.value?.id)
+  }
+})
+
 const closeInfoPanel = () => {
   isInfoPanelOpen.value = false
   // Only clear the pin selection, keep cluster if it exists
@@ -200,8 +257,15 @@ const handlePinDeselected = () => {
 
 // Watch for pin selection to open/close info panel
 watch(() => mapStore.selectedPin, (newPin: any) => {
+  console.log('[LayoutWrapper] selectedPin changed:', { 
+    type: newPin?.type, 
+    id: newPin?.id, 
+    dataId: newPin?.data?.id,
+    isInfoPanelOpen: isInfoPanelOpen.value 
+  })
   if (newPin) {
     isInfoPanelOpen.value = true
+    console.log('[LayoutWrapper] InfoPanel opened for pin:', newPin.type, newPin.id)
   } else {
     isInfoPanelOpen.value = false
   }
