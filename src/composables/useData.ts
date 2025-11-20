@@ -54,19 +54,19 @@ export function useData() {
     return await dataStore.fetchDrones(forceRefresh)
   }
 
-  const fetchDronePositions = async (limit = 100, forceRefresh = false) => {
+  const fetchDronePositions = async (limit?: number, forceRefresh = false) => {
     return await dataStore.fetchDronePositions(limit, forceRefresh)
   }
 
-  const fetchRFDetections = async (limit = 100, forceRefresh = false) => {
+  const fetchRFDetections = async (limit?: number, forceRefresh = false) => {
     return await dataStore.fetchRFDetections(limit, forceRefresh)
   }
 
-  const fetchOperatorPositions = async (limit = 50, forceRefresh = false) => {
+  const fetchOperatorPositions = async (limit?: number, forceRefresh = false) => {
     return await dataStore.fetchOperatorPositions(limit, forceRefresh)
   }
 
-  const fetchDetectors = async (limit = 100, forceRefresh = false) => {
+  const fetchDetectors = async (limit?: number, forceRefresh = false) => {
     return await dataStore.fetchGpsUnitPositions(limit, forceRefresh)
   }
 
@@ -204,10 +204,10 @@ export function useData() {
   const refreshAll = async () => {
     await Promise.all([
       fetchDrones(true),
-      fetchDronePositions(100, true),
-      fetchRFDetections(100, true),
-      fetchOperatorPositions(50, true),
-      fetchDetectors(100, true),
+      fetchDronePositions(undefined, true),
+      fetchRFDetections(undefined, true),
+      fetchOperatorPositions(undefined, true),
+      fetchDetectors(undefined, true),
       fetchReceiverLogs(50, true),
       fetchFlightSessions(50, true)
     ])

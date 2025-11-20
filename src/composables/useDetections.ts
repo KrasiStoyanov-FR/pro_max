@@ -5,6 +5,7 @@ import type { DronePosition, RFDetection } from '@/types/database'
 import type {
   DetectionFiltersState,
   DetectionItem,
+  DetectionSensorInfo,
   DetectionRiskLevel,
   DetectionSortField,
   DetectionStatus,
@@ -109,6 +110,29 @@ const resolveSensorId = (record: RFDetection): string | number | null => {
   return record.sensor_id ?? record.system_id ?? null
 }
 
+const resolveSensors = (record: RFDetection): DetectionSensorInfo[] => {
+  const sensors: DetectionSensorInfo[] = []
+
+  if (record.sensor_name) {
+    sensors.push({
+      id: resolveSensorId(record),
+      name: record.sensor_name
+    })
+  }
+
+  if (Array.isArray(record.sensor_list)) {
+    record.sensor_list.forEach(name => {
+      sensors.push({ name })
+    })
+  }
+
+  if (!sensors.length && record.system_id) {
+    sensors.push({ id: record.system_id, name: `System ${record.system_id}` })
+  }
+
+  return sensors
+}
+
 const deriveRiskLevel = (record: RFDetection): DetectionRiskLevel => {
   const candidate = record.risk_level?.toLowerCase()
   if (candidate === 'high') return 'high'
@@ -156,6 +180,46 @@ const resolveBearing = (record: RFDetection, position?: DronePosition | null): n
 
 const resolveTimestamp = (record: RFDetection): string => {
   return record.time || record.last_seen || record.updated_at || new Date().toISOString()
+}
+
+const resolveCoordinates = (
+  record: RFDetection,
+  position?: DronePosition | null
+): { lat: number | null; lng: number | null } => {
+  const latCandidates = [
+    record.latitude,
+    record.lat,
+    (record as unknown as { latitude_deg?: number | string | null }).latitude_deg,
+    position?.latitude
+  ]
+  const lngCandidates = [
+    record.longitude,
+    record.lon,
+    record.lng,
+    (record as unknown as { longitude_deg?: number | string | null }).longitude_deg,
+    position?.longitude
+  ]
+
+  const toCoord = (value: unknown): number | null => {
+    if (value === null || value === undefined) return null
+    const numeric = typeof value === 'string' ? parseFloat(value) : value
+    return Number.isFinite(numeric as number) ? (numeric as number) : null
+  }
+
+  const lat = latCandidates.map(toCoord).find(value => value !== null) ?? null
+  const lng = lngCandidates.map(toCoord).find(value => value !== null) ?? null
+
+  return { lat, lng }
+}
+
+const resolveAngle = (
+  record: RFDetection,
+  fallbackFieldA: keyof RFDetection,
+  fallbackFieldB: keyof RFDetection
+): number | null => {
+  const primary = toNumber(record[fallbackFieldA])
+  if (primary !== null) return primary
+  return toNumber(record[fallbackFieldB])
 }
 
 const timeToMs = (value?: string | null): number => {
@@ -233,6 +297,8 @@ const buildDetectionKey = (record: RFDetection, fallbackIndex: number): string =
 }
 
 const mapDetectionRecord = (record: RFDetection, position?: DronePosition | null): DetectionItem => {
+  const coordinates = resolveCoordinates(record, position)
+
   return {
     id: record.id,
     type: normalizeType(record.type ?? record.target_type ?? record.category),
@@ -248,14 +314,25 @@ const mapDetectionRecord = (record: RFDetection, position?: DronePosition | null
     droneId: record.drone_id,
     systemId: record.system_id,
     frequency: record.frequency,
-    signalStrength: toNumber(record.signal_strength)
+    signalStrength: toNumber(record.signal_strength),
+    latitude: coordinates.lat,
+    longitude: coordinates.lng,
+    speedMetersPerSecond: toNumber(record.speed ?? position?.speed),
+    aglMeters: toNumber(record.agl_height ?? record.agl),
+    angleXDegrees: resolveAngle(record, 'angle_x', 'angle_x_deg'),
+    angleYDegrees: resolveAngle(record, 'angle_y', 'angle_y_deg'),
+    band: record.band ?? null,
+    confidence: toNumber(record.confidence),
+    targetId: record.target_id ?? record.drone_id ?? null,
+    sensors: resolveSensors(record),
+    source: record
   }
 }
 
 export function useDetections(options: UseDetectionsOptions = {}): UseDetectionsResult {
   const {
-    limit = 200,
-    positionsLimit = 300,
+    limit,
+    positionsLimit,
     refreshInterval = 5000,
     enabled = true
   } = options

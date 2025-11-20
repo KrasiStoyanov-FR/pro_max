@@ -205,8 +205,8 @@ export const useDataStore = defineStore('data', () => {
   }
 
   // ========== DRONE POSITIONS ==========
-  const fetchDronePositions = async (limit = 100, forceRefresh = false): Promise<DronePosition[]> => {
-    const key = `drone_positions_${limit}`
+  const fetchDronePositions = async (limit?: number, forceRefresh = false): Promise<DronePosition[]> => {
+    const key = `drone_positions_${limit ?? 'all'}`
     if (!forceRefresh && !isStale(key) && dronePositions.value.size > 0) {
       return dronePositionsList.value
     }
@@ -245,8 +245,8 @@ export const useDataStore = defineStore('data', () => {
   }
 
   // ========== RF DETECTIONS ==========
-  const fetchRFDetections = async (limit = 100, forceRefresh = false): Promise<RFDetection[]> => {
-    const key = `rf_detections_${limit}`
+  const fetchRFDetections = async (limit?: number, forceRefresh = false): Promise<RFDetection[]> => {
+    const key = `rf_detections_${limit ?? 'all'}`
     if (!forceRefresh && !isStale(key) && rfDetections.value.size > 0) {
       return rfDetectionsList.value
     }
@@ -290,8 +290,8 @@ export const useDataStore = defineStore('data', () => {
   }
 
   // ========== OPERATOR POSITIONS ==========
-  const fetchOperatorPositions = async (limit = 50, forceRefresh = false): Promise<OperatorPosition[]> => {
-    const key = `operator_positions_${limit}`
+  const fetchOperatorPositions = async (limit?: number, forceRefresh = false): Promise<OperatorPosition[]> => {
+    const key = `operator_positions_${limit ?? 'all'}`
     if (!forceRefresh && !isStale(key) && operatorPositions.value.size > 0) {
       return operatorPositionsList.value
     }
@@ -334,8 +334,8 @@ export const useDataStore = defineStore('data', () => {
   }
 
   // ========== GPS UNIT POSITIONS (DETECTORS) ==========
-  const fetchGpsUnitPositions = async (limit = 100, forceRefresh = false): Promise<GpsUnitPosition[]> => {
-    const key = `gps_unit_positions_${limit}`
+  const fetchGpsUnitPositions = async (limit?: number, forceRefresh = false): Promise<GpsUnitPosition[]> => {
+    const key = `gps_unit_positions_${limit ?? 'all'}`
     if (!forceRefresh && !isStale(key) && gpsUnitPositions.value.size > 0) {
       return gpsUnitPositionsList.value
     }

@@ -162,11 +162,13 @@ export const databaseApi = {
   },
   
   // Get drone positions from database
-  async getDronePositions(limit: number = 100): Promise<DronePositionsResponse> {
+  async getDronePositions(limit?: number): Promise<DronePositionsResponse> {
+    const cacheKey = `drone_positions_${limit ?? 'all'}`
     // REAL DATA: Original API call (commented out when using mock data)
-    return getCachedData(`drone_positions_${limit}`, async () => {
+    return getCachedData(cacheKey, async () => {
       try {
-        const response = await api.get(`/table/drone_positions?database=drone_monitoring&limit=${limit}`)
+        const limitParam = typeof limit === 'number' ? `&limit=${limit}` : ''
+        const response = await api.get(`/table/drone_positions?database=drone_monitoring${limitParam}`)
         return {
           success: true,
           data: response.data.data as DronePosition[]
@@ -182,11 +184,13 @@ export const databaseApi = {
   },
   
   // Get RF detections from database
-  async getRFDetections(limit: number = 100): Promise<RFDetectionsResponse> {
+  async getRFDetections(limit?: number): Promise<RFDetectionsResponse> {
+    const cacheKey = `rf_detections_${limit ?? 'all'}`
     // REAL DATA: Original API call (commented out when using mock data)
-    return getCachedData(`rf_detections_${limit}`, async () => {
+    return getCachedData(cacheKey, async () => {
       try {
-        const response = await api.get(`/table/rf_detections?database=drone_monitoring&limit=${limit}`)
+        const limitParam = typeof limit === 'number' ? `&limit=${limit}` : ''
+        const response = await api.get(`/table/rf_detections?database=drone_monitoring${limitParam}`)
         return {
           success: true,
           data: response.data.data as RFDetection[]
@@ -219,11 +223,13 @@ export const databaseApi = {
   },
   
   // Get operator positions from database
-  async getOperatorPositions(limit: number = 50): Promise<{ success: boolean; data?: OperatorPosition[]; error?: string }> {
+  async getOperatorPositions(limit?: number): Promise<{ success: boolean; data?: OperatorPosition[]; error?: string }> {
+    const cacheKey = `operator_positions_${limit ?? 'all'}`
     // REAL DATA: Original API call (commented out when using mock data)
-    return getCachedData(`operator_positions_${limit}`, async () => {
+    return getCachedData(cacheKey, async () => {
       try {
-        const response = await api.get(`/table/operator_positions?database=drone_monitoring&limit=${limit}`)
+        const limitParam = typeof limit === 'number' ? `&limit=${limit}` : ''
+        const response = await api.get(`/table/operator_positions?database=drone_monitoring${limitParam}`)
         return {
           success: true,
           data: response.data.data as OperatorPosition[]
@@ -238,11 +244,13 @@ export const databaseApi = {
     })
   },
 
-  async getGpsUnitPositions(limit: number = 100): Promise<GpsUnitPositionsResponse> {
+  async getGpsUnitPositions(limit?: number): Promise<GpsUnitPositionsResponse> {
+    const cacheKey = `gps_unit_position_${limit ?? 'all'}`
     // REAL DATA: Original API call (commented out when using mock data)
-    return getCachedData(`gps_unit_position_${limit}`, async () => {
+    return getCachedData(cacheKey, async () => {
       try {
-        const response = await api.get(`/table/gps_unit_position?database=drone_monitoring&limit=${limit}`)
+        const limitParam = typeof limit === 'number' ? `&limit=${limit}` : ''
+        const response = await api.get(`/table/gps_unit_position?database=drone_monitoring${limitParam}`)
         return {
           success: true,
           data: response.data.data as GpsUnitPosition[]
@@ -512,9 +520,9 @@ export const databaseApi = {
         const [healthResponse, dronesResponse, dronePositionsResponse, detectionsResponse, operatorsResponse] = await Promise.allSettled([
           this.getHealth(),
           this.getDrones(),
-          this.getDronePositions(200),
-          this.getRFDetections(100),
-          this.getOperatorPositions(50)
+          this.getDronePositions(),
+          this.getRFDetections(),
+          this.getOperatorPositions()
         ])
 
         // Determine database status

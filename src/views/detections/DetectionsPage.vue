@@ -46,7 +46,11 @@
     </div>
 
     <div class="flex-1 overflow-hidden px-4 py-4 lg:px-8">
-      <div class="h-full overflow-auto rounded-2xl border border-white/5 bg-neutral-900/30 p-4 shadow-lg shadow-black/30">
+      <div class="relative flex h-full flex-col gap-4 lg:flex-row">
+        <div
+          class="flex-1 min-w-0 overflow-auto rounded-2xl border border-white/5 bg-neutral-900/30 p-4 shadow-lg shadow-black/30"
+          :class="tableContainerClass"
+        >
         <div
           v-if="error"
           class="mb-4 rounded-lg border border-rose-500/40 bg-rose-500/10 p-4 text-sm text-rose-100"
@@ -69,17 +73,30 @@
           :sort-field="sortField"
           :sort-direction="sortDirection"
           @change-sort="setSort"
+          @show-details="handleShowDetails"
         />
+      </div>
+        <transition name="slide-in">
+          <DetectionDetailsPanel
+            v-if="panelVisible"
+            class="w-full flex-shrink-0 overflow-hidden lg:absolute lg:bottom-0 lg:right-0 lg:top-0 lg:w-[28rem]"
+            :visible="panelVisible"
+            :detection="selectedDetection"
+            @close="closeDetails"
+          />
+        </transition>
       </div>
     </div>
   </section>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useDetections } from '@/composables/useDetections'
 import DetectionsFilters from './components/DetectionsFilters.vue'
 import DetectionsTable from './components/DetectionsTable.vue'
+import DetectionDetailsPanel from './components/DetectionDetailsPanel.vue'
+import type { DetectionItem } from '@/types/detections'
 
 const {
   detections,
@@ -90,7 +107,6 @@ const {
   sort,
   refresh
 } = useDetections({
-  limit: 200,
   refreshInterval: 5000,
   enabled: true
 })
@@ -109,6 +125,26 @@ const availableZones = computed(() => {
     }
   })
   return Array.from(zones).sort()
+})
+
+const selectedDetectionId = ref<number | null>(null)
+const panelVisible = ref(false)
+
+const selectedDetection = computed(() => {
+  return detections.value.find(detection => detection.id === selectedDetectionId.value) ?? null
+})
+
+const handleShowDetails = (detection: DetectionItem) => {
+  selectedDetectionId.value = detection.id
+  panelVisible.value = true
+}
+
+const closeDetails = () => {
+  panelVisible.value = false
+}
+
+const tableContainerClass = computed(() => {
+  return panelVisible.value ? 'lg:pr-6 lg:mr-[30rem]' : ''
 })
 </script>
 

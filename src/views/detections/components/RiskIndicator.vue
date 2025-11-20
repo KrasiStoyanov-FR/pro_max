@@ -22,11 +22,11 @@ const props = defineProps<{
 const riskColor = computed(() => {
   switch (props.riskLevel) {
     case 'high':
-      return 'bg-rose-500 shadow shadow-rose-500/40'
+      return 'bg-red-500 shadow shadow-red-500/40'
     case 'medium':
-      return 'bg-amber-400 shadow shadow-amber-400/40'
+      return 'bg-yellow-500 shadow shadow-yellow-500/40'
     default:
-      return 'bg-emerald-400 shadow shadow-emerald-400/40'
+      return 'bg-blue-500 shadow shadow-blue-500/40'
   }
 })
 

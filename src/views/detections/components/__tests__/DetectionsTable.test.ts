@@ -3,6 +3,15 @@ import { mount } from '@vue/test-utils'
 import DetectionsTable from '../DetectionsTable.vue'
 import type { DetectionItem } from '@/types/detections'
 
+const baseSource = {
+  id: 1,
+  time: new Date().toISOString(),
+  detection_status: true,
+  signal_strength: -40,
+  frequency: 2450,
+  drone_id: 12
+}
+
 const sampleDetections: DetectionItem[] = [
   {
     id: 1,
@@ -15,7 +24,13 @@ const sampleDetections: DetectionItem[] = [
     sensorName: 'Alpha',
     sensorId: 'A-1',
     riskLevel: 'high',
-    zone: 'Central'
+    zone: 'Central',
+    signalStrength: -40,
+    frequency: 2450,
+    latitude: 12.34,
+    longitude: 56.78,
+    sensors: [{ name: 'Alpha Sensor' }],
+    source: baseSource as any
   },
   {
     id: 2,
@@ -28,7 +43,13 @@ const sampleDetections: DetectionItem[] = [
     sensorName: 'Beta',
     sensorId: 'B-2',
     riskLevel: 'medium',
-    zone: 'East'
+    zone: 'East',
+    signalStrength: -55,
+    frequency: 2440,
+    latitude: 22.11,
+    longitude: 44.55,
+    sensors: [{ name: 'Beta Sensor' }],
+    source: { ...baseSource, id: 2 } as any
   }
 ]
 
@@ -48,9 +69,10 @@ describe('DetectionsTable', () => {
     expect(wrapper.text()).toContain('Alpha')
     expect(wrapper.text()).toContain('RC')
 
-    const actionButton = wrapper.get('tbody tr:first-child button')
-    expect(actionButton.attributes('disabled')).toBeDefined()
-    expect(actionButton.text()).toContain('Show on map')
+    const actionButtons = wrapper.findAll('tbody tr:first-child button')
+    expect(actionButtons).toHaveLength(2)
+    expect(actionButtons[0].text()).toContain('Details')
+    expect(actionButtons[1].text()).toContain('Show on map')
   })
 
   it('emits sort change when header clicked', async () => {
@@ -68,6 +90,23 @@ describe('DetectionsTable', () => {
 
     expect(wrapper.emitted('change-sort')).toBeTruthy()
     expect(wrapper.emitted('change-sort')?.[0]).toEqual(['status'])
+  })
+
+  it('emits show-details when button clicked', async () => {
+    const wrapper = mount(DetectionsTable, {
+      props: {
+        detections: sampleDetections,
+        isLoading: false,
+        sortField: 'lastSeen',
+        sortDirection: 'desc'
+      }
+    })
+
+    const detailsButton = wrapper.get('tbody tr:first-child button')
+    await detailsButton.trigger('click')
+
+    expect(wrapper.emitted('show-details')).toBeTruthy()
+    expect(wrapper.emitted('show-details')?.[0]?.[0]).toEqual(sampleDetections[0])
   })
 })
 

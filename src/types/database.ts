@@ -84,6 +84,23 @@ export interface RFDetection {
   last_seen?: string | null
   updated_at?: string | null
   zone?: string | null
+  latitude?: number | string | null
+  longitude?: number | string | null
+  lat?: number | string | null
+  lon?: number | string | null
+  lng?: number | string | null
+  speed?: number | null
+  agl?: number | null
+  agl_height?: number | null
+  angle_x?: number | null
+  angle_y?: number | null
+  angle_x_deg?: number | null
+  angle_y_deg?: number | null
+  band?: string | null
+  confidence?: number | null
+  sensors?: string | null
+  sensor_list?: string[] | null
+  target_id?: string | number | null
 }
 
 // Receiver logs table

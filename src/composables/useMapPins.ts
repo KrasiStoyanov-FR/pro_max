@@ -335,10 +335,10 @@ const toTimeValue = (value: string | undefined | null) => value ? new Date(value
         gpsUnitPositionsResponse
       ] = await Promise.all([
         databaseApi.getDrones(),
-        databaseApi.getDronePositions(100),
-        databaseApi.getRFDetections(50),
-        databaseApi.getOperatorPositions(50),
-        databaseApi.getGpsUnitPositions(100)
+        databaseApi.getDronePositions(),
+        databaseApi.getRFDetections(),
+        databaseApi.getOperatorPositions(),
+        databaseApi.getGpsUnitPositions()
       ])
 
       const droneMetadata = new Map<string, Drone>()

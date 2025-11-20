@@ -88,15 +88,13 @@
             <td class="px-4 py-4">
               <RiskIndicator :risk-level="detection.riskLevel" />
             </td>
-            <td class="px-4 py-4 text-right">
+            <td class="px-4 py-4 flex justify-end gap-2">
               <button
                 type="button"
-                class="inline-flex items-center rounded-md border border-white/20 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-white opacity-60"
-                disabled
-                aria-disabled="true"
-                title="Show on map (coming soon)"
+                class="inline-flex items-center rounded-md border border-white/20 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-white/10"
+                @click="emit('show-details', detection)"
               >
-                Show on map
+                Details
               </button>
             </td>
           </tr>
@@ -122,6 +120,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'change-sort', value: DetectionSortField): void
+  (e: 'show-details', detection: DetectionItem): void
 }>()
 
 const emitSort = (field: DetectionSortField) => {
