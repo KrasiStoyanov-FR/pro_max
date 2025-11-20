@@ -396,7 +396,12 @@ const toTimeValue = (value: string | undefined | null) => value ? new Date(value
       if (dronePositionsResponse.success && dronePositionsResponse.data) {
         const processedPositionKeys = new Set<string>()
         dronePositionsResponse.data.forEach((position: DronePosition) => {
-          const droneKey = String(position.drone_id)
+          const droneKey =
+            position.drone_id !== null && position.drone_id !== undefined
+              ? `drone:${position.drone_id}`
+              : position.system_id
+                ? `system:${position.system_id}`
+                : `position:${position.id}`
           const lat = parseFloat(position.latitude.toString())
           const lng = parseFloat(position.longitude.toString())
           const timestamp = position.time
@@ -405,9 +410,10 @@ const toTimeValue = (value: string | undefined | null) => value ? new Date(value
              return
            }
 
-          const systemKey = position.system_id !== undefined && position.system_id !== null
-            ? String(position.system_id)
-            : 'unknown'
+          const systemKey =
+            position.system_id !== undefined && position.system_id !== null
+              ? String(position.system_id)
+              : 'unknown'
           const compositeKey = `${droneKey}::${systemKey}`
           const dedupeKey = `${compositeKey}::${timestamp ?? 'unknown'}`
 
