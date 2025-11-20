@@ -141,9 +141,9 @@ const navigationItems = [
     icon: PhTarget
   },
   {
-    name: 'Receivers',
-    label: 'Receivers',
-    href: '/receivers',
+    name: 'Sensors',
+    label: 'Sensors',
+    href: '/sensors',
     icon: PhCellTower
   },
   {

@@ -48,6 +48,9 @@ const detectionTypeMap: Record<string, DetectionType> = {
   'rc plane': 'RC',
   'rc helicopter': 'RC',
   unknown: 'Unknown',
+  default: 'Unknown',
+  'n/a': 'Unknown',
+  'not specified': 'Unknown',
   interference: 'Interference',
   jammer: 'Interference',
   spoofing: 'Interference'
@@ -66,9 +69,9 @@ const detectionStatusMap: Record<string, DetectionStatus> = {
 }
 
 const normalizeType = (value?: string | null): DetectionType => {
-  if (!value) return 'Unknown'
-  const normalized = value.toLowerCase()
-  return detectionTypeMap[normalized] ?? 'Unknown'
+  if (!value || !value.trim()) return 'Unknown'
+  const normalized = value.trim().toLowerCase()
+  return detectionTypeMap[normalized] ?? detectionTypeMap.default
 }
 
 const normalizeStatus = (record: RFDetection): DetectionStatus => {
@@ -476,6 +479,9 @@ export function useDetections(options: UseDetectionsOptions = {}): UseDetections
     const zoneFilter = filters.zone.value
 
     const filtered = detections.value.filter((detection) => {
+      const normalizedType: DetectionType = detection.type ?? 'Unknown'
+      const normalizedStatus: DetectionStatus = detection.status ?? 'Detect'
+
       const matchesSearch = searchTerm
         ? detection.type.toLowerCase().includes(searchTerm) ||
           detection.sensorName.toLowerCase().includes(searchTerm) ||
@@ -483,10 +489,15 @@ export function useDetections(options: UseDetectionsOptions = {}): UseDetections
           (detection.sensorId ? detection.sensorId.toString().toLowerCase().includes(searchTerm) : false)
         : true
 
-      const matchesType = typeFilter === 'all' || detection.type === typeFilter
-      const matchesStatus = statusFilter === 'all' || detection.status === statusFilter
+      const matchesType = typeFilter === 'all' || normalizedType === typeFilter
+      const matchesStatus = statusFilter === 'all' || normalizedStatus === statusFilter
       const matchesZone =
-        zoneFilter === 'all' || (detection.zone ? detection.zone === zoneFilter : false)
+        zoneFilter === 'all' ||
+        (zoneFilter === 'none' &&
+          (detection.zone === null ||
+            detection.zone === undefined ||
+            detection.zone.toString().trim() === '')) ||
+        detection.zone === zoneFilter
 
       let matchesTimeWindow = true
 

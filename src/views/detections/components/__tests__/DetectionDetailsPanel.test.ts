@@ -38,7 +38,7 @@ describe('DetectionDetailsPanel', () => {
       },
       global: {
         stubs: {
-          DetectionMapPreview: {
+          MapPreview: {
             template: '<div class="map-stub" />'
           }
         }
@@ -58,7 +58,7 @@ describe('DetectionDetailsPanel', () => {
       },
       global: {
         stubs: {
-          DetectionMapPreview: {
+          MapPreview: {
             template: '<div class="map-stub" />'
           }
         }

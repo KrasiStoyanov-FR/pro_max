@@ -6,9 +6,9 @@
           <div class="flex flex-wrap items-center justify-between gap-4">
             <div>
               <p class="text-xs font-semibold uppercase tracking-wide text-primary-300/80">Operations</p>
-              <h1 class="text-2xl font-semibold text-white">Detections</h1>
+              <h1 class="text-2xl font-semibold text-white">Sensors</h1>
               <p class="text-sm text-neutral-400">
-                Live and recent RF detections pulled directly from the mission database
+                Fleet of receivers and detectors currently connected to the mission network
               </p>
             </div>
             <div class="flex items-center gap-3">
@@ -25,27 +25,13 @@
                 Refresh
               </button>
               <p class="text-xs text-neutral-400">
-                Auto-refresh every 5s &middot;
-                <span class="font-medium text-white">{{ visibleCount }}</span>
-                of
-                <span class="font-medium text-white">{{ totalCount }}</span>
-                detections
+                Auto-refresh every 10s &middot;
+                <span class="font-medium text-white">{{ sensors.length }}</span>
+                sensors
               </p>
             </div>
           </div>
         </header>
-
-        <div class="border-b border-white/5 bg-neutral-900/40 px-6 py-4 lg:px-8">
-          <DetectionsFilters
-            v-model:search="filters.search"
-            v-model:type="filters.type"
-            v-model:status="filters.status"
-            v-model:timeWindow="filters.timeWindow"
-            v-model:zone="filters.zone"
-            :is-loading="isLoading"
-            :zones="availableZones"
-          />
-        </div>
 
         <div class="flex-1 overflow-hidden px-4 py-4 lg:px-8">
           <div class="relative flex h-full flex-col gap-4 lg:flex-row">
@@ -58,7 +44,7 @@
                 class="mb-4 rounded-lg border border-rose-500/40 bg-rose-500/10 p-4 text-sm text-rose-100"
                 role="alert"
               >
-                <p class="font-medium text-rose-50">Unable to load detections</p>
+                <p class="font-medium text-rose-50">Unable to load sensors</p>
                 <p class="text-rose-200/80">{{ error }}</p>
                 <button
                   type="button"
@@ -69,21 +55,20 @@
                 </button>
               </div>
 
-              <DetectionsTable
-                :detections="filteredDetections"
+              <SensorsTable
+                :sensors="sensors"
                 :is-loading="isLoading"
-                :sort-field="sortField"
-                :sort-direction="sortDirection"
-                @change-sort="setSort"
+                :selected-id="selectedSensorId"
                 @show-details="handleShowDetails"
               />
             </div>
+
             <transition name="slide-in">
-              <DetectionDetailsPanel
+              <SensorDetailsPanel
                 v-if="panelVisible"
                 class="w-full flex-shrink-0 overflow-hidden lg:absolute lg:bottom-0 lg:right-0 lg:top-0 lg:w-[28rem]"
                 :visible="panelVisible"
-                :detection="selectedDetection"
+                :sensor="selectedSensor"
                 @close="closeDetails"
               />
             </transition>
@@ -96,61 +81,29 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { useAuth } from '@/composables/useAuth'
-import { useDetections } from '@/composables/useDetections'
 import LayoutWrapper from '@/components/layout/LayoutWrapper.vue'
-import DetectionsFilters from '@/views/detections/components/DetectionsFilters.vue'
-import DetectionsTable from '@/views/detections/components/DetectionsTable.vue'
-import DetectionDetailsPanel from '@/views/detections/components/DetectionDetailsPanel.vue'
-import type { DetectionItem } from '@/types/detections'
+import SensorsTable from '@/views/sensors/components/SensorsTable.vue'
+import SensorDetailsPanel from '@/views/sensors/components/SensorDetailsPanel.vue'
+import { useSensors } from '@/composables/useSensors'
+import type { SensorItem } from '@/types/sensors'
+import { useAuth } from '@/composables/useAuth'
 
 useAuth()
 
-const {
-  detections,
-  filteredDetections,
-  isLoading,
-  error,
-  filters,
-  sort,
-  refresh
-} = useDetections({
-  refreshInterval: 5000,
+const { sensors, isLoading, error, refresh } = useSensors({
+  refreshInterval: 10000,
   enabled: true
 })
 
-const sortField = sort.field
-const sortDirection = sort.direction
-const setSort = sort.setSort
-
-const totalCount = computed(() => detections.value.length)
-const visibleCount = computed(() => filteredDetections.value.length)
-const availableZones = computed(() => {
-  const zones = new Set<string>()
-  let hasUnassigned = false
-  detections.value.forEach(detection => {
-    if (detection.zone && detection.zone.trim().length > 0) {
-      zones.add(detection.zone)
-    } else {
-      hasUnassigned = true
-    }
-  })
-  const sortedZones = Array.from(zones).sort()
-  if (hasUnassigned) {
-    sortedZones.unshift('none')
-  }
-  return sortedZones
-})
-
-const selectedDetectionId = ref<number | null>(null)
+const selectedSensorId = ref<string | null>(null)
 const panelVisible = ref(false)
 
-const selectedDetection = computed(() => {
-  return detections.value.find(detection => detection.id === selectedDetectionId.value) ?? null
+const selectedSensor = computed(() => {
+  return sensors.value.find(sensor => sensor.id === selectedSensorId.value) ?? null
 })
 
-const handleShowDetails = (detection: DetectionItem) => {
-  selectedDetectionId.value = detection.id
+const handleShowDetails = (sensor: SensorItem) => {
+  selectedSensorId.value = sensor.id
   panelVisible.value = true
 }
 
@@ -162,4 +115,5 @@ const tableContainerClass = computed(() => {
   return panelVisible.value ? 'lg:pr-6 lg:mr-[30rem]' : ''
 })
 </script>
+
 

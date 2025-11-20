@@ -11,7 +11,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, watch, computed } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 
@@ -25,8 +25,18 @@ const mapInstance = ref<L.Map | null>(null)
 const marker = ref<L.Marker | null>(null)
 
 const hasCoordinates = computed(() => {
-  return Boolean(props.coordinates && Number.isFinite(props.coordinates.lat) && Number.isFinite(props.coordinates.lng))
+  return Boolean(
+    props.coordinates &&
+      Number.isFinite(props.coordinates.lat) &&
+      Number.isFinite(props.coordinates.lng)
+  )
 })
+
+const destroyMap = () => {
+  mapInstance.value?.remove()
+  mapInstance.value = null
+  marker.value = null
+}
 
 const setupMap = () => {
   if (!mapRef.value || !hasCoordinates.value || mapInstance.value) return
@@ -53,22 +63,20 @@ const updateMarker = () => {
 }
 
 onMounted(() => {
-  setupMap()
+  if (hasCoordinates.value) {
+    setupMap()
+  }
 })
 
 onBeforeUnmount(() => {
-  mapInstance.value?.remove()
-  mapInstance.value = null
-  marker.value = null
+  destroyMap()
 })
 
 watch(
   () => props.coordinates,
   () => {
     if (!hasCoordinates.value) {
-      mapInstance.value?.remove()
-      mapInstance.value = null
-      marker.value = null
+      destroyMap()
       return
     }
 

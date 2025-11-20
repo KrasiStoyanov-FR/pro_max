@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/store/auth'
 import Detections from '@/pages/Detections.vue'
+import Sensors from '@/pages/Sensors.vue'
 
 // Lazy-loaded route components for code-splitting
 const Login = () => import('@/pages/Login.vue')
@@ -44,6 +45,15 @@ const router = createRouter({
       meta: {
         requiresAuth: true,
         title: 'Detections - Defense Radar Dashboard'
+      }
+    },
+    {
+      path: '/sensors',
+      name: 'Sensors',
+      component: Sensors,
+      meta: {
+        requiresAuth: true,
+        title: 'Sensors - Defense Radar Dashboard'
       }
     },
     // TODO: Add these routes when page components are created

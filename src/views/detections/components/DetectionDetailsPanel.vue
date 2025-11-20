@@ -25,7 +25,7 @@
     </header>
 
     <div class="mb-4">
-      <DetectionMapPreview :coordinates="coordinates" />
+      <MapPreview :coordinates="coordinates" />
     </div>
 
     <section class="flex-1 space-y-6 overflow-y-auto pr-2">
@@ -149,7 +149,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import DetectionMapPreview from './DetectionMapPreview.vue'
+import MapPreview from '@/components/shared/MapPreview.vue'
 import RiskIndicator from './RiskIndicator.vue'
 import type { DetectionItem } from '@/types/detections'
 

@@ -59,7 +59,7 @@ describe('useDetections', () => {
       },
       {
         id: 3,
-        type: 'rc plane',
+        type: null as any,
         status: 'track',
         distance: null,
         altitude: null,
@@ -168,6 +168,30 @@ describe('useDetections', () => {
     result.filters.zone.value = 'North'
     await nextTick()
     expect(result.filteredDetections.value).toHaveLength(0)
+
+    wrapper.unmount()
+  })
+
+  it('filters by detection type and resets back to all', async () => {
+    const { result, wrapper } = mountHook()
+    await nextTick()
+
+    // All detections initially
+    expect(result.filteredDetections.value).toHaveLength(2)
+
+    result.filters.type.value = 'UAV'
+    await nextTick()
+    expect(result.filteredDetections.value).toHaveLength(1)
+    expect(result.filteredDetections.value[0].type).toBe('UAV')
+
+    result.filters.type.value = 'Unknown'
+    await nextTick()
+    expect(result.filteredDetections.value).toHaveLength(1)
+    expect(result.filteredDetections.value[0].type).toBe('Unknown')
+
+    result.filters.type.value = 'all'
+    await nextTick()
+    expect(result.filteredDetections.value).toHaveLength(2)
 
     wrapper.unmount()
   })
