@@ -35,7 +35,17 @@ describe('SensorDetailsPanel', () => {
     const wrapper = mount(SensorDetailsPanel, {
       props: {
         sensor,
-        visible: true
+        visible: true,
+        logs: [
+          {
+            id: 1,
+            system_id: 'SYS-1',
+            receiver_type: 'rf',
+            status: 'online',
+            time: new Date().toISOString(),
+            message: 'All good'
+          }
+        ]
       },
       global: {
         stubs: {
@@ -55,7 +65,9 @@ describe('SensorDetailsPanel', () => {
     const wrapper = mount(SensorDetailsPanel, {
       props: {
         sensor,
-        visible: true
+        visible: true,
+        logs: [],
+        logsLoading: false
       },
       global: {
         stubs: {

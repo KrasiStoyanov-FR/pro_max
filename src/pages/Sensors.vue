@@ -69,6 +69,9 @@
                 class="w-full flex-shrink-0 overflow-hidden lg:absolute lg:bottom-0 lg:right-0 lg:top-0 lg:w-[28rem]"
                 :visible="panelVisible"
                 :sensor="selectedSensor"
+                :logs="selectedSensorLogs"
+                :logs-loading="receiverLogsLoading"
+                :logs-error="receiverLogsError"
                 @close="closeDetails"
               />
             </transition>
@@ -80,13 +83,16 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, onMounted, onBeforeUnmount } from 'vue'
+import { storeToRefs } from 'pinia'
 import LayoutWrapper from '@/components/layout/LayoutWrapper.vue'
 import SensorsTable from '@/views/sensors/components/SensorsTable.vue'
 import SensorDetailsPanel from '@/views/sensors/components/SensorDetailsPanel.vue'
 import { useSensors } from '@/composables/useSensors'
 import type { SensorItem } from '@/types/sensors'
 import { useAuth } from '@/composables/useAuth'
+import { useDataStore } from '@/store/data'
+import type { ReceiverLog } from '@/types/database'
 
 useAuth()
 
@@ -95,11 +101,55 @@ const { sensors, isLoading, error, refresh } = useSensors({
   enabled: true
 })
 
+const dataStore = useDataStore()
+const { receiverLogsList, loading: dataLoading, errors: dataErrors } = storeToRefs(dataStore)
+const receiverLogs = computed<ReceiverLog[]>(() => receiverLogsList.value ?? [])
+const receiverLogsLoading = computed(() => Boolean(dataLoading.value?.receiverLogs))
+const receiverLogsError = computed(() => dataErrors.value?.receiverLogs ?? null)
+
+const LOG_REFRESH_INTERVAL = 15000
+let logsTimer: ReturnType<typeof setInterval> | null = null
+
+const refreshLogs = async () => {
+  try {
+    await dataStore.fetchReceiverLogs(undefined, true)
+  } catch (err) {
+    console.error('[Sensors] Failed to refresh receiver logs', err)
+  }
+}
+
+onMounted(() => {
+  void refreshLogs()
+  logsTimer = setInterval(() => {
+    void refreshLogs()
+  }, LOG_REFRESH_INTERVAL)
+})
+
+onBeforeUnmount(() => {
+  if (logsTimer) {
+    clearInterval(logsTimer)
+    logsTimer = null
+  }
+})
+
 const selectedSensorId = ref<string | null>(null)
 const panelVisible = ref(false)
 
 const selectedSensor = computed(() => {
   return sensors.value.find(sensor => sensor.id === selectedSensorId.value) ?? null
+})
+
+const selectedSensorLogs = computed(() => {
+  const sensor = selectedSensor.value
+  if (!sensor || !sensor.source) return []
+  const systemId = (sensor.source as any)?.system_id
+  if (!systemId) return []
+  const targetId = String(systemId)
+
+  return receiverLogs.value
+    .filter(log => log.system_id && String(log.system_id) === targetId)
+    .sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime())
+    .slice(0, 20)
 })
 
 const handleShowDetails = (sensor: SensorItem) => {

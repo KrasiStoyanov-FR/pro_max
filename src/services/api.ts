@@ -351,10 +351,10 @@ export const databaseApi = {
   
   // Get receiver logs from database
   // TOOD: show history of what happened to the device (only for the engineer role of the user)
-  async getReceiverLogs(limit: number = 50): Promise<{ success: boolean; data?: ReceiverLog[]; error?: string }> {
-    // REAL DATA: Original API call (commented out when using mock data)
+  async getReceiverLogs(limit?: number): Promise<{ success: boolean; data?: ReceiverLog[]; error?: string }> {
+    const limitParam = typeof limit === 'number' ? `&limit=${limit}` : ''
     try {
-      const response = await api.get(`/table/receiver_logs?database=drone_monitoring&limit=${limit}`)
+      const response = await api.get(`/table/receiver_logs?database=drone_monitoring${limitParam}`)
       return {
         success: true,
         data: response.data.data as ReceiverLog[]

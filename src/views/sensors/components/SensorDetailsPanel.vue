@@ -137,6 +137,33 @@
           </div>
         </dl>
       </div>
+
+      <div>
+        <h3 class="text-sm font-semibold uppercase tracking-wide text-neutral-400">Recent logs</h3>
+        <div v-if="logsLoading" class="mt-3 rounded-lg border border-white/5 bg-white/5 px-3 py-2 text-sm text-neutral-300">
+          Loading logs…
+        </div>
+        <div
+          v-else-if="logsError"
+          class="mt-3 rounded-lg border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-sm text-rose-100"
+        >
+          {{ logsError }}
+        </div>
+        <ul v-else-if="logsToDisplay.length" class="mt-3 space-y-2">
+          <li
+            v-for="log in logsToDisplay"
+            :key="log.id"
+            class="rounded-lg border border-white/5 bg-white/5 px-3 py-2 text-sm text-neutral-200"
+          >
+            <div class="flex items-center justify-between text-xs text-neutral-400">
+              <span>{{ formatLogTime(log.time) }}</span>
+              <span class="font-semibold uppercase tracking-wide text-white">{{ log.status ?? '—' }}</span>
+            </div>
+            <p class="mt-1 text-sm text-white">{{ log.message ?? 'No message provided.' }}</p>
+          </li>
+        </ul>
+        <p v-else class="mt-3 text-sm text-neutral-400">No recent logs for this sensor.</p>
+      </div>
     </section>
 
     <footer class="mt-6 border-t border-white/5 pt-4">
@@ -155,11 +182,19 @@
 import { computed } from 'vue'
 import MapPreview from '@/components/shared/MapPreview.vue'
 import type { SensorItem, SensorStatus } from '@/types/sensors'
+import type { ReceiverLog } from '@/types/database'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   sensor: SensorItem | null
   visible: boolean
-}>()
+  logs?: ReceiverLog[]
+  logsLoading?: boolean
+  logsError?: string | null
+}>(), {
+  logs: () => [],
+  logsLoading: false,
+  logsError: null
+})
 
 defineEmits<{
   (e: 'close'): void
@@ -174,6 +209,10 @@ const coordinates = computed(() => {
     lng: props.sensor.longitude
   }
 })
+
+const logsToDisplay = computed(() => props.logs ?? [])
+const logsLoading = computed(() => props.logsLoading ?? false)
+const logsError = computed(() => props.logsError ?? null)
 
 const statusClasses = (status: SensorStatus) => {
   switch (status) {
@@ -218,6 +257,13 @@ const formatDuration = (value?: number | null): string => {
   const hours = Math.floor((value ?? 0) / 3600)
   const minutes = Math.floor(((value ?? 0) % 3600) / 60)
   return `${hours}h ${minutes}m`
+}
+
+const formatLogTime = (value?: string | null): string => {
+  if (!value) return '—'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleString()
 }
 </script>
 

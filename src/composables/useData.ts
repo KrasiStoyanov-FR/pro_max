@@ -70,7 +70,7 @@ export function useData() {
     return await dataStore.fetchGpsUnitPositions(limit, forceRefresh)
   }
 
-  const fetchReceiverLogs = async (limit = 50, forceRefresh = false) => {
+  const fetchReceiverLogs = async (limit?: number, forceRefresh = false) => {
     return await dataStore.fetchReceiverLogs(limit, forceRefresh)
   }
 
@@ -208,7 +208,7 @@ export function useData() {
       fetchRFDetections(undefined, true),
       fetchOperatorPositions(undefined, true),
       fetchDetectors(undefined, true),
-      fetchReceiverLogs(50, true),
+      fetchReceiverLogs(undefined, true),
       fetchFlightSessions(50, true)
     ])
   }

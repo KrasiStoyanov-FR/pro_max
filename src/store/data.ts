@@ -379,8 +379,8 @@ export const useDataStore = defineStore('data', () => {
   }
 
   // ========== RECEIVER LOGS ==========
-  const fetchReceiverLogs = async (limit = 50, forceRefresh = false): Promise<ReceiverLog[]> => {
-    const key = `receiver_logs_${limit}`
+  const fetchReceiverLogs = async (limit?: number, forceRefresh = false): Promise<ReceiverLog[]> => {
+    const key = `receiver_logs_${limit ?? 'all'}`
     if (!forceRefresh && !isStale(key) && receiverLogs.value.size > 0) {
       return receiverLogsList.value
     }
