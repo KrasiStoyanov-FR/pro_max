@@ -257,10 +257,11 @@ export const useDataStore = defineStore('data', () => {
     try {
       const response = await databaseApi.getRFDetections(limit)
       if (response.success && response.data) {
-        rfDetections.value.clear()
+        const nextDetections = new Map<number, RFDetection>()
         response.data.forEach(detection => {
-          rfDetections.value.set(detection.id, detection)
+          nextDetections.set(detection.id, detection)
         })
+        rfDetections.value = nextDetections
         updateIndexes()
         lastFetched.value.set(key, Date.now())
         return response.data

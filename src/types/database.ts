@@ -23,6 +23,9 @@ export interface DronePosition {
   speed: number // DECIMAL(5, 2)
   receiver_type: string | null
   system_id?: string | null
+  distance?: number | null
+  range_m?: number | null
+  bearing?: number | null
 }
 
 // Operator positions table
@@ -62,6 +65,25 @@ export interface RFDetection {
   frequency: number | null // DECIMAL(10, 2)
   drone_id: number
   system_id?: string | null
+  type?: string | null
+  target_type?: string | null
+  category?: string | null
+  status?: string | null
+  tracking_status?: string | null
+  alert_status?: string | null
+  risk_level?: string | null
+  altitude?: number | null
+  distance?: number | null
+  range_m?: number | null
+  bearing?: number | null
+  azimuth?: number | null
+  sensor_name?: string | null
+  sensor_id?: string | number | null
+  receiver_name?: string | null
+  receiver_type?: string | null
+  last_seen?: string | null
+  updated_at?: string | null
+  zone?: string | null
 }
 
 // Receiver logs table

@@ -1211,8 +1211,9 @@ const toTimeValue = (value: string | undefined | null) => value ? new Date(value
   // Cleanup
   const cleanup = () => {
     if (isMapReady.value) {
-      mapService.destroy()
-      isMapReady.value = false
+    mapService.destroy()
+    mapStore.setMapInstance(null)
+    isMapReady.value = false
     }
   }
 
