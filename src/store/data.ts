@@ -92,10 +92,11 @@ export const useDataStore = defineStore('data', () => {
   const flightSessionsList = computed(() => Array.from(flightSessions.value.values()))
 
   // Helper to check if data is stale
-  const isStale = (key: string): boolean => {
+  const isStale = (key: string, customDuration?: number): boolean => {
     const lastFetch = lastFetched.value.get(key)
     if (!lastFetch) return true
-    return Date.now() - lastFetch > CACHE_DURATION
+    const duration = customDuration ?? CACHE_DURATION
+    return Date.now() - lastFetch > duration
   }
 
   // Helper to update indexes
@@ -245,9 +246,24 @@ export const useDataStore = defineStore('data', () => {
   }
 
   // ========== RF DETECTIONS ==========
-  const fetchRFDetections = async (limit?: number, forceRefresh = false): Promise<RFDetection[]> => {
-    const key = `rf_detections_${limit ?? 'all'}`
-    if (!forceRefresh && !isStale(key) && rfDetections.value.size > 0) {
+  const fetchRFDetections = async (
+    limit?: number,
+    forceRefresh = false,
+    offset?: number,
+    filters?: {
+      type?: string
+      status?: string
+      timeWindow?: number | null
+      zone?: string
+      search?: string
+    }
+  ): Promise<RFDetection[]> => {
+    const filterKey = filters
+      ? `${filters.type || 'all'}_${filters.status || 'all'}_${filters.timeWindow || 'all'}_${filters.zone || 'all'}_${filters.search || ''}`
+      : 'no_filters'
+    const key = `rf_detections_${limit ?? 'all'}_${offset ?? 0}_${filterKey}`
+    if (!forceRefresh && !isStale(key) && rfDetections.value.size > 0 && offset === undefined && !filters) {
+      // Only use cache if we're fetching all data (no offset, no filters)
       return rfDetectionsList.value
     }
 
@@ -255,14 +271,26 @@ export const useDataStore = defineStore('data', () => {
     errors.value.rfDetections = null
 
     try {
-      const response = await databaseApi.getRFDetections(limit)
+      const response = await databaseApi.getRFDetections(limit, offset, filters)
       if (response.success && response.data) {
-        const nextDetections = new Map<number, RFDetection>()
-        response.data.forEach(detection => {
-          nextDetections.set(detection.id, detection)
-        })
-        rfDetections.value = nextDetections
-        updateIndexes()
+        if (offset === undefined) {
+          // Full fetch - replace all data
+          const nextDetections = new Map<number, RFDetection>()
+          response.data.forEach(detection => {
+            nextDetections.set(detection.id, detection)
+          })
+          rfDetections.value = nextDetections
+          updateIndexes()
+        } else {
+          // Paginated fetch - replace current page data only
+          // Clear existing data first to ensure we're not accumulating
+          rfDetections.value.clear()
+          response.data.forEach(detection => {
+            rfDetections.value.set(detection.id, detection)
+          })
+          updateIndexes()
+          console.log(`[DataStore] Fetched ${response.data.length} detections (page ${offset ? Math.floor(offset / (limit || 50)) + 1 : 1}), total in store: ${rfDetections.value.size}`)
+        }
         lastFetched.value.set(key, Date.now())
         return response.data
       } else {
@@ -274,6 +302,52 @@ export const useDataStore = defineStore('data', () => {
       throw error
     } finally {
       loading.value.rfDetections = false
+    }
+  }
+
+  const totalCounts = ref<{ rfDetections: number | null }>({ rfDetections: null })
+
+  const fetchRFDetectionsCount = async (
+    forceRefresh = false,
+    filters?: {
+      type?: string
+      status?: string
+      timeWindow?: number | null
+      zone?: string
+      search?: string
+    }
+  ): Promise<number> => {
+    const filterKey = filters
+      ? `${filters.type || 'all'}_${filters.status || 'all'}_${filters.timeWindow || 'all'}_${filters.zone || 'all'}_${filters.search || ''}`
+      : 'no_filters'
+    const key = `rf_detections_count_${filterKey}`
+    if (!forceRefresh && !isStale(key, 5000)) {
+      const cached = totalCounts.value.rfDetections
+      if (cached !== null) {
+        console.log(`[DataStore] Using cached count: ${cached}`)
+        return cached
+      }
+    }
+
+    try {
+      const response = await databaseApi.getRFDetectionsCount(filters)
+      if (response.success && response.count !== undefined) {
+        const count = typeof response.count === 'number' ? response.count : Number(response.count)
+        if (Number.isFinite(count) && count >= 0) {
+          console.log(`[DataStore] Fetched total count: ${count}`)
+          totalCounts.value.rfDetections = count
+          lastFetched.value.set(key, Date.now())
+          return count
+        } else {
+          console.warn(`[DataStore] Invalid count value: ${response.count}`)
+        }
+      } else {
+        console.warn(`[DataStore] Count fetch failed:`, response.error)
+      }
+      return 0
+    } catch (error) {
+      console.error('[DataStore] Failed to fetch RF detections count:', error)
+      return 0
     }
   }
 
@@ -499,6 +573,7 @@ export const useDataStore = defineStore('data', () => {
 
     // RF Detections
     fetchRFDetections,
+    fetchRFDetectionsCount,
     getRFDetection,
     getRFDetectionsByDroneId,
     getRFDetectionsBySystemId,

@@ -22,6 +22,7 @@ export interface UseDetectionsOptions {
 export interface UseDetectionsResult {
   detections: Ref<DetectionItem[]>
   filteredDetections: Ref<DetectionItem[]>
+  paginatedDetections: Ref<DetectionItem[]>
   isLoading: Ref<boolean>
   error: Ref<string | null>
   filters: {
@@ -35,6 +36,14 @@ export interface UseDetectionsResult {
     field: Ref<DetectionSortField | null>
     direction: Ref<'asc' | 'desc'>
     setSort: (field: DetectionSortField) => void
+  }
+  pagination: {
+    currentPage: Ref<number>
+    pageSize: Ref<number>
+    totalPages: Ref<number>
+    totalItems: Ref<number>
+    setPage: (page: number) => void
+    setPageSize: (size: number) => void
   }
   refresh: () => Promise<void>
 }
@@ -349,6 +358,7 @@ export function useDetections(options: UseDetectionsOptions = {}): UseDetections
     errors
   } = storeToRefs(dataStore)
 
+  // For paginated fetching, we only have the current page's data
   const detectionsSource = computed<RFDetection[]>(() => {
     const source = rfDetectionsList.value
     return Array.isArray(source) ? source : []
@@ -437,7 +447,13 @@ export function useDetections(options: UseDetectionsOptions = {}): UseDetections
   const sortField = ref<DetectionSortField | null>('lastSeen')
   const sortDirection = ref<'asc' | 'desc'>('desc')
 
+  // Pagination state
+  const currentPage = ref(1)
+  const pageSize = ref(50)
+
+  // Simplified deduplication - only for current page (much smaller dataset)
   const dedupedDetections = computed<RFDetection[]>(() => {
+    // With pagination, we only have ~50-200 records, so deduplication is fast
     const bestByKey = new Map<string, RFDetection>()
 
     detectionsSource.value.forEach((record, index) => {
@@ -454,6 +470,7 @@ export function useDetections(options: UseDetectionsOptions = {}): UseDetections
       }
     })
 
+    // Sort by time (newest first) - server already orders by id DESC, but we sort by timestamp for consistency
     return Array.from(bestByKey.values()).sort((a, b) => {
       const timeA = timeToMs(resolveTimestamp(a))
       const timeB = timeToMs(resolveTimestamp(b))
@@ -472,52 +489,15 @@ export function useDetections(options: UseDetectionsOptions = {}): UseDetections
     })
   })
 
+  // With server-side filtering, we only get filtered data from the server
+  // So we just need to apply client-side sorting to the already-filtered results
   const filteredDetections = computed<DetectionItem[]>(() => {
-    const searchTerm = filters.search.value.trim().toLowerCase()
-    const typeFilter = filters.type.value
-    const statusFilter = filters.status.value
-    const timeWindow = filters.timeWindow.value
-    const zoneFilter = filters.zone.value
-
-    const filtered = detections.value.filter((detection) => {
-      const normalizedType: DetectionType = detection.type ?? 'Unknown'
-      const normalizedStatus: DetectionStatus = detection.status ?? 'Detect'
-
-      const matchesSearch = searchTerm
-        ? detection.type.toLowerCase().includes(searchTerm) ||
-          detection.sensorName.toLowerCase().includes(searchTerm) ||
-          detection.id.toString().includes(searchTerm) ||
-          (detection.sensorId ? detection.sensorId.toString().toLowerCase().includes(searchTerm) : false)
-        : true
-
-      const matchesType = typeFilter === 'all' || normalizedType === typeFilter
-      const matchesStatus = statusFilter === 'all' || normalizedStatus === statusFilter
-      const matchesZone =
-        zoneFilter === 'all' ||
-        (zoneFilter === 'none' &&
-          (detection.zone === null ||
-            detection.zone === undefined ||
-            detection.zone.toString().trim() === '')) ||
-        detection.zone === zoneFilter
-
-      let matchesTimeWindow = true
-
-      if (timeWindow) {
-        const timestamp = new Date(detection.lastSeen).getTime()
-        if (!Number.isNaN(timestamp)) {
-          const cutoff = Date.now() - timeWindow * 60 * 1000
-          matchesTimeWindow = timestamp >= cutoff
-        }
-      }
-
-      return matchesSearch && matchesType && matchesStatus && matchesTimeWindow && matchesZone
-    })
-
+    // Data from server is already filtered, we just need to sort it
     if (!sortField.value) {
-      return filtered
+      return detections.value
     }
 
-    const sorted = [...filtered].sort((a, b) => {
+    const sorted = [...detections.value].sort((a, b) => {
       switch (sortField.value) {
         case 'distance': {
           const distanceA = a.distanceMeters ?? Number.POSITIVE_INFINITY
@@ -546,6 +526,34 @@ export function useDetections(options: UseDetectionsOptions = {}): UseDetections
     return sortDirection.value === 'asc' ? sorted : sorted.reverse()
   })
 
+  // Note: Filter change watching is now handled in refresh() to trigger data fetch
+
+  // Paginated detections - since we're fetching only current page, use filtered directly
+  // (no need to slice as we only have current page data)
+  const paginatedDetections = computed<DetectionItem[]>(() => {
+    // With server-side pagination, we only have the current page's data
+    // So filteredDetections already contains just the current page
+    return filteredDetections.value
+  })
+
+  const totalPages = computed(() => {
+    // Use totalCount from server for pagination, fallback to filtered length
+    const count = totalCount.value > 0 ? totalCount.value : filteredDetections.value.length
+    const validCount = Number.isFinite(count) && count >= 0 ? count : 0
+    const validPageSize = Number.isFinite(pageSize.value) && pageSize.value > 0 ? pageSize.value : 50
+    return Math.ceil(validCount / validPageSize) || 1
+  })
+
+  const setPage = (page: number) => {
+    const maxPage = totalPages.value
+    currentPage.value = Math.max(1, Math.min(page, maxPage))
+  }
+
+  const setPageSize = (size: number) => {
+    pageSize.value = Math.max(10, Math.min(size, 500))
+    currentPage.value = 1 // Reset to first page when changing page size
+  }
+
   const setSort = (field: DetectionSortField) => {
     if (sortField.value === field) {
       sortDirection.value = sortDirection.value === 'asc' ? 'desc' : 'asc'
@@ -573,14 +581,47 @@ export function useDetections(options: UseDetectionsOptions = {}): UseDetections
     }
   }
 
+  // Total count for pagination
+  const totalCount = ref<number>(0)
+  
+  const fetchTotalCount = async () => {
+    try {
+      const filterParams = {
+        type: filters.type.value !== 'all' ? filters.type.value : undefined,
+        status: filters.status.value !== 'all' ? filters.status.value : undefined,
+        timeWindow: filters.timeWindow.value,
+        zone: filters.zone.value !== 'all' ? filters.zone.value : undefined,
+        search: filters.search.value.trim() || undefined
+      }
+      const count = await dataStore.fetchRFDetectionsCount(true, filterParams)
+      totalCount.value = count
+    } catch (err) {
+      console.error('[useDetections] Failed to fetch total count', err)
+    }
+  }
+
   const refresh = async (): Promise<void> => {
     if (!enabledRef.value) return
     if (refreshPromise) return refreshPromise
 
     refreshPromise = (async () => {
       try {
+        // Build filter parameters
+        const filterParams = {
+          type: filters.type.value !== 'all' ? filters.type.value : undefined,
+          status: filters.status.value !== 'all' ? filters.status.value : undefined,
+          timeWindow: filters.timeWindow.value,
+          zone: filters.zone.value !== 'all' ? filters.zone.value : undefined,
+          search: filters.search.value.trim() || undefined
+        }
+
+        // Fetch total count with filters
+        await fetchTotalCount()
+        
+        // Fetch only current page data with filters
+        const offset = (currentPage.value - 1) * pageSize.value
         await Promise.all([
-          dataStore.fetchRFDetections(limit, true),
+          dataStore.fetchRFDetections(pageSize.value, true, offset, filterParams),
           dataStore.fetchDronePositions(positionsLimit, true)
         ])
       } catch (err) {
@@ -592,6 +633,30 @@ export function useDetections(options: UseDetectionsOptions = {}): UseDetections
 
     return refreshPromise
   }
+
+  // Watch page changes and filter changes to fetch new data
+  watch([currentPage, pageSize], () => {
+    if (enabledRef.value) {
+      void refresh()
+    }
+  })
+
+  // Watch filter changes to refetch data and reset to page 1
+  watch(
+    [
+      () => filters.search.value,
+      () => filters.type.value,
+      () => filters.status.value,
+      () => filters.timeWindow.value,
+      () => filters.zone.value
+    ],
+    () => {
+      currentPage.value = 1 // Reset to first page when filters change
+      if (enabledRef.value) {
+        void refresh()
+      }
+    }
+  )
 
   const boot = async () => {
     if (!enabledRef.value) return
@@ -626,6 +691,7 @@ export function useDetections(options: UseDetectionsOptions = {}): UseDetections
   return {
     detections,
     filteredDetections,
+    paginatedDetections,
     isLoading,
     error,
     filters,
@@ -633,6 +699,22 @@ export function useDetections(options: UseDetectionsOptions = {}): UseDetections
       field: sortField,
       direction: sortDirection,
       setSort
+    },
+    pagination: {
+      currentPage,
+      pageSize,
+      totalPages,
+      totalItems: computed(() => {
+        // Always prefer totalCount from server, only fallback to filtered length if totalCount is 0 and we have data
+        if (totalCount.value > 0) {
+          return totalCount.value
+        }
+        // If we haven't fetched the count yet but have filtered data, use that as a temporary value
+        const filteredLength = filteredDetections.value.length
+        return Number.isFinite(filteredLength) && filteredLength >= 0 ? filteredLength : 0
+      }),
+      setPage,
+      setPageSize
     },
     refresh
   }

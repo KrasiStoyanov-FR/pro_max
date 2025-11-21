@@ -184,13 +184,50 @@ export const databaseApi = {
   },
   
   // Get RF detections from database
-  async getRFDetections(limit?: number): Promise<RFDetectionsResponse> {
-    const cacheKey = `rf_detections_${limit ?? 'all'}`
+  async getRFDetections(
+    limit?: number,
+    offset?: number,
+    filters?: {
+      type?: string
+      status?: string
+      timeWindow?: number | null
+      zone?: string
+      search?: string
+    }
+  ): Promise<RFDetectionsResponse> {
+    const filterKey = filters
+      ? `${filters.type || 'all'}_${filters.status || 'all'}_${filters.timeWindow || 'all'}_${filters.zone || 'all'}_${filters.search || ''}`
+      : 'no_filters'
+    const cacheKey = `rf_detections_${limit ?? 'all'}_${offset ?? 0}_${filterKey}`
     // REAL DATA: Original API call (commented out when using mock data)
     return getCachedData(cacheKey, async () => {
       try {
-        const limitParam = typeof limit === 'number' ? `&limit=${limit}` : ''
-        const response = await api.get(`/table/rf_detections?database=drone_monitoring${limitParam}`)
+        const params = new URLSearchParams()
+        params.append('database', 'drone_monitoring')
+        if (typeof limit === 'number' && limit > 0) {
+          params.append('limit', limit.toString())
+        }
+        if (typeof offset === 'number' && offset >= 0) {
+          params.append('offset', offset.toString())
+        }
+        if (filters) {
+          if (filters.type && filters.type !== 'all') {
+            params.append('type', filters.type)
+          }
+          if (filters.status && filters.status !== 'all') {
+            params.append('status', filters.status)
+          }
+          if (filters.timeWindow) {
+            params.append('timeWindow', filters.timeWindow.toString())
+          }
+          if (filters.zone && filters.zone !== 'all') {
+            params.append('zone', filters.zone)
+          }
+          if (filters.search && filters.search.trim()) {
+            params.append('search', filters.search.trim())
+          }
+        }
+        const response = await api.get(`/table/rf_detections?${params.toString()}`)
         return {
           success: true,
           data: response.data.data as RFDetection[]
@@ -202,7 +239,57 @@ export const databaseApi = {
           error: error instanceof Error ? error.message : 'Unknown error'
         }
       }
-    })
+    }, 5000) // Shorter cache for filtered results
+  },
+
+  async getRFDetectionsCount(filters?: {
+    type?: string
+    status?: string
+    timeWindow?: number | null
+    zone?: string
+    search?: string
+  }): Promise<{ success: boolean; count?: number; error?: string }> {
+    const filterKey = filters
+      ? `${filters.type || 'all'}_${filters.status || 'all'}_${filters.timeWindow || 'all'}_${filters.zone || 'all'}_${filters.search || ''}`
+      : 'no_filters'
+    const cacheKey = `rf_detections_count_${filterKey}`
+    return getCachedData(cacheKey, async () => {
+      try {
+        const params = new URLSearchParams()
+        params.append('database', 'drone_monitoring')
+        params.append('count', 'true')
+        if (filters) {
+          if (filters.type && filters.type !== 'all') {
+            params.append('type', filters.type)
+          }
+          if (filters.status && filters.status !== 'all') {
+            params.append('status', filters.status)
+          }
+          if (filters.timeWindow) {
+            params.append('timeWindow', filters.timeWindow.toString())
+          }
+          if (filters.zone && filters.zone !== 'all') {
+            params.append('zone', filters.zone)
+          }
+          if (filters.search && filters.search.trim()) {
+            params.append('search', filters.search.trim())
+          }
+        }
+        const response = await api.get(`/table/rf_detections?${params.toString()}`)
+        // Server returns { success: true, count: number }
+        const count = response.data?.count ?? response.data?.data?.count ?? 0
+        return {
+          success: true,
+          count: typeof count === 'number' ? count : 0
+        }
+      } catch (error) {
+        console.error('[API] Failed to fetch RF detections count:', error)
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        }
+      }
+    }, 5000) // Shorter cache for filtered counts
   },
   
   // Get flight sessions from database

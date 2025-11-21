@@ -13,6 +13,7 @@ export default defineConfig({
   server: {
     port: 3000,
     host: true,
+    allowedHosts: ['detect.pm99.site'],
     watch: {
       usePolling: true,
       interval: 100

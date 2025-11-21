@@ -84,32 +84,32 @@ const createConnectionPool = async () => {
   }
 
   connectionPoolPromise = (async () => {
-    try {
-      console.log('[MariaDB] Testing connection...')
-      const testConnection = await mysql.createConnection({
-        host: DB_CONFIG.host,
-        port: DB_CONFIG.port,
-        user: DB_CONFIG.user,
-        password: DB_CONFIG.password,
-        connectTimeout: 10000,
-        acquireTimeout: 10000
-      })
-
-      await testConnection.ping()
-      await testConnection.end()
-      console.log('[MariaDB] Test connection successful')
-
-      connectionPool = mysql.createPool({
-        ...DB_CONFIG,
-        waitForConnections: true,
+  try {
+    console.log('[MariaDB] Testing connection...')
+    const testConnection = await mysql.createConnection({
+      host: DB_CONFIG.host,
+      port: DB_CONFIG.port,
+      user: DB_CONFIG.user,
+      password: DB_CONFIG.password,
+      connectTimeout: 10000,
+      acquireTimeout: 10000
+    })
+    
+    await testConnection.ping()
+    await testConnection.end()
+    console.log('[MariaDB] Test connection successful')
+    
+    connectionPool = mysql.createPool({
+      ...DB_CONFIG,
+      waitForConnections: true,
         queueLimit: 0
-      })
-
-      console.log('[MariaDB] Connection pool created successfully')
-      return connectionPool
-    } catch (error) {
-      console.error('[MariaDB] Failed to create connection pool:', error)
-      throw error
+    })
+    
+    console.log('[MariaDB] Connection pool created successfully')
+    return connectionPool
+  } catch (error) {
+    console.error('[MariaDB] Failed to create connection pool:', error)
+    throw error
     } finally {
       connectionPoolPromise = null
     }
@@ -141,7 +141,7 @@ app.get('/api/db/health', async (req, res) => {
 
     const [rows] = await connection.execute(query)
     connection.release()
-
+    
     res.json({
       success: true,
       message: USE_SQLITE ? 'SQLite connection successful' : 'MariaDB connection successful',
@@ -149,7 +149,7 @@ app.get('/api/db/health', async (req, res) => {
     })
   } catch (error) {
     console.error('[API] Connection test failed:', error)
-
+    
     if (error.code === 'ETIMEDOUT') {
       res.status(500).json({
         success: false,
@@ -175,22 +175,22 @@ app.get('/api/db/health', async (req, res) => {
 app.get('/api/db/databases', async (req, res) => {
   try {
     console.log('[API] Fetching databases...')
-
+    
     const pool = await createConnectionPool()
     const connection = await pool.getConnection()
-
+    
     let databases = []
     if (USE_SQLITE) {
       databases = ['sqlite']
     } else {
-      const [rows] = await connection.execute('SHOW DATABASES')
+    const [rows] = await connection.execute('SHOW DATABASES')
       databases = rows
         .map(row => row.Database)
         .filter(db => !['information_schema', 'performance_schema', 'mysql', 'sys'].includes(db))
     }
 
     connection.release()
-
+    
     res.json({
       success: true,
       data: databases
@@ -208,10 +208,10 @@ app.get('/api/db/databases', async (req, res) => {
 app.get('/api/db/tables', async (req, res) => {
   try {
     console.log('[API] Fetching tables from current database...')
-
+    
     const pool = await createConnectionPool()
     const connection = await pool.getConnection()
-
+    
     let tables = []
     if (USE_SQLITE) {
       tables = (await getSqliteTables(connection)).map(name => ({
@@ -219,18 +219,18 @@ app.get('/api/db/tables', async (req, res) => {
         database: 'sqlite'
       }))
     } else {
-      const [rows] = await connection.execute('SHOW TABLES')
+    const [rows] = await connection.execute('SHOW TABLES')
       tables = rows.map(row => {
-        const tableName = Object.values(row)[0]
-        return {
-          name: tableName,
-          database: 'current'
-        }
-      })
+      const tableName = Object.values(row)[0]
+      return {
+        name: tableName,
+        database: 'current'
+      }
+    })
     }
 
     connection.release()
-
+    
     res.json({
       success: true,
       data: tables
@@ -249,10 +249,10 @@ app.get('/api/db/tables/:database', async (req, res) => {
   try {
     const { database } = req.params
     console.log(`[API] Fetching tables from database: ${database}...`)
-
+    
     const pool = await createConnectionPool()
     const connection = await pool.getConnection()
-
+    
     let tables = []
     if (USE_SQLITE) {
       tables = (await getSqliteTables(connection)).map(name => ({
@@ -260,18 +260,18 @@ app.get('/api/db/tables/:database', async (req, res) => {
         database: 'sqlite'
       }))
     } else {
-      const [rows] = await connection.execute(`SHOW TABLES FROM \`${database}\``)
+    const [rows] = await connection.execute(`SHOW TABLES FROM \`${database}\``)
       tables = rows.map(row => {
-        const tableName = Object.values(row)[0]
-        return {
-          name: tableName,
+      const tableName = Object.values(row)[0]
+      return {
+        name: tableName,
           database
-        }
-      })
+      }
+    })
     }
 
     connection.release()
-
+    
     res.json({
       success: true,
       data: tables
@@ -289,40 +289,164 @@ app.get('/api/db/tables/:database', async (req, res) => {
 app.get('/api/db/table/:tableName', async (req, res) => {
   try {
     const { tableName } = req.params
-    const { database, limit } = req.query
-
-    console.log(`[API] Fetching data from table: ${tableName}${database ? ` in database: ${database}` : ''}${limit ? ` (limit: ${limit})` : ' (no limit)'}`)
+    const { database, limit, offset, count, type, status, timeWindow, zone, search } = req.query
 
     const pool = await createConnectionPool()
     const connection = await pool.getConnection()
 
-    let query = `SELECT * FROM \`${tableName}\``
+    // Build base query
+    let baseQuery = `SELECT * FROM \`${tableName}\``
     if (USE_SQLITE) {
-      query = `SELECT * FROM ${tableName}`
+      baseQuery = `SELECT * FROM ${tableName}`
     } else if (database) {
-      query = `SELECT * FROM \`${database}\`.\`${tableName}\``
+      baseQuery = `SELECT * FROM \`${database}\`.\`${tableName}\``
     }
 
-    // Only apply LIMIT if explicitly provided
-    if (limit) {
-      const limitNum = parseInt(limit, 10)
-      if (!isNaN(limitNum) && limitNum > 0) {
-        query += ` LIMIT ${limitNum}`
+    // Build WHERE clause for filters (only for rf_detections table)
+    const whereConditions = []
+    const queryParams = []
+    
+    if (tableName === 'rf_detections') {
+      // Type filter
+      if (type && type !== 'all') {
+        whereConditions.push(`(type = ? OR target_type = ? OR category = ?)`)
+        queryParams.push(type, type, type)
+      }
+
+      // Status filter
+      if (status && status !== 'all') {
+        whereConditions.push(`(status = ? OR tracking_status = ? OR alert_status = ?)`)
+        queryParams.push(status, status, status)
+      }
+
+      // Zone filter
+      if (zone && zone !== 'all') {
+        if (zone === 'none') {
+          whereConditions.push(`(zone IS NULL OR zone = '' OR zone = 'null')`)
+        } else {
+          whereConditions.push(`zone = ?`)
+          queryParams.push(zone)
+        }
+      }
+
+      // Time window filter (in minutes)
+      if (timeWindow) {
+        const timeWindowNum = parseInt(timeWindow, 10)
+        if (!isNaN(timeWindowNum) && timeWindowNum > 0) {
+          // Use MySQL's DATE_SUB function to calculate cutoff time in database timezone
+          // This ensures we're comparing timestamps in the same timezone
+          // DATE_SUB(NOW(), INTERVAL X MINUTE) gives us the cutoff time
+          if (USE_SQLITE) {
+            // SQLite: use datetime function
+            const cutoffTime = new Date(Date.now() - timeWindowNum * 60 * 1000)
+            const cutoffTimeStr = cutoffTime.toISOString().slice(0, 19).replace('T', ' ')
+            whereConditions.push(`time >= ?`)
+            queryParams.push(cutoffTimeStr)
+          } else {
+            // MySQL/MariaDB: use DATE_SUB with NOW() to handle timezone correctly
+            // Note: 'time' is a reserved word in MySQL, so we need backticks
+            whereConditions.push(`\`time\` >= DATE_SUB(NOW(), INTERVAL ? MINUTE)`)
+            queryParams.push(timeWindowNum)
+          }
+        }
+      }
+
+      // Search filter (search in type, sensor_name, receiver_name, id)
+      if (search && search.trim()) {
+        const searchTerm = `%${search.trim()}%`
+        whereConditions.push(`(
+          type LIKE ? OR
+          target_type LIKE ? OR
+          sensor_name LIKE ? OR
+          receiver_name LIKE ? OR
+          sensor_id LIKE ? OR
+          CAST(id AS CHAR) LIKE ?
+        )`)
+        queryParams.push(searchTerm, searchTerm, searchTerm, searchTerm, searchTerm, searchTerm)
       }
     }
 
-    const [rows] = await connection.execute(query)
-    connection.release()
+    const whereClause = whereConditions.length > 0 ? ` WHERE ${whereConditions.join(' AND ')}` : ''
 
+    // If count is requested, return total count only
+    if (count === 'true') {
+      let countQuery = `SELECT COUNT(*) as total FROM \`${tableName}\``
+      if (USE_SQLITE) {
+        countQuery = `SELECT COUNT(*) as total FROM ${tableName}`
+      } else if (database) {
+        countQuery = `SELECT COUNT(*) as total FROM \`${database}\`.\`${tableName}\``
+      }
+      countQuery += whereClause
+
+      console.log(`[API] Executing count query: ${countQuery}`, queryParams.length > 0 ? `with params: ${JSON.stringify(queryParams)}` : '')
+      const [countRows] = await connection.execute(countQuery, queryParams)
+      const totalCount = countRows[0]?.total || 0
+      console.log(`[API] Count result for ${tableName}:`, totalCount, typeof totalCount)
+      connection.release()
+      
+      // Ensure count is a number (MySQL might return it as a string or BigInt)
+      const countValue = typeof totalCount === 'bigint' ? Number(totalCount) : Number(totalCount)
+      
+      return res.json({
+        success: true,
+        count: Number.isFinite(countValue) ? countValue : 0
+      })
+    }
+
+    let query = baseQuery + whereClause
+
+    // Apply ORDER BY for consistent pagination (order by id descending for newest first)
+    const idColumn = USE_SQLITE ? 'id' : 'id'
+    query += ` ORDER BY ${idColumn} DESC`
+
+    // Apply LIMIT and OFFSET for pagination
+    // MySQL/MariaDB syntax: LIMIT count OFFSET offset
+    if (limit) {
+      const limitNum = parseInt(limit, 10)
+      if (!isNaN(limitNum) && limitNum > 0) {
+        if (offset) {
+          const offsetNum = parseInt(offset, 10)
+          if (!isNaN(offsetNum) && offsetNum >= 0) {
+            // MySQL/MariaDB: LIMIT count OFFSET offset
+            query += ` LIMIT ${limitNum} OFFSET ${offsetNum}`
+          } else {
+            query += ` LIMIT ${limitNum}`
+          }
+        } else {
+          query += ` LIMIT ${limitNum}`
+        }
+      }
+    } else if (offset) {
+      // If only offset is provided without limit, we still need a limit
+      // Use a large number as default limit
+      const offsetNum = parseInt(offset, 10)
+      if (!isNaN(offsetNum) && offsetNum >= 0) {
+        query += ` LIMIT 18446744073709551615 OFFSET ${offsetNum}`
+      }
+    }
+
+    console.log(`[API] Fetching data from table: ${tableName}${database ? ` in database: ${database}` : ''}${offset ? ` (offset: ${offset})` : ''}${limit ? ` (limit: ${limit})` : ' (no limit)'}${queryParams.length > 0 ? ` with ${queryParams.length} filter params` : ''}`)
+
+    const [rows] = await connection.execute(query, queryParams)
+    connection.release()
+    
     res.json({
       success: true,
       data: rows
     })
   } catch (error) {
     console.error(`[API] Failed to fetch data from table ${req.params.tableName}:`, error)
+    console.error(`[API] Error details:`, {
+      message: error.message,
+      code: error.code,
+      sqlMessage: error.sqlMessage,
+      sql: error.sql,
+      stack: error.stack
+    })
     res.status(500).json({
       success: false,
-      error: error.message
+      error: error.message,
+      sqlError: error.sqlMessage || error.message
     })
   }
 })
@@ -332,22 +456,22 @@ app.get('/api/db/schema/:tableName', async (req, res) => {
   try {
     const { tableName } = req.params
     const { database } = req.query
-
+    
     console.log(`[API] Fetching schema for table: ${tableName}${database ? ` in database: ${database}` : ''}`)
-
+    
     const pool = await createConnectionPool()
     const connection = await pool.getConnection()
-
+    
     let query = `DESCRIBE \`${tableName}\``
     if (USE_SQLITE) {
       query = `PRAGMA table_info(${tableName})`
     } else if (database) {
       query = `DESCRIBE \`${database}\`.\`${tableName}\``
     }
-
+    
     const [rows] = await connection.execute(query)
     connection.release()
-
+    
     res.json({
       success: true,
       data: rows
@@ -365,22 +489,22 @@ app.get('/api/db/schema/:tableName', async (req, res) => {
 app.post('/api/db/query', async (req, res) => {
   try {
     const { query } = req.body
-
+    
     if (!query) {
       return res.status(400).json({
         success: false,
         error: 'Query is required'
       })
     }
-
+    
     console.log(`[API] Executing query: ${query}`)
-
+    
     const pool = await createConnectionPool()
     const connection = await pool.getConnection()
-
+    
     const [rows] = await connection.execute(query)
     connection.release()
-
+    
     res.json({
       success: true,
       data: rows
@@ -398,12 +522,12 @@ app.post('/api/db/query', async (req, res) => {
 app.get('/api/db/all-data', async (req, res) => {
   try {
     console.log('[API] Fetching all database data...')
-
+    
     const pool = await createConnectionPool()
     const connection = await pool.getConnection()
-
+    
     const allData = {}
-
+    
     if (USE_SQLITE) {
       const tables = await getSqliteTables(connection)
       allData.sqlite = {}
@@ -418,26 +542,26 @@ app.get('/api/db/all-data', async (req, res) => {
         .map(row => row.Database)
         .filter(db => !['information_schema', 'performance_schema', 'mysql', 'sys'].includes(db))
 
-      for (const database of databases) {
-        const [tableRows] = await connection.execute(`SHOW TABLES FROM \`${database}\``)
-        const tables = tableRows.map(row => Object.values(row)[0])
-
-        allData[database] = {}
-
-        for (const table of tables) {
-          try {
-            const [dataRows] = await connection.execute(`SELECT * FROM \`${database}\`.\`${table}\` LIMIT 50`)
-            allData[database][table] = dataRows
-          } catch (error) {
-            console.warn(`[API] Failed to get data from table ${table}:`, error.message)
-            allData[database][table] = []
+    for (const database of databases) {
+      const [tableRows] = await connection.execute(`SHOW TABLES FROM \`${database}\``)
+      const tables = tableRows.map(row => Object.values(row)[0])
+      
+      allData[database] = {}
+      
+      for (const table of tables) {
+        try {
+          const [dataRows] = await connection.execute(`SELECT * FROM \`${database}\`.\`${table}\` LIMIT 50`)
+          allData[database][table] = dataRows
+        } catch (error) {
+          console.warn(`[API] Failed to get data from table ${table}:`, error.message)
+          allData[database][table] = []
           }
         }
       }
     }
-
+    
     connection.release()
-
+    
     res.json({
       success: true,
       data: allData

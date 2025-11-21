@@ -25,8 +25,7 @@
                 Refresh
               </button>
               <p class="text-xs text-neutral-400">
-                Auto-refresh every 5s &middot;
-                <span class="font-medium text-white">{{ visibleCount }}</span>
+                <span class="font-medium text-white">{{ filteredCount }}</span>
                 of
                 <span class="font-medium text-white">{{ totalCount }}</span>
                 detections
@@ -70,10 +69,11 @@
               </div>
 
               <DetectionsTable
-                :detections="filteredDetections"
+                :detections="paginatedDetections"
                 :is-loading="isLoading"
                 :sort-field="sortField"
                 :sort-direction="sortDirection"
+                :pagination="pagination"
                 @change-sort="setSort"
                 @show-details="handleShowDetails"
               />
@@ -109,13 +109,15 @@ useAuth()
 const {
   detections,
   filteredDetections,
+  paginatedDetections,
   isLoading,
   error,
   filters,
   sort,
+  pagination,
   refresh
 } = useDetections({
-  refreshInterval: 5000,
+  refreshInterval: 0, // Disabled auto-refresh
   enabled: true
 })
 
@@ -130,7 +132,7 @@ const filterTimeWindow = filters.timeWindow
 const filterZone = filters.zone
 
 const totalCount = computed(() => detections.value.length)
-const visibleCount = computed(() => filteredDetections.value.length)
+const filteredCount = computed(() => filteredDetections.value.length)
 const availableZones = computed(() => {
   const zones = new Set<string>()
   let hasUnassigned = false
