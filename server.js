@@ -379,7 +379,7 @@ app.get('/api/db/table/:tableName', async (req, res) => {
       countQuery += whereClause
 
       console.log(`[API] Executing count query: ${countQuery}`, queryParams.length > 0 ? `with params: ${JSON.stringify(queryParams)}` : '')
-      const [countRows] = await connection.execute(countQuery, queryParams)
+      const [countRows] = await connection.execute(countQuery, queryParams.length > 0 ? queryParams : [])
       const totalCount = countRows[0]?.total || 0
       console.log(`[API] Count result for ${tableName}:`, totalCount, typeof totalCount)
       connection.release()
@@ -396,8 +396,17 @@ app.get('/api/db/table/:tableName', async (req, res) => {
     let query = baseQuery + whereClause
 
     // Apply ORDER BY for consistent pagination (order by id descending for newest first)
-    const idColumn = USE_SQLITE ? 'id' : 'id'
-    query += ` ORDER BY ${idColumn} DESC`
+    // Try to order by id, but if the table doesn't have id, we'll catch the error
+    // Only add ORDER BY if we have a limit/offset (for pagination) or if it's rf_detections
+    if (limit || offset || tableName === 'rf_detections') {
+      try {
+        const idColumn = USE_SQLITE ? 'id' : 'id'
+        query += ` ORDER BY ${idColumn} DESC`
+      } catch (orderError) {
+        // If ordering fails, we'll try without it
+        console.warn(`[API] Could not add ORDER BY for table ${tableName}, continuing without it`)
+      }
+    }
 
     // Apply LIMIT and OFFSET for pagination
     // MySQL/MariaDB syntax: LIMIT count OFFSET offset
@@ -426,14 +435,29 @@ app.get('/api/db/table/:tableName', async (req, res) => {
     }
 
     console.log(`[API] Fetching data from table: ${tableName}${database ? ` in database: ${database}` : ''}${offset ? ` (offset: ${offset})` : ''}${limit ? ` (limit: ${limit})` : ' (no limit)'}${queryParams.length > 0 ? ` with ${queryParams.length} filter params` : ''}`)
+    console.log(`[API] Query: ${query}`)
+    if (queryParams.length > 0) {
+      console.log(`[API] Query params:`, queryParams)
+    }
 
-    const [rows] = await connection.execute(query, queryParams)
-    connection.release()
-    
-    res.json({
-      success: true,
-      data: rows
-    })
+    try {
+      // Only pass queryParams if we have parameters, otherwise pass empty array
+      const [rows] = await connection.execute(query, queryParams.length > 0 ? queryParams : [])
+      connection.release()
+      
+      res.json({
+        success: true,
+        data: rows
+      })
+    } catch (queryError) {
+      connection.release()
+      console.error(`[API] Query execution failed for table ${tableName}:`, queryError)
+      console.error(`[API] Failed query: ${query}`)
+      if (queryParams.length > 0) {
+        console.error(`[API] Query params were:`, queryParams)
+      }
+      throw queryError
+    }
   } catch (error) {
     console.error(`[API] Failed to fetch data from table ${req.params.tableName}:`, error)
     console.error(`[API] Error details:`, {
@@ -441,12 +465,30 @@ app.get('/api/db/table/:tableName', async (req, res) => {
       code: error.code,
       sqlMessage: error.sqlMessage,
       sql: error.sql,
+      errno: error.errno,
+      sqlState: error.sqlState,
       stack: error.stack
     })
+    
+    // Release connection if it wasn't already released
+    try {
+      const pool = await createConnectionPool().catch(() => null)
+      if (pool) {
+        const conn = await pool.getConnection().catch(() => null)
+        if (conn) {
+          conn.release()
+        }
+      }
+    } catch (releaseError) {
+      // Ignore release errors
+    }
+    
     res.status(500).json({
       success: false,
       error: error.message,
-      sqlError: error.sqlMessage || error.message
+      sqlError: error.sqlMessage || error.message,
+      code: error.code,
+      tableName: req.params.tableName
     })
   }
 })

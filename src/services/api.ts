@@ -332,7 +332,7 @@ export const databaseApi = {
   },
 
   async getGpsUnitPositions(limit?: number): Promise<GpsUnitPositionsResponse> {
-    const cacheKey = `gps_unit_position_${limit ?? 'all'}`
+    const cacheKey = `gps_unit_positions_${limit ?? 'all'}`
     // REAL DATA: Original API call (commented out when using mock data)
     return getCachedData(cacheKey, async () => {
       try {
