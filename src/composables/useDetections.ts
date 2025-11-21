@@ -271,8 +271,17 @@ const normalizeKeyTimestamp = (value: string): string => {
 }
 
 const buildDetectionKey = (record: RFDetection, fallbackIndex: number): string => {
+  const parts: string[] = []
+
+  if (record.id !== undefined && record.id !== null) {
+    parts.push(`id:${record.id}`)
+  } else {
+    parts.push(`idx:${fallbackIndex}`)
+  }
+
   const timestamp = resolveTimestamp(record)
   const normalizedTime = normalizeKeyTimestamp(timestamp)
+  parts.push(`time:${normalizedTime}`)
 
   const sensorKey =
     record.system_id?.toString().trim() ||
@@ -280,23 +289,15 @@ const buildDetectionKey = (record: RFDetection, fallbackIndex: number): string =
     record.sensor_name?.toString().trim() ||
     record.receiver_name?.toString().trim() ||
     'unknown-sensor'
+  parts.push(`sensor:${sensorKey}`)
 
   const droneKey =
     record.drone_id !== null && record.drone_id !== undefined
       ? `drone:${record.drone_id}`
       : 'drone:none'
+  parts.push(droneKey)
 
-  const base = `time:${normalizedTime}|sensor:${sensorKey}|${droneKey}`
-
-  if (base) {
-    return base
-  }
-
-  if (record.id !== undefined && record.id !== null) {
-    return `id:${record.id}`
-  }
-
-  return `idx:${fallbackIndex}`
+  return parts.join('|')
 }
 
 const mapDetectionRecord = (record: RFDetection, position?: DronePosition | null): DetectionItem => {
@@ -429,7 +430,7 @@ export function useDetections(options: UseDetectionsOptions = {}): UseDetections
     search: ref<DetectionFiltersState['search']>(''),
     type: ref<DetectionFiltersState['type']>('all'),
     status: ref<DetectionFiltersState['status']>('all'),
-    timeWindow: ref<DetectionFiltersState['timeWindow']>(null),
+    timeWindow: ref<DetectionFiltersState['timeWindow']>(24 * 60),
     zone: ref<DetectionFiltersState['zone']>('all')
   }
 

@@ -136,13 +136,13 @@ describe('useDetections', () => {
     const { result, wrapper } = mountHook()
     await nextTick()
 
-    expect(result.detections.value).toHaveLength(2)
-    expect(result.filteredDetections.value).toHaveLength(2)
+    expect(result.detections.value).toHaveLength(3)
+    expect(result.filteredDetections.value).toHaveLength(3)
 
     result.filters.search.value = 'beta'
     await nextTick()
-    expect(result.filteredDetections.value).toHaveLength(1)
-    expect(result.filteredDetections.value[0].sensorName).toBe('Sensor Beta Duplicate')
+    expect(result.filteredDetections.value).toHaveLength(2)
+    expect(result.filteredDetections.value[0].sensorName.toLowerCase()).toContain('sensor beta')
 
     result.filters.type.value = 'UAV'
     await nextTick()
@@ -177,7 +177,7 @@ describe('useDetections', () => {
     await nextTick()
 
     // All detections initially
-    expect(result.filteredDetections.value).toHaveLength(2)
+    expect(result.filteredDetections.value).toHaveLength(3)
 
     result.filters.type.value = 'UAV'
     await nextTick()
@@ -191,7 +191,7 @@ describe('useDetections', () => {
 
     result.filters.type.value = 'all'
     await nextTick()
-    expect(result.filteredDetections.value).toHaveLength(2)
+    expect(result.filteredDetections.value).toHaveLength(3)
 
     wrapper.unmount()
   })

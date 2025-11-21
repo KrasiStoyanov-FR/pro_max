@@ -11,7 +11,7 @@
           type="search"
           name="search"
           placeholder="Search by ID, type, sensor..."
-          class="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder:text-neutral-400 focus:border-primary-400 focus:outline-none"
+          class="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder:text-neutral-500 focus:border-primary-400 focus:outline-none"
           :disabled="isLoading"
           @input="emit('update:search', localSearch)"
         />
@@ -30,8 +30,8 @@
           :value="typeValue"
           @change="emit('update:type', ($event.target as HTMLSelectElement).value as DetectionType | 'all')"
         >
-          <option value="all">All types</option>
-          <option v-for="option in detectionTypes" :key="option" :value="option">
+          <option class="text-neutral-900" value="all">All types</option>
+          <option class="text-neutral-900" v-for="option in detectionTypes" :key="option" :value="option">
             {{ option }}
           </option>
         </select>
@@ -48,8 +48,8 @@
           :value="statusValue"
           @change="emit('update:status', ($event.target as HTMLSelectElement).value as DetectionStatus | 'all')"
         >
-          <option value="all">All statuses</option>
-          <option v-for="option in detectionStatuses" :key="option" :value="option">
+          <option class="text-neutral-900" value="all">All statuses</option>
+          <option class="text-neutral-900" v-for="option in detectionStatuses" :key="option" :value="option">
             {{ option }}
           </option>
         </select>
@@ -66,10 +66,11 @@
           :value="timeWindowValue ?? ''"
           @change="emit('update:timeWindow', parseTimeWindow(($event.target as HTMLSelectElement).value))"
         >
-          <option value="">Any time</option>
-          <option value="5">Last 5 min</option>
-          <option value="15">Last 15 min</option>
-          <option value="30">Last 30 min</option>
+          <option class="text-neutral-900" value="">Any time</option>
+          <option class="text-neutral-900" value="5">Last 5 min</option>
+          <option class="text-neutral-900" value="15">Last 15 min</option>
+          <option class="text-neutral-900" value="30">Last 30 min</option>
+          <option class="text-neutral-900" value="1440">Last 24 hours</option>
         </select>
       </div>
 
@@ -84,8 +85,8 @@
           :value="zoneValue"
           @change="emit('update:zone', ($event.target as HTMLSelectElement).value)"
         >
-          <option value="all">All zones</option>
-          <option v-for="option in zonesList" :key="option" :value="option">
+          <option class="text-neutral-900" value="all">All zones</option>
+          <option class="text-neutral-900" v-for="option in zonesList" :key="option" :value="option">
             {{ option }}
           </option>
         </select>

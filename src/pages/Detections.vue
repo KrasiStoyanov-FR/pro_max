@@ -36,15 +36,15 @@
         </header>
 
         <div class="border-b border-white/5 bg-neutral-900/40 px-6 py-4 lg:px-8">
-          <DetectionsFilters
-            v-model:search="filters.search"
-            v-model:type="filters.type"
-            v-model:status="filters.status"
-            v-model:timeWindow="filters.timeWindow"
-            v-model:zone="filters.zone"
-            :is-loading="isLoading"
-            :zones="availableZones"
-          />
+      <DetectionsFilters
+        v-model:search="filterSearch"
+        v-model:type="filterType"
+        v-model:status="filterStatus"
+        v-model:timeWindow="filterTimeWindow"
+        v-model:zone="filterZone"
+        :is-loading="isLoading"
+        :zones="availableZones"
+      />
         </div>
 
         <div class="flex-1 overflow-hidden px-4 py-4 lg:px-8">
@@ -122,6 +122,12 @@ const {
 const sortField = sort.field
 const sortDirection = sort.direction
 const setSort = sort.setSort
+
+const filterSearch = filters.search
+const filterType = filters.type
+const filterStatus = filters.status
+const filterTimeWindow = filters.timeWindow
+const filterZone = filters.zone
 
 const totalCount = computed(() => detections.value.length)
 const visibleCount = computed(() => filteredDetections.value.length)

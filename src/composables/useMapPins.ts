@@ -597,6 +597,9 @@ const toTimeValue = (value: string | undefined | null) => value ? new Date(value
       const detectionPins: MapPin[] = []
 
       if (rfDetectionsResponse.success && rfDetectionsResponse.data) {
+        const DETECTION_MAX_AGE_MS = 24 * 60 * 60 * 1000
+        const cutoffTime = Date.now() - DETECTION_MAX_AGE_MS
+
         const seenDetectionKeys = new Set<string>()
 
         const registerDetection = (detection: RFDetection): boolean => {
@@ -688,6 +691,10 @@ const toTimeValue = (value: string | undefined | null) => value ? new Date(value
         }
 
         rfDetectionsResponse.data.forEach((detection: RFDetection) => {
+          const detectionTimeMs = detection.time ? new Date(detection.time).getTime() : NaN
+          if (Number.isFinite(detectionTimeMs) && detectionTimeMs < cutoffTime) {
+            return
+          }
           if (!registerDetection(detection)) {
             return
           }
