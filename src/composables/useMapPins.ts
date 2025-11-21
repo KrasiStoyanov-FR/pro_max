@@ -325,6 +325,17 @@ const toTimeValue = (value: string | undefined | null) => value ? new Date(value
 
         return cleaned.slice(-MAX_POINTS_PER_TRAJECTORY)
       }
+
+    const getTrajectoryKey = (
+      droneId: number | null | undefined,
+      systemId: string | number | null | undefined,
+      fallback: string | number | null | undefined
+    ): string => {
+      if (droneId !== null && droneId !== undefined) return `drone:${droneId}`
+      if (systemId !== null && systemId !== undefined) return `system:${systemId}`
+      const uniqueFallback = fallback ?? `generated-${Math.random().toString(36).slice(2)}`
+      return `position:${uniqueFallback}`
+    }
       
       // Fetch real data from database
       const [
@@ -396,12 +407,7 @@ const toTimeValue = (value: string | undefined | null) => value ? new Date(value
       if (dronePositionsResponse.success && dronePositionsResponse.data) {
         const processedPositionKeys = new Set<string>()
         dronePositionsResponse.data.forEach((position: DronePosition) => {
-          const droneKey =
-            position.drone_id !== null && position.drone_id !== undefined
-              ? `drone:${position.drone_id}`
-              : position.system_id
-                ? `system:${position.system_id}`
-                : `position:${position.id}`
+          const droneKey = getTrajectoryKey(position.drone_id, position.system_id, position.id)
           const lat = parseFloat(position.latitude.toString())
           const lng = parseFloat(position.longitude.toString())
           const timestamp = position.time
@@ -616,11 +622,11 @@ const toTimeValue = (value: string | undefined | null) => value ? new Date(value
           return true
         }
 
-        const getDetectionCoordinates = (droneRef: number | null | undefined, timestamp: string): { lat: number; lng: number } | null => {
-          if (droneRef === null || droneRef === undefined) {
+        const getDetectionCoordinates = (trajectoryKey: string | null, timestamp: string): { lat: number; lng: number } | null => {
+          if (!trajectoryKey) {
             return null
           }
-          const trajectory = droneTrajectoryPoints.get(String(droneRef))
+          const trajectory = droneTrajectoryPoints.get(trajectoryKey)
           const detectionTime = toTimeValue(timestamp)
 
           if (trajectory && trajectory.length > 0) {
@@ -640,7 +646,7 @@ const toTimeValue = (value: string | undefined | null) => value ? new Date(value
             return { lat: closestPoint.lat, lng: closestPoint.lng }
           }
 
-          const trajectoryEntry = droneTrajectoryMap.get(String(droneRef))
+          const trajectoryEntry = droneTrajectoryMap.get(trajectoryKey)
           const fallbackPosition = trajectoryEntry?.latestPosition
           if (fallbackPosition) {
             const lat = parseFloat(fallbackPosition.latitude.toString())
@@ -650,6 +656,34 @@ const toTimeValue = (value: string | undefined | null) => value ? new Date(value
             }
           }
 
+          return null
+        }
+
+        const parseDetectionCoordinates = (detection: RFDetection): { lat: number; lng: number } | null => {
+          const latCandidates = [
+            (detection as any)?.latitude,
+            (detection as any)?.lat,
+            (detection as any)?.latitude_deg,
+            (detection as any)?.gps_lat
+          ]
+          const lngCandidates = [
+            (detection as any)?.longitude,
+            (detection as any)?.lon,
+            (detection as any)?.lng,
+            (detection as any)?.longitude_deg,
+            (detection as any)?.gps_lon
+          ]
+
+          const lat = latCandidates
+            .map(parseCoordinate)
+            .find(value => value !== null)
+          const lng = lngCandidates
+            .map(parseCoordinate)
+            .find(value => value !== null)
+
+          if (lat !== null && lng !== null && isValidCoordinate(lat, lng)) {
+            return { lat, lng }
+          }
           return null
         }
 
@@ -668,21 +702,23 @@ const toTimeValue = (value: string | undefined | null) => value ? new Date(value
             droneId: detection.drone_id ?? null
           }
 
-          const addDetectionToMap = (key: string) => {
+          const addDetectionToMap = (key: string | null) => {
+            if (!key) return
             const list = droneDetectionsMap.get(key) || []
             list.push(checkpoint)
             droneDetectionsMap.set(key, list)
           }
 
-          if (detection.drone_id !== null && detection.drone_id !== undefined) {
-            addDetectionToMap(String(detection.drone_id))
-          }
-
+          const detectionKey = getTrajectoryKey(detection.drone_id, detection.system_id, detection.id)
+          addDetectionToMap(detectionKey)
           if (detection.system_id !== null && detection.system_id !== undefined) {
             addDetectionToMap(`system:${detection.system_id}`)
           }
 
-          const coordinates = getDetectionCoordinates(detection.drone_id, detection.time)
+          const coordinates =
+            parseDetectionCoordinates(detection) ??
+            getDetectionCoordinates(detectionKey, detection.time)
+
           if (coordinates) {
             detectionPins.push({
               id: `rf-detection-${detection.id}`,

@@ -224,8 +224,6 @@ class MapService {
 
     // Apply clustering based on zoom level (this will clear and redraw everything)
     this.applyClustering()
-    this.registerDetectionMarkers(this.detectionPins)
-
     // Add detection range circles for GPS units/receivers
     this.addDetectionRanges(pins)
 
@@ -312,7 +310,7 @@ class MapService {
         if (!element) return
         element.classList.remove('marker--detection-focus')
         element.classList.remove('marker--detection-selected')
-        element.classList.add('marker--hidden')
+        element.classList.remove('marker--hidden')
       })
     }
 
@@ -996,6 +994,9 @@ class MapService {
         }, 50)
       }
     }
+
+    // Ensure detection markers are re-added after clustering operations
+    this.registerDetectionMarkers(this.detectionPins)
 
     // Re-apply focus styles after clustering alters markers
     requestAnimationFrame(() => {
@@ -1822,7 +1823,7 @@ class MapService {
 
       const element = marker.getElement()
       if (element) {
-        element.classList.add('marker--hidden')
+        element.classList.remove('marker--hidden')
         element.classList.remove('marker--detection-focus')
         element.classList.remove('marker--detection-selected')
       }
@@ -1837,6 +1838,7 @@ class MapService {
       }
     })
   }
+
 }
 
 // Export singleton instance
