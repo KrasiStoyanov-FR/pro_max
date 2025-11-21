@@ -289,18 +289,26 @@ app.get('/api/db/tables/:database', async (req, res) => {
 app.get('/api/db/table/:tableName', async (req, res) => {
   try {
     const { tableName } = req.params
-    const { database, limit = 100 } = req.query
+    const { database, limit } = req.query
 
-    console.log(`[API] Fetching data from table: ${tableName}${database ? ` in database: ${database}` : ''}`)
+    console.log(`[API] Fetching data from table: ${tableName}${database ? ` in database: ${database}` : ''}${limit ? ` (limit: ${limit})` : ' (no limit)'}`)
 
     const pool = await createConnectionPool()
     const connection = await pool.getConnection()
 
-    let query = `SELECT * FROM \`${tableName}\` LIMIT ${limit}`
+    let query = `SELECT * FROM \`${tableName}\``
     if (USE_SQLITE) {
-      query = `SELECT * FROM ${tableName} LIMIT ${limit}`
+      query = `SELECT * FROM ${tableName}`
     } else if (database) {
-      query = `SELECT * FROM \`${database}\`.\`${tableName}\` LIMIT ${limit}`
+      query = `SELECT * FROM \`${database}\`.\`${tableName}\``
+    }
+
+    // Only apply LIMIT if explicitly provided
+    if (limit) {
+      const limitNum = parseInt(limit, 10)
+      if (!isNaN(limitNum) && limitNum > 0) {
+        query += ` LIMIT ${limitNum}`
+      }
     }
 
     const [rows] = await connection.execute(query)

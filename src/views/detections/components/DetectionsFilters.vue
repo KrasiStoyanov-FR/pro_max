@@ -4,17 +4,19 @@
       <label class="block text-xs font-semibold uppercase tracking-wide text-neutral-400" for="detections-search">
         Search
       </label>
-      <div class="mt-1">
+      <div class="mt-1 input-field">
         <input
           id="detections-search"
           v-model="localSearch"
           type="search"
           name="search"
           placeholder="Search by ID, type, sensor..."
-          class="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder:text-neutral-500 focus:border-primary-400 focus:outline-none"
           :disabled="isLoading"
           @input="emit('update:search', localSearch)"
         />
+        <div class="input-field__icon input-field__icon--right">
+          <PhMagnifyingGlass aria-hidden="true" weight="bold" class="icon" />
+        </div>
       </div>
     </div>
 
@@ -97,6 +99,7 @@
 
 <script setup lang="ts">
 import { computed, ref, watch, toValue, type PropType, type Ref } from 'vue'
+import { PhMagnifyingGlass } from '@phosphor-icons/vue'
 import type { DetectionStatus, DetectionType } from '@/types/detections'
 
 const detectionTypes: DetectionType[] = ['UAV', 'RC', 'Unknown', 'Interference']
