@@ -11,8 +11,8 @@ import MapPinIconSvg from '@phosphor-icons/core/assets/fill/map-pin-fill.svg?raw
 
 // Clustering configuration
 const CLUSTER_CONFIG = {
-  maxClusterRadius: 50, // pixels - cluster markers that are visually close
-  minClusterDistance: 200, // pixels - minimum distance between clusters
+  maxClusterRadius: 50, // base radius in pixels (adjusted dynamically by zoom)
+  minClusterDistance: 200, // base minimum distance between clusters (dynamic)
   minZoom: 1, // cluster even when fully zoomed out
   maxZoom: 14, // cluster up to near max zoom; hide clusters very close-in
   clusterIconSize: 40,
@@ -104,6 +104,23 @@ class MapService {
   private selectedPin: MapPin | null = null // Track selected pin to maintain selection state during zoom/pan
   private detectionRangeCircles: Map<string, L.Circle> = new Map() // Detection range visualization
   private clusteringEnabled: boolean = false
+
+  private getClusterRadiusForZoom(): number {
+    if (!this.map) return CLUSTER_CONFIG.maxClusterRadius
+    const zoom = this.map.getZoom()
+
+    if (zoom <= 4) return 140
+    if (zoom <= 6) return 120
+    if (zoom <= 8) return 95
+    if (zoom <= 10) return 70
+    if (zoom <= 12) return 55
+    return 40
+  }
+
+  private getClusterSpacingForZoom(): number {
+    const radius = this.getClusterRadiusForZoom()
+    return Math.max(radius * 2.2, CLUSTER_CONFIG.minClusterDistance * 0.65)
+  }
 
   async init(container: HTMLElement, options: MapServiceOptions): Promise<L.Map> {
     // Lazy load Leaflet to enable code-splitting
@@ -224,8 +241,6 @@ class MapService {
 
     // Apply clustering based on zoom level (this will clear and redraw everything)
     this.applyClustering()
-    // Add detection range circles for GPS units/receivers
-    this.addDetectionRanges(pins)
 
     // Add drone operation zones
     // this.addDroneZones() // Disabled - using only real data from database
@@ -234,7 +249,7 @@ class MapService {
   }
   
   // Add detection range circles around GPS units/receivers
-  private addDetectionRanges(pins: MapPin[]): void {
+  private addDetectionRanges(pins: MapPin[] = this.allPins): void {
     if (!this.map) return
     
     // Clear existing detection range circles
@@ -971,10 +986,14 @@ class MapService {
 
     if (shouldCluster) {
       isClusteringActive = true
+      // Hide detection range overlays when sensors are grouped into clusters
+      this.clearDetectionRanges()
       console.log('Creating clusters - zoom level requires clustering, no cluster selected')
       this.createClusters()
     } else {
       isClusteringActive = false
+      // Show detection ranges only when individual sensor markers are visible
+      this.addDetectionRanges()
       const reason = !this.selectedClusterId 
         ? (zoom < CLUSTER_CONFIG.minZoom ? 'zoom too low' : zoom >= (maxZoom - 2) ? 'zoom too high' : 'zoom out of range')
         : 'cluster selected'
@@ -1110,12 +1129,13 @@ class MapService {
       const cluster = this.createCluster(clusterPins)
 
       // Check if this cluster is too close to existing clusters
+      const clusterSpacing = this.getClusterSpacingForZoom()
       const tooClose = clusters.some(existingCluster => {
         const distance = this.calculatePixelDistance(
           { lat: cluster.center[0], lng: cluster.center[1] },
           { lat: existingCluster.center[0], lng: existingCluster.center[1] }
         )
-        return distance < CLUSTER_CONFIG.minClusterDistance
+        return distance < clusterSpacing
       })
 
       if (!tooClose) {
@@ -1165,7 +1185,7 @@ class MapService {
           if (visited.has(otherPin.id)) return
 
           const distance = this.calculatePixelDistance(currentPin, otherPin)
-          if (distance <= CLUSTER_CONFIG.maxClusterRadius) {
+          if (distance <= this.getClusterRadiusForZoom()) {
             cluster.push(otherPin)
             visited.add(otherPin.id)
             toCheck.push(otherPin)
@@ -1184,7 +1204,7 @@ class MapService {
     allPins.forEach(otherPin => {
       if (otherPin.id !== pin.id) {
         const distance = this.calculatePixelDistance(pin, otherPin)
-        if (distance <= CLUSTER_CONFIG.maxClusterRadius) {
+        if (distance <= this.getClusterRadiusForZoom()) {
           density++
         }
       }
@@ -1249,14 +1269,14 @@ class MapService {
     })
   }
 
-  private calculatePixelDistance(pin1: MapPin, pin2: MapPin): number {
+  private calculatePixelDistance(pointA: { lat: number; lng: number }, pointB: { lat: number; lng: number }): number {
     if (!this.map) return Infinity
 
-    const point1 = this.map.latLngToContainerPoint([pin1.lat, pin1.lng])
-    const point2 = this.map.latLngToContainerPoint([pin2.lat, pin2.lng])
+    const pixelPoint1 = this.map.latLngToContainerPoint([pointA.lat, pointA.lng])
+    const pixelPoint2 = this.map.latLngToContainerPoint([pointB.lat, pointB.lng])
 
-    const dx = point1.x - point2.x
-    const dy = point1.y - point2.y
+    const dx = pixelPoint1.x - pixelPoint2.x
+    const dy = pixelPoint1.y - pixelPoint2.y
 
     return Math.sqrt(dx * dx + dy * dy)
   }
