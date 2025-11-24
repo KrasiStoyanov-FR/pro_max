@@ -97,33 +97,35 @@
           </div>
         </div>
 
-        <!-- Demo credentials -->
-        <div class="p-4 bg-blue-900/50 rounded-xl border border-blue-600/30 backdrop-blur-lg">
+        <!-- Master Account Credentials -->
+        <!-- <div class="p-4 bg-blue-900/50 rounded-xl border border-blue-600/30 backdrop-blur-lg">
           <div class="flex">
             <div class="flex-shrink-0">
               <PhInfo :size="20" class="text-blue-500" weight="bold" />
             </div>
             <div class="ml-3">
-              <h3 class="text-sm font-medium text-white">Demo Credentials</h3>
+              <h3 class="text-sm font-medium text-white">Master Account</h3>
               <div class="mt-2 text-sm text-neutral-100">
-                <p><strong>Email:</strong> admin@radar.com</p>
-                <p><strong>Password:</strong> password</p>
+                <p><strong>Email:</strong> master@promax.com</p>
+                <p><strong>Password:</strong> DroneTrackingSystem</p>
               </div>
             </div>
           </div>
-        </div>
+        </div> -->
       </form>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { useAuth } from '@/composables/useAuth'
+import { useAuthStore } from '@/store/auth'
 import { PhInfo, PhMagnifyingGlass, PhWarningCircle } from '@phosphor-icons/vue'
 
 // Composables
 const { login } = useAuth()
+const authStore = useAuthStore()
 
 // State
 const isLoading = ref(false)
@@ -137,6 +139,15 @@ const form = reactive({
   email: '',
   password: '',
   rememberMe: false
+})
+
+// Restore remembered email on mount
+onMounted(() => {
+  const rememberedEmail = authStore.getRememberedEmail()
+  if (rememberedEmail) {
+    form.email = rememberedEmail
+    form.rememberMe = true
+  }
 })
 
 // Methods
@@ -168,7 +179,8 @@ const handleLogin = async () => {
   try {
     const result = await login({
       email: form.email,
-      password: form.password
+      password: form.password,
+      rememberMe: form.rememberMe
     })
 
     if (!result.success) {

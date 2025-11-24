@@ -52,8 +52,14 @@ A production-ready Vue 3 + TypeScript frontend application for monitoring radar 
 
 ## 🔐 Admin Access
 
-### Login Credentials
-Use these credentials to access the system:
+### Master Account Credentials
+Use these credentials for master admin access:
+
+- **Email**: `master@promax.com`
+- **Password**: `DroneTrackingSystem`
+
+### Demo Account Credentials (Legacy)
+For backward compatibility, the following demo account is also available:
 
 - **Email**: `admin@radar.com`
 - **Password**: `password`
@@ -259,8 +265,8 @@ For technical support or questions:
 
 **Start the application**: `npm start`  
 **Access URL**: http://localhost:3000  
-**Admin Email**: admin@radar.com  
-**Admin Password**: password  
+**Master Email**: master@promax.com  
+**Master Password**: DroneTrackingSystem  
 **Backend API**: http://localhost:3001/api  
 
 **Ready to use!** 🚀
