@@ -30,7 +30,6 @@ const DB_CONFIG = {
   timeout: 60000,
   // Add additional connection options
   connectTimeout: 10000,
-  acquireTimeout: 10000,
   reconnect: true,
   charset: 'utf8mb4'
 }
@@ -91,8 +90,7 @@ const createConnectionPool = async () => {
       port: DB_CONFIG.port,
       user: DB_CONFIG.user,
       password: DB_CONFIG.password,
-      connectTimeout: 10000,
-      acquireTimeout: 10000
+      connectTimeout: 10000
     })
     
     await testConnection.ping()
@@ -102,7 +100,46 @@ const createConnectionPool = async () => {
     connectionPool = mysql.createPool({
       ...DB_CONFIG,
       waitForConnections: true,
-        queueLimit: 0
+      queueLimit: 0
+    })
+    
+    // Add error handlers to the connection pool
+    connectionPool.on('connection', (connection) => {
+      console.log('[MariaDB] New connection established')
+      
+      // Handle connection errors
+      connection.on('error', (err) => {
+        console.error('[MariaDB] Connection error:', {
+          code: err.code,
+          errno: err.errno,
+          sqlState: err.sqlState,
+          message: err.message
+        })
+        
+        // If connection is fatal, remove it from pool
+        if (err.code === 'PROTOCOL_CONNECTION_LOST' || 
+            err.code === 'ECONNRESET' || 
+            err.code === 'ETIMEDOUT' ||
+            err.fatal) {
+          console.warn('[MariaDB] Fatal connection error, connection will be removed from pool')
+        }
+      })
+    })
+    
+    // Handle pool-level errors
+    connectionPool.on('error', (err) => {
+      console.error('[MariaDB] Pool error:', {
+        code: err.code,
+        errno: err.errno,
+        message: err.message
+      })
+      
+      // Only reset pool on truly fatal errors, and only if it's not already being reset
+      // Don't reset on ECONNRESET as the pool handles this automatically
+      if ((err.code === 'PROTOCOL_CONNECTION_LOST' || err.fatal) && connectionPool) {
+        console.warn('[MariaDB] Fatal pool error detected, will recreate pool on next request if needed')
+        // Don't set to null immediately - let individual requests handle it
+      }
     })
     
     console.log('[MariaDB] Connection pool created successfully')
@@ -118,6 +155,86 @@ const createConnectionPool = async () => {
   return connectionPoolPromise
 }
 
+// Helper function to safely get a connection with validation
+const getConnection = async (retryCount = 0) => {
+  const MAX_RETRIES = 3
+  
+  const pool = await createConnectionPool()
+  
+  // If pool was reset due to error, recreate it
+  if (!pool && !USE_SQLITE) {
+    if (retryCount >= MAX_RETRIES) {
+      throw new Error('Failed to create connection pool after multiple retries')
+    }
+    connectionPool = null
+    return await getConnection(retryCount + 1)
+  }
+  
+  const connection = await pool.getConnection()
+  
+  // Validate connection is still alive (only for MariaDB)
+  if (!USE_SQLITE) {
+    try {
+      await connection.ping()
+    } catch (pingError) {
+      // Connection is dead, release it and get a new one
+      connection.release()
+      if (retryCount >= MAX_RETRIES) {
+        throw new Error('Failed to get valid connection after multiple retries: ' + pingError.message)
+      }
+      console.warn('[MariaDB] Connection validation failed, getting new connection:', pingError.message)
+      return await getConnection(retryCount + 1)
+    }
+  }
+  
+  return { connection, pool }
+}
+
+// Helper function to safely execute queries with automatic connection handling
+const executeQuery = async (queryFn) => {
+  let connection = null
+  let pool = null
+  
+  try {
+    const result = await getConnection()
+    connection = result.connection
+    pool = result.pool
+    
+    return await queryFn(connection)
+  } catch (error) {
+    // Handle connection errors
+    if (error.code === 'ECONNRESET' || 
+        error.code === 'PROTOCOL_CONNECTION_LOST' || 
+        error.code === 'ETIMEDOUT' ||
+        error.fatal) {
+      console.error('[MariaDB] Connection error during query:', {
+        code: error.code,
+        message: error.message
+      })
+      
+      // Reset pool to force recreation on next request
+      if (!USE_SQLITE && connectionPool) {
+        try {
+          await connectionPool.end()
+        } catch (endError) {
+          // Ignore errors when ending pool
+        }
+        connectionPool = null
+      }
+    }
+    throw error
+  } finally {
+    // Always release connection
+    if (connection) {
+      try {
+        connection.release()
+      } catch (releaseError) {
+        console.warn('[MariaDB] Error releasing connection:', releaseError.message)
+      }
+    }
+  }
+}
+
 // Helpers for SQLite metadata queries
 const getSqliteTables = async connection => {
   const [rows] = await connection.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
@@ -128,11 +245,12 @@ const getSqliteTables = async connection => {
 
 // Database health check
 app.get('/api/db/health', async (req, res) => {
+  let connection = null
   try {
     console.log('[API] Testing database connection...')
 
     const pool = await createConnectionPool()
-    const connection = await pool.getConnection()
+    connection = await pool.getConnection()
 
     let query = 'SELECT 1 as test, VERSION() as version'
     if (USE_SQLITE) {
@@ -140,7 +258,6 @@ app.get('/api/db/health', async (req, res) => {
     }
 
     const [rows] = await connection.execute(query)
-    connection.release()
     
     res.json({
       success: true,
@@ -168,16 +285,26 @@ app.get('/api/db/health', async (req, res) => {
         error: error.message
       })
     }
+  } finally {
+    // Always release connection
+    if (connection) {
+      try {
+        connection.release()
+      } catch (releaseError) {
+        console.warn('[API] Error releasing connection:', releaseError.message)
+      }
+    }
   }
 })
 
 // Get all databases
 app.get('/api/db/databases', async (req, res) => {
+  let connection = null
   try {
     console.log('[API] Fetching databases...')
     
     const pool = await createConnectionPool()
-    const connection = await pool.getConnection()
+    connection = await pool.getConnection()
     
     let databases = []
     if (USE_SQLITE) {
@@ -188,8 +315,6 @@ app.get('/api/db/databases', async (req, res) => {
         .map(row => row.Database)
         .filter(db => !['information_schema', 'performance_schema', 'mysql', 'sys'].includes(db))
     }
-
-    connection.release()
     
     res.json({
       success: true,
@@ -197,10 +322,31 @@ app.get('/api/db/databases', async (req, res) => {
     })
   } catch (error) {
     console.error('[API] Failed to fetch databases:', error)
+    
+    // Handle connection errors - don't reset pool immediately as it handles recovery automatically
+    // Only log the error for monitoring
+    if (error.code === 'ECONNRESET' || 
+        error.code === 'PROTOCOL_CONNECTION_LOST' || 
+        error.code === 'ETIMEDOUT' ||
+        error.fatal) {
+      console.warn('[API] Connection error detected:', error.code, '- Pool will handle recovery automatically')
+      // Don't reset pool here - let mysql2 pool handle it automatically
+      // Resetting here can cause issues with concurrent requests
+    }
+    
     res.status(500).json({
       success: false,
       error: error.message
     })
+  } finally {
+    // Always release connection
+    if (connection) {
+      try {
+        connection.release()
+      } catch (releaseError) {
+        console.warn('[API] Error releasing connection:', releaseError.message)
+      }
+    }
   }
 })
 
@@ -287,12 +433,13 @@ app.get('/api/db/tables/:database', async (req, res) => {
 
 // Get data from a specific table
 app.get('/api/db/table/:tableName', async (req, res) => {
+  let connection = null
   try {
     const { tableName } = req.params
     const { database, limit, offset, count, type, status, timeWindow, zone, search } = req.query
 
     const pool = await createConnectionPool()
-    const connection = await pool.getConnection()
+    connection = await pool.getConnection()
 
     // Build base query
     let baseQuery = `SELECT * FROM \`${tableName}\``
@@ -382,7 +529,6 @@ app.get('/api/db/table/:tableName', async (req, res) => {
       const [countRows] = await connection.execute(countQuery, queryParams.length > 0 ? queryParams : [])
       const totalCount = countRows[0]?.total || 0
       console.log(`[API] Count result for ${tableName}:`, totalCount, typeof totalCount)
-      connection.release()
       
       // Ensure count is a number (MySQL might return it as a string or BigInt)
       const countValue = typeof totalCount === 'bigint' ? Number(totalCount) : Number(totalCount)
@@ -443,14 +589,12 @@ app.get('/api/db/table/:tableName', async (req, res) => {
     try {
       // Only pass queryParams if we have parameters, otherwise pass empty array
       const [rows] = await connection.execute(query, queryParams.length > 0 ? queryParams : [])
-      connection.release()
       
       res.json({
         success: true,
         data: rows
       })
     } catch (queryError) {
-      connection.release()
       console.error(`[API] Query execution failed for table ${tableName}:`, queryError)
       console.error(`[API] Failed query: ${query}`)
       if (queryParams.length > 0) {
@@ -470,17 +614,15 @@ app.get('/api/db/table/:tableName', async (req, res) => {
       stack: error.stack
     })
     
-    // Release connection if it wasn't already released
-    try {
-      const pool = await createConnectionPool().catch(() => null)
-      if (pool) {
-        const conn = await pool.getConnection().catch(() => null)
-        if (conn) {
-          conn.release()
-        }
-      }
-    } catch (releaseError) {
-      // Ignore release errors
+    // Handle connection errors - don't reset pool immediately as it handles recovery automatically
+    // Only log the error for monitoring
+    if (error.code === 'ECONNRESET' || 
+        error.code === 'PROTOCOL_CONNECTION_LOST' || 
+        error.code === 'ETIMEDOUT' ||
+        error.fatal) {
+      console.warn('[API] Connection error detected:', error.code, '- Pool will handle recovery automatically')
+      // Don't reset pool here - let mysql2 pool handle it automatically
+      // Resetting here can cause issues with concurrent requests
     }
     
     res.status(500).json({
@@ -490,6 +632,15 @@ app.get('/api/db/table/:tableName', async (req, res) => {
       code: error.code,
       tableName: req.params.tableName
     })
+  } finally {
+    // Always release connection
+    if (connection) {
+      try {
+        connection.release()
+      } catch (releaseError) {
+        console.warn('[API] Error releasing connection:', releaseError.message)
+      }
+    }
   }
 })
 
