@@ -21,7 +21,11 @@ Both commands should display version numbers (e.g., v18.17.0 and 9.6.7)
 
 ### Database Access
 
-The database is already set up on a remote server. Connection is configured - no database installation needed.
+Two environment configuration files are provided:
+- **`.env`** - Local database configuration
+- **`.env.remote`** - Remote database configuration
+
+The application uses `.env` by default. If you're unsure which configuration you need, contact your project administrator.
 
 ## Initial Setup
 
