@@ -19,11 +19,13 @@ import type {
 } from '@/types/database'
 import type { SystemStatusResponse } from '@/types/system'
 
+// Database name configuration
+const DATABASE_NAME = import.meta.env.VITE_DB_NAME || 'drone_monitoring'
+
 // Create axios instance with base configuration
 const api: AxiosInstance = axios.create({
-  // baseURL: 'http://172.16.50.50:3001/api/db',
-  baseURL: 'http://localhost:3001/api/db', // TODO: Turn this into a variable, so when I use the SFTP server, I can apply its own env file with a different value for this variable
-  timeout: 30000,
+  baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001/api/db',
+  timeout: parseInt(import.meta.env.VITE_API_TIMEOUT || '30000', 10),
   headers: {
     'Content-Type': 'application/json',
   },
@@ -146,7 +148,7 @@ export const databaseApi = {
     // REAL DATA: Original API call (commented out when using mock data)
     return getCachedData('drones', async () => {
       try {
-        const response = await api.get('/table/drones?database=drone_monitoring')
+        const response = await api.get(`/table/drones?database=${DATABASE_NAME}`)
         return {
           success: true,
           data: response.data.data as Drone[]
@@ -168,7 +170,7 @@ export const databaseApi = {
     return getCachedData(cacheKey, async () => {
       try {
         const limitParam = typeof limit === 'number' ? `&limit=${limit}` : ''
-        const response = await api.get(`/table/drone_positions?database=drone_monitoring${limitParam}`)
+        const response = await api.get(`/table/drone_positions?database=${DATABASE_NAME}${limitParam}`)
         return {
           success: true,
           data: response.data.data as DronePosition[]
@@ -203,7 +205,7 @@ export const databaseApi = {
     return getCachedData(cacheKey, async () => {
       try {
         const params = new URLSearchParams()
-        params.append('database', 'drone_monitoring')
+        params.append('database', DATABASE_NAME)
         if (typeof limit === 'number' && limit > 0) {
           params.append('limit', limit.toString())
         }
@@ -239,7 +241,7 @@ export const databaseApi = {
           error: error instanceof Error ? error.message : 'Unknown error'
         }
       }
-    }, 5000) // Shorter cache for filtered results
+    }) // Shorter cache for filtered results (defaults to CACHE_DURATION)
   },
 
   async getRFDetectionsCount(filters?: {
@@ -256,7 +258,7 @@ export const databaseApi = {
     return getCachedData(cacheKey, async () => {
       try {
         const params = new URLSearchParams()
-        params.append('database', 'drone_monitoring')
+        params.append('database', DATABASE_NAME)
         params.append('count', 'true')
         if (filters) {
           if (filters.type && filters.type !== 'all') {
@@ -289,13 +291,13 @@ export const databaseApi = {
           error: error instanceof Error ? error.message : 'Unknown error'
         }
       }
-    }, 5000) // Shorter cache for filtered counts
+    }) // Shorter cache for filtered counts (defaults to CACHE_DURATION)
   },
   
   // Get flight sessions from database
   async getFlightSessions(limit: number = 50): Promise<{ success: boolean; data?: FlightSession[]; error?: string }> {
     try {
-      const response = await api.get(`/table/flight_sessions?database=drone_monitoring&limit=${limit}`)
+      const response = await api.get(`/table/flight_sessions?database=${DATABASE_NAME}&limit=${limit}`)
     return {
         success: true,
         data: response.data.data as FlightSession[]
@@ -316,7 +318,7 @@ export const databaseApi = {
     return getCachedData(cacheKey, async () => {
       try {
         const limitParam = typeof limit === 'number' ? `&limit=${limit}` : ''
-        const response = await api.get(`/table/operator_positions?database=drone_monitoring${limitParam}`)
+        const response = await api.get(`/table/operator_positions?database=${DATABASE_NAME}${limitParam}`)
         return {
           success: true,
           data: response.data.data as OperatorPosition[]
@@ -337,7 +339,7 @@ export const databaseApi = {
     return getCachedData(cacheKey, async () => {
       try {
         const limitParam = typeof limit === 'number' ? `&limit=${limit}` : ''
-        const response = await api.get(`/table/gps_unit_position?database=drone_monitoring${limitParam}`)
+        const response = await api.get(`/table/gps_unit_position?database=${DATABASE_NAME}${limitParam}`)
         return {
           success: true,
           data: response.data.data as GpsUnitPosition[]
@@ -356,7 +358,7 @@ export const databaseApi = {
   async getDroneById(id: number | string): Promise<DatabaseResponse<Drone>> {
     return getCachedData(`drone_${id}`, async () => {
       try {
-        const response = await api.get(`/table/drones?database=drone_monitoring&id=${id}`)
+        const response = await api.get(`/table/drones?database=${DATABASE_NAME}&id=${id}`)
         const drones = response.data.data as Drone[]
         const drone = drones.find(d => d.id === Number(id) || String(d.id) === String(id))
         if (drone) {
@@ -382,7 +384,7 @@ export const databaseApi = {
   async getDetectorById(id: number | string): Promise<DatabaseResponse<GpsUnitPosition>> {
     return getCachedData(`detector_${id}`, async () => {
       try {
-        const response = await api.get(`/table/gps_unit_position?database=drone_monitoring&id=${id}`)
+        const response = await api.get(`/table/gps_unit_position?database=${DATABASE_NAME}&id=${id}`)
         const units = response.data.data as GpsUnitPosition[]
         const unit = units.find(u => 
           u.id === Number(id) || 
@@ -413,7 +415,7 @@ export const databaseApi = {
   async getRFDetectionById(id: number): Promise<DatabaseResponse<RFDetection>> {
     return getCachedData(`rf_detection_${id}`, async () => {
       try {
-        const response = await api.get(`/table/rf_detections?database=drone_monitoring&id=${id}`)
+        const response = await api.get(`/table/rf_detections?database=${DATABASE_NAME}&id=${id}`)
         const detections = response.data.data as RFDetection[]
         const detection = detections.find(d => d.id === id)
         if (detection) {
@@ -441,7 +443,7 @@ export const databaseApi = {
   async getReceiverLogs(limit?: number): Promise<{ success: boolean; data?: ReceiverLog[]; error?: string }> {
     const limitParam = typeof limit === 'number' ? `&limit=${limit}` : ''
     try {
-      const response = await api.get(`/table/receiver_logs?database=drone_monitoring${limitParam}`)
+      const response = await api.get(`/table/receiver_logs?database=${DATABASE_NAME}${limitParam}`)
       return {
         success: true,
         data: response.data.data as ReceiverLog[]

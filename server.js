@@ -9,9 +9,9 @@ import dotenv from 'dotenv'
 dotenv.config()
 
 const app = express()
-const PORT = process.env.PORT || 3001
+const PORT = parseInt(process.env.PORT || process.env.SERVER_PORT || '3001', 10)
 const USE_SQLITE = process.env.USE_SQLITE === 'true'
-const SQLITE_PATH = path.join(process.cwd(), 'database.sqlite')
+const SQLITE_PATH = process.env.SQLITE_PATH || path.join(process.cwd(), 'database.sqlite')
 
 // Middleware
 app.use(cors())
@@ -19,19 +19,18 @@ app.use(express.json())
 
 // MariaDB connection configuration
 const DB_CONFIG = {
-  // host: '172.16.50.100',
-  // port: 3306,
-  host: 'detect.pm99.site', // TODO: Turn this into a variable, so when I use the SFTP server, I can apply its own env file with a different value for this variable
-  port: 58591, // TODO: Turn this into a variable, so when I use the SFTP server, I can apply its own env file with a different value for this variable
-  user: 'drone_app',
-  password: 'Qwerty@',
-  connectionLimit: 10,
-  acquireTimeout: 60000,
-  timeout: 60000,
+  host: process.env.DB_HOST || 'localhost',
+  port: parseInt(process.env.DB_PORT || '3306', 10),
+  user: process.env.DB_USER || 'root',
+  password: process.env.DB_PASSWORD || '',
+  database: process.env.DB_NAME || 'drone_monitoring',
+  connectionLimit: parseInt(process.env.DB_CONNECTION_LIMIT || '10', 10),
+  acquireTimeout: parseInt(process.env.DB_ACQUIRE_TIMEOUT || '60000', 10),
+  timeout: parseInt(process.env.DB_TIMEOUT || '60000', 10),
   // Add additional connection options
-  connectTimeout: 10000,
-  reconnect: true,
-  charset: 'utf8mb4'
+  connectTimeout: parseInt(process.env.DB_CONNECT_TIMEOUT || '10000', 10),
+  reconnect: process.env.DB_RECONNECT !== 'false',
+  charset: process.env.DB_CHARSET || 'utf8mb4'
 }
 
 // Create connection pools
@@ -837,9 +836,10 @@ app.use((error, req, res, next) => {
 
 // Start server
 app.listen(PORT, () => {
+  const serverHost = process.env.SERVER_HOST || 'localhost'
   console.log(`[API] Database server running on port ${PORT}`)
-  console.log(`[API] Health check: http://${DB_CONFIG.host}:${PORT}/api/health`)
-  console.log(`[API] Database health check: http://${DB_CONFIG.host}:${PORT}/api/db/health`)
+  console.log(`[API] Health check: http://${serverHost}:${PORT}/api/health`)
+  console.log(`[API] Database health check: http://${serverHost}:${PORT}/api/db/health`)
 })
 
 // Graceful shutdown
