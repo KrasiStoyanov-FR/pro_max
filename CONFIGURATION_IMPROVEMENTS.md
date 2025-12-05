@@ -196,3 +196,4 @@ After updating your environment variables:
 - The configuration is now more maintainable and professional
 - Easy to add new configuration options in the future
 
+

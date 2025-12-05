@@ -86,3 +86,4 @@ The errors show calls to `localhost:8000` but your server runs on `3001`. Make s
 3. Verify backend is running: `curl http://localhost:3001/api/health`
 4. Verify database connection: `curl http://localhost:3001/api/db/health`
 
+

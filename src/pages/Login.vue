@@ -14,7 +14,7 @@
           Welcome Back!
         </h2>
         <p class="mt-2 text-sm text-neutral-100">
-          Sign in to access the radar monitoring system
+          Sign in to access the Drone Tracking System
         </p>
       </div>
 
