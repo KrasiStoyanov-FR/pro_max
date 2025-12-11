@@ -1,6 +1,7 @@
 <template>
   <Transition name="slide-up">
     <div
+      data-map-overlay="bottom"
       v-if="selectedDetection"
       class="w-full bg-neutral-900/95 backdrop-blur-xl border-t border-white/10 shadow-2xl pointer-events-auto rounded-t-2xl"
       style="max-height: 40vh; min-height: 200px; z-index: 50;"
@@ -71,11 +72,21 @@
               </div>
             </div>
 
+            <div v-if="selectedDetection.droneId" class="flex items-start space-x-3">
+              <PhPaperPlaneTilt :size="16" class="text-primary-50 mt-0.5" />
+              <div class="flex-1">
+                <p class="text-xs text-primary-200 uppercase tracking-wide mb-1">Drone ID</p>
+                <p class="text-sm text-white">Drone {{ selectedDetection.droneId }}</p>
+                <p v-if="relatedDrone" class="text-xs text-neutral-400 mt-0.5">{{ relatedDrone.title }}</p>
+              </div>
+            </div>
+
             <div v-if="selectedDetection.systemId" class="flex items-start space-x-3">
               <PhGear :size="16" class="text-primary-50 mt-0.5" />
               <div class="flex-1">
-                <p class="text-xs text-primary-200 uppercase tracking-wide mb-1">System ID</p>
+                <p class="text-xs text-primary-200 uppercase tracking-wide mb-1">Detector (System ID)</p>
                 <p class="text-sm text-white">System {{ selectedDetection.systemId }}</p>
+                <p v-if="relatedDetector" class="text-xs text-neutral-400 mt-0.5">{{ relatedDetector.title }}</p>
               </div>
             </div>
           </div>
@@ -106,7 +117,7 @@
 import { computed, watch } from 'vue'
 import { useMapStore } from '@/store/map'
 import type { DetectionCheckpoint } from '@/types/map'
-import { PhWifiHigh, PhX, PhClock, PhWarning, PhGear } from '@phosphor-icons/vue'
+import { PhWifiHigh, PhX, PhClock, PhWarning, PhGear, PhPaperPlaneTilt } from '@phosphor-icons/vue'
 
 interface Props {
   selectedDetection: DetectionCheckpoint | null
@@ -120,10 +131,43 @@ const emit = defineEmits<{
 
 const mapStore = useMapStore()
 
+// Find related drone and detector pins for additional context
+const relatedDrone = computed(() => {
+  if (!props.selectedDetection?.droneId) return null
+  const pins = mapStore.pins
+  return pins.find(pin => 
+    pin.type === 'drone' && 
+    String(pin.data?.drone_id ?? '') === String(props.selectedDetection!.droneId)
+  ) || null
+})
+
+const relatedDetector = computed(() => {
+  if (!props.selectedDetection?.systemId) return null
+  const pins = mapStore.pins
+  return pins.find(pin => {
+    const systemId = pin.data?.system_id
+    const unitId = pin.data?.unit_id
+    const targetSystemId = String(props.selectedDetection!.systemId)
+    return pin.type === 'sensor' && (
+      (systemId !== null && systemId !== undefined && String(systemId) === targetSystemId) ||
+      (unitId !== null && unitId !== undefined && String(unitId) === targetSystemId)
+    )
+  }) || null
+})
+
 // Debug: Watch for selectedDetection changes
 watch(() => props.selectedDetection, (detection) => {
-  console.log('[DetectionDetailsPanel] selectedDetection changed:', detection?.id)
-}, { immediate: true })
+  console.log('[DetectionDetailsPanel] selectedDetection changed:', {
+    id: detection?.id,
+    timestamp: detection?.timestamp,
+    frequency: detection?.frequency,
+    signalStrength: detection?.signalStrength,
+    status: detection?.status,
+    systemId: detection?.systemId,
+    droneId: detection?.droneId,
+    hasData: !!detection
+  })
+}, { immediate: true, deep: true })
 
 const closePanel = () => {
   mapStore.setFocusedDetectionId(null)

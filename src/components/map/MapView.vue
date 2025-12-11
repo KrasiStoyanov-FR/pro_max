@@ -28,27 +28,27 @@
       <div class="flex flex-col space-y-1">
         <!-- Toggle layers (topmost) -->
         <button @click="toggleLayers" class="map-control-button map-control-button--inverted" title="Toggle terrain layers">
-          <PhStack :size="18" class="text-current" weight="fill" />
+          <PhStack :size="16" class="text-current" weight="fill" />
         </button>
 
         <!-- Zoom In -->
         <button @click="zoomIn" class="map-control-button" title="Zoom In">
-          <PhPlus :size="18" class="text-current" weight="bold" />
+          <PhPlus :size="16" class="text-current" weight="bold" />
         </button>
 
         <!-- Zoom Out -->
         <button @click="zoomOut" class="map-control-button" title="Zoom Out">
-          <PhMinus :size="18" class="text-current" weight="bold" />
+          <PhMinus :size="16" class="text-current" weight="bold" />
         </button>
 
         <!-- Center to user location -->
         <button @click="centerToUserLocation" class="map-control-button" title="Center to my location">
-          <PhGpsFix :size="18" class="text-current" weight="fill" />
+          <PhGpsFix :size="16" class="text-current" weight="fill" />
         </button>
 
         <!-- Refresh pins -->
         <button @click="refreshPins" class="map-control-button" title="Refresh map data">
-          <PhArrowClockwise :size="18" class="text-current" weight="bold" />
+          <PhArrowClockwise :size="16" class="text-current" weight="bold" />
         </button>
       </div>
     </div>

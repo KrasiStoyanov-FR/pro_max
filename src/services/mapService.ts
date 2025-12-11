@@ -1,16 +1,23 @@
 import L from 'leaflet'
 import type { MapPin, MapViewport, MapControl, DroneTrajectory, DroneTrajectoryPoint } from '@/types/map'
 import { getActiveZones, type DroneZone } from './droneZones'
+import DroneIconSvg from '@phosphor-icons/core/assets/fill/drone-fill.svg?raw'
+import UserIconSvg from '@phosphor-icons/core/assets/fill/user-fill.svg?raw'
+import CellTowerIconSvg from '@phosphor-icons/core/assets/fill/cell-tower-fill.svg?raw'
+import CrosshairIconSvg from '@phosphor-icons/core/assets/fill/crosshair-fill.svg?raw'
+import SkullIconSvg from '@phosphor-icons/core/assets/fill/skull-fill.svg?raw'
+import QuestionIconSvg from '@phosphor-icons/core/assets/fill/question-fill.svg?raw'
+import MapPinIconSvg from '@phosphor-icons/core/assets/fill/map-pin-fill.svg?raw'
 
 // Clustering configuration
 const CLUSTER_CONFIG = {
-  maxClusterRadius: 50, // pixels - even tighter clustering
-  minClusterDistance: 200, // pixels - much larger minimum distance between clusters
-  minZoom: 8, // minimum zoom level for clustering
-  maxZoom: 12, // maximum zoom level for clustering (reduced to hide clusters near max zoom)
+  maxClusterRadius: 50, // base radius in pixels (adjusted dynamically by zoom)
+  minClusterDistance: 200, // base minimum distance between clusters (dynamic)
+  minZoom: 1, // cluster even when fully zoomed out
+  maxZoom: 14, // cluster up to near max zoom; hide clusters very close-in
   clusterIconSize: 40,
   zoomIncrement: 3, // more zoom levels to better isolate cluster
-  minPinsForCluster: 3 // minimum pins required to form a cluster
+  minPinsForCluster: 2 // cluster pairs and larger groups
 }
 
 // Clustering state
@@ -58,11 +65,36 @@ class MapService {
   private onPinClickCallback: PinClickCallback | null = null
   private onClusterClickCallback: ClusterClickCallback | null = null
   private currentTileLayer: L.TileLayer | null = null
+  // Spiderfy state for overlapping markers
+  private spiderfiedActive: boolean = false
+  private spiderfiedMembers: Map<string, { originalLatLng: L.LatLng }> = new Map()
+  private spiderfiedCenterId: string | null = null
   private currentLayerType: 'dark' | 'light' | 'satellite' = 'satellite'
   private clusters: Map<string, PinCluster> = new Map()
   private allPins: MapPin[] = []
+  private detectionPins: MapPin[] = []
   private highlightMarker: L.Marker | null = null
-  private focusState: { active: boolean; dronePinId: string | null; droneTargetId: string | null } = { active: false, dronePinId: null, droneTargetId: null }
+  private focusState: {
+    active: boolean
+    dronePinId: string | null
+    droneTargetId: string | null
+    droneSystemId: string | null
+    detectorPinId: string | null
+    detectorRangeMeters: number | null
+    detectorLatLng: [number, number] | null
+    mode: 'drone' | 'sensor'
+    linkedDroneIds: string[]
+  } = {
+    active: false,
+    dronePinId: null,
+    droneTargetId: null,
+    droneSystemId: null,
+    detectorPinId: null,
+    detectorRangeMeters: null,
+    detectorLatLng: null,
+    mode: 'drone',
+    linkedDroneIds: []
+  }
   private checkpointMarkers: Map<string, L.Marker[]> = new Map()
   private droneTrajectories: Map<string, L.Polyline> = new Map()
   private onTrajectoryPointClickCallback: ((point: DroneTrajectoryPoint) => void) | null = null
@@ -71,6 +103,24 @@ class MapService {
   private selectedClusterId: string | null = null // Track selected cluster to hide its marker
   private selectedPin: MapPin | null = null // Track selected pin to maintain selection state during zoom/pan
   private detectionRangeCircles: Map<string, L.Circle> = new Map() // Detection range visualization
+  private clusteringEnabled: boolean = false
+
+  private getClusterRadiusForZoom(): number {
+    if (!this.map) return CLUSTER_CONFIG.maxClusterRadius
+    const zoom = this.map.getZoom()
+
+    if (zoom <= 4) return 140
+    if (zoom <= 6) return 120
+    if (zoom <= 8) return 95
+    if (zoom <= 10) return 70
+    if (zoom <= 12) return 55
+    return 40
+  }
+
+  private getClusterSpacingForZoom(): number {
+    const radius = this.getClusterRadiusForZoom()
+    return Math.max(radius * 2.2, CLUSTER_CONFIG.minClusterDistance * 0.65)
+  }
 
   async init(container: HTMLElement, options: MapServiceOptions): Promise<L.Map> {
     // Lazy load Leaflet to enable code-splitting
@@ -90,6 +140,10 @@ class MapService {
       // Add zoom change handler for re-clustering with debouncing
       let zoomTimeout: NodeJS.Timeout
       this.map.on('zoom', () => {
+        // Clear spiderfy when zooming
+        if (this.spiderfiedActive) {
+          this.unspiderfy()
+        }
         // Clear existing timeout
         if (zoomTimeout) {
           clearTimeout(zoomTimeout)
@@ -108,9 +162,32 @@ class MapService {
           this.applyClustering(this.selectedPin)
         }, 150) // 150ms debounce
       })
+      // Clear spiderfy when panning
+      this.map.on('movestart', () => {
+        if (this.spiderfiedActive) {
+          this.unspiderfy()
+        }
+      })
+      this.map.on('moveend', () => {
+        this.updateMarkerFocusStyles()
+      })
+      // Clear spiderfy on general map click
+      this.map.on('click', () => {
+        if (this.spiderfiedActive) {
+          this.unspiderfy()
+        }
+      })
     }
 
     return this.map
+  }
+
+  setClusteringEnabled(enabled: boolean): void {
+    this.clusteringEnabled = enabled
+    // Re-apply clustering state immediately
+    if (this.map) {
+      this.applyClustering(this.selectedPin)
+    }
   }
 
   private addZoomControl() {
@@ -157,15 +234,13 @@ class MapService {
   addPins(pins: MapPin[]): void {
     if (!this.map) return
 
-    // Store all pins for clustering
-    this.allPins = pins
+    // Store detection pins separately so they don't appear by default
+    this.detectionPins = pins.filter(pin => pin.type === 'target')
+    // Remaining pins participate in clustering/normal rendering
+    this.allPins = pins.filter(pin => pin.type !== 'target')
 
     // Apply clustering based on zoom level (this will clear and redraw everything)
     this.applyClustering()
-    this.registerDetectionMarkers(pins)
-
-    // Add detection range circles for GPS units/receivers
-    this.addDetectionRanges(pins)
 
     // Add drone operation zones
     // this.addDroneZones() // Disabled - using only real data from database
@@ -174,36 +249,30 @@ class MapService {
   }
   
   // Add detection range circles around GPS units/receivers
-  private addDetectionRanges(pins: MapPin[]): void {
+  private addDetectionRanges(pins: MapPin[] = this.allPins): void {
     if (!this.map) return
     
     // Clear existing detection range circles
     this.clearDetectionRanges()
     
-    // Detection range in meters (typical RF detection range: 2-5km)
-    const DETECTION_RANGE_METERS = 3000 // 3km detection range
+    // Detection range in meters
+    const DETECTION_RANGE_METERS = 1500 // 1.5km detection range
     
     // Find GPS units (sensor type pins) - these are the detection sources
     const detectionSources = pins.filter(pin => pin.type === 'sensor' && pin.status === 'active')
     
     detectionSources.forEach(source => {
       // Create a circle to show detection range
-      const rangeCircle = L.circle([source.lat, source.lng], {
-        radius: DETECTION_RANGE_METERS,
-        color: '#3b82f6', // Blue color for detection range
-        fillColor: '#3b82f6',
+        const rangeCircle = L.circle([source.lat, source.lng], {
+          radius: DETECTION_RANGE_METERS,
+          color: '#3b82f6', // Blue color for detection range
+          fillColor: '#3b82f6',
         fillOpacity: 0.1, // Very transparent fill
         weight: 2,
-        opacity: 0.4,
-        dashArray: '5, 5' // Dashed line
+        opacity: 1
       })
       
-      // Add tooltip showing detection source info
-      const sourceName = source.title || 'Detection Source'
-      rangeCircle.bindTooltip(`Detection Range: ${sourceName}<br>Range: ${(DETECTION_RANGE_METERS / 1000).toFixed(1)} km`, {
-        permanent: false,
-        direction: 'top'
-      })
+      // Do not bind Leaflet tooltip to circles to avoid UX disruption
       
       rangeCircle.addTo(this.map!)
       this.detectionRangeCircles.set(source.id, rangeCircle)
@@ -220,58 +289,100 @@ class MapService {
     this.detectionRangeCircles.clear()
   }
 
-  applyFocusMode(dronePinId: string | null, droneTargetId: string | number | null = null): void {
+  applyFocusMode(params: {
+    focusPinId: string | null
+    droneTargetId?: string | number | null
+    systemId?: string | number | null
+    detectorPinId?: string | null
+    mode?: 'drone' | 'sensor'
+    detectorRangeMeters?: number | null
+    linkedDroneIds?: string[] | null
+  }): void {
+    const focusPinId = params.focusPinId
+    const detectorPinId = params.detectorPinId ?? null
+    const detectorRange = params.detectorRangeMeters ?? (detectorPinId ? 1500 : null)
+    const detectorLatLng = detectorPinId ? this.getPinLatLng(detectorPinId) : null
+
     this.focusState = {
-      active: !!dronePinId,
-      dronePinId,
-      droneTargetId: droneTargetId !== null && droneTargetId !== undefined ? String(droneTargetId) : null
+      active: !!focusPinId,
+      dronePinId: focusPinId,
+      droneTargetId: params.droneTargetId !== null && params.droneTargetId !== undefined ? String(params.droneTargetId) : null,
+      droneSystemId: params.systemId !== null && params.systemId !== undefined ? String(params.systemId) : null,
+      detectorPinId,
+      detectorRangeMeters: detectorRange,
+      detectorLatLng,
+      mode: params.mode ?? 'drone',
+      linkedDroneIds: params.linkedDroneIds ? params.linkedDroneIds.map(String) : []
     }
 
     this.updateMarkerFocusStyles()
   }
 
   private updateMarkerFocusStyles(): void {
-    if (!this.focusState.active) {
-      this.markers.forEach(marker => {
-        const element = marker.getElement()
-        if (element) {
-          element.classList.remove('marker--faded')
-          element.classList.remove('marker--hidden')
-          element.classList.remove('marker--focus')
-        }
-      })
+    const resetDetections = () => {
       this.detectionsById.forEach(({ marker }) => {
         const element = marker.getElement()
-        if (element) {
-          element.classList.remove('marker--hidden')
-          element.classList.remove('marker--detection-focus')
-          element.classList.remove('marker--detection-selected')
-        }
+        if (!element) return
+        element.classList.remove('marker--detection-focus')
+        element.classList.remove('marker--detection-selected')
+        element.classList.remove('marker--hidden')
       })
+    }
+
+    if (!this.focusState.active) {
+      this.markers.forEach(marker => this.resetMarkerAppearance(marker))
+      resetDetections()
       return
     }
 
+    if (!this.isFocusContextVisible()) {
+      this.markers.forEach(marker => this.resetMarkerAppearance(marker))
+      resetDetections()
+      return
+    }
+
+    const mode = this.focusState.mode ?? 'drone'
+    const detectorCoords = this.focusState.detectorLatLng
+    const detectorRange = this.focusState.detectorRangeMeters ?? 1500
+    const linkedDroneIds = this.focusState.linkedDroneIds ?? []
+
     this.markers.forEach(marker => {
-      const element = marker.getElement()
-      if (!element) return
-
       const pinData = (marker as any).pinData as MapPin | undefined
+      if (!pinData) return
 
-      const matchesDronePin = pinData?.id === this.focusState.dronePinId
-      const pinDroneTargetId = pinData?.data?.drone_id !== undefined && pinData?.data?.drone_id !== null
+      const pinSystemId = pinData.data?.system_id !== undefined && pinData.data?.system_id !== null
+        ? String(pinData.data.system_id)
+        : null
+      const matchesFocusPin = pinData.id === this.focusState.dronePinId
+      const pinDroneTargetId = pinData.data?.drone_id !== undefined && pinData.data?.drone_id !== null
         ? String(pinData.data.drone_id)
         : null
       const matchesDroneTarget = this.focusState.droneTargetId !== null && pinDroneTargetId === this.focusState.droneTargetId
+      const isDetectionSelection = pinData.type === 'target' && matchesDroneTarget
 
-      if (matchesDronePin || matchesDroneTarget) {
-        element.classList.add('marker--focus')
-        element.classList.remove('marker--faded')
-        element.classList.remove('marker--hidden')
-      } else {
-        element.classList.remove('marker--focus')
-        element.classList.remove('marker--faded')
-        element.classList.add('marker--hidden')
+      let shouldHighlight = false
+
+      if (mode === 'drone') {
+        const linkedBySystem =
+          this.focusState.droneSystemId !== null &&
+          pinSystemId === this.focusState.droneSystemId &&
+          (pinData.type === 'sensor' || pinData.type === 'friendly')
+
+        shouldHighlight = matchesFocusPin || matchesDroneTarget || linkedBySystem || isDetectionSelection
+      } else if (mode === 'sensor') {
+        const isDetector = pinData.id === this.focusState.detectorPinId
+        const operatorMatches =
+          this.focusState.droneSystemId !== null &&
+          pinSystemId === this.focusState.droneSystemId &&
+          pinData.type === 'friendly'
+        let droneInRange = false
+        if (pinData.type === 'drone' && detectorCoords) {
+          droneInRange = this.calculateDistanceMeters(detectorCoords, [pinData.lat, pinData.lng]) <= detectorRange
+        }
+        shouldHighlight = isDetector || operatorMatches || droneInRange
       }
+
+      this.applyMarkerOpacity(marker, shouldHighlight)
     })
 
     this.detectionsById.forEach(({ marker, pin }, key) => {
@@ -284,10 +395,11 @@ class MapService {
 
       if (
         pin.id === this.focusState.dronePinId ||
-        (this.focusState.droneTargetId !== null && pinDroneTargetId === this.focusState.droneTargetId)
+        (this.focusState.droneTargetId !== null && pinDroneTargetId === this.focusState.droneTargetId) ||
+        (mode === 'sensor' && pinDroneTargetId !== null && linkedDroneIds.includes(pinDroneTargetId))
       ) {
-        element.classList.remove('marker--hidden')
         element.classList.add('marker--detection-focus')
+        element.classList.remove('marker--hidden')
         if (this.highlightedDetectionId !== null) {
           if (key === this.highlightedDetectionId) {
             element.classList.add('marker--detection-selected')
@@ -298,11 +410,90 @@ class MapService {
           element.classList.remove('marker--detection-selected')
         }
       } else {
-        element.classList.add('marker--hidden')
         element.classList.remove('marker--detection-focus')
         element.classList.remove('marker--detection-selected')
+        element.classList.add('marker--hidden')
       }
     })
+  }
+
+  private applyMarkerOpacity(marker: L.Marker, highlighted: boolean): void {
+    const element = marker.getElement()
+    if (!element) return
+    ;(marker as any).__focusLock = true
+
+    element.classList.remove('marker--hidden')
+    if (highlighted) {
+      element.classList.add('marker--focus')
+      element.classList.remove('marker--faded')
+      element.style.opacity = '1'
+      ;(marker as any).isFaded = false
+    } else {
+      element.classList.remove('marker--focus')
+      element.classList.add('marker--faded')
+      element.style.opacity = '0.35'
+      ;(marker as any).isFaded = true
+    }
+  }
+
+  private resetMarkerAppearance(marker: L.Marker): void {
+    const element = marker.getElement()
+    if (!element) return
+    element.classList.remove('marker--faded')
+    element.classList.remove('marker--focus')
+    element.classList.remove('marker--hidden')
+    element.style.opacity = ''
+    ;(marker as any).isFaded = false
+    ;(marker as any).__focusLock = false
+  }
+
+  private getPinLatLng(pinId: string): [number, number] | null {
+    const pin = this.allPins.find(p => p.id === pinId)
+    return pin ? [pin.lat, pin.lng] : null
+  }
+
+  private getPinLatLngByDroneTarget(droneTargetId: string | null): [number, number] | null {
+    if (!droneTargetId) return null
+    const pin = this.allPins.find(p => p.type === 'drone' && String(p.data?.drone_id ?? '') === droneTargetId)
+    return pin ? [pin.lat, pin.lng] : null
+  }
+
+  private isFocusContextVisible(): boolean {
+    if (!this.map || !this.focusState.active) return true
+    const bounds = this.map.getBounds()
+    if (!bounds) return true
+
+    const contains = (coords: [number, number] | null): boolean => {
+      if (!coords) return false
+      return bounds.contains(coords as L.LatLngExpression)
+    }
+
+    if (this.focusState.mode === 'sensor') {
+      if (contains(this.getPinLatLng(this.focusState.detectorPinId ?? ''))) return true
+      if (this.focusState.linkedDroneIds?.length) {
+        return this.focusState.linkedDroneIds.some(droneId => contains(this.getPinLatLngByDroneTarget(droneId)))
+      }
+      return false
+    }
+
+    if (contains(this.getPinLatLng(this.focusState.dronePinId ?? ''))) return true
+    if (contains(this.getPinLatLng(this.focusState.detectorPinId ?? ''))) return true
+    if (contains(this.getPinLatLngByDroneTarget(this.focusState.droneTargetId))) return true
+
+    return false
+  }
+
+  private calculateDistanceMeters(a: [number, number], b: [number, number]): number {
+    const toRadians = (deg: number) => deg * (Math.PI / 180)
+    const dLat = toRadians(b[0] - a[0])
+    const dLng = toRadians(b[1] - a[1])
+    const lat1 = toRadians(a[0])
+    const lat2 = toRadians(b[0])
+    const sinLat = Math.sin(dLat / 2)
+    const sinLng = Math.sin(dLng / 2)
+    const h = sinLat * sinLat + Math.cos(lat1) * Math.cos(lat2) * sinLng * sinLng
+    const c = 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h))
+    return 6371000 * c
   }
 
   showTrajectoryCheckpoints(dronePinId: string, points: DroneTrajectoryPoint[]): void {
@@ -428,9 +619,9 @@ class MapService {
 
     const { marker } = detection
     const latLng = marker.getLatLng()
-    const zoom = this.map.getZoom()
+    const zoom = this.map.getZoom() ?? 15
     console.log('[Map] detection pan', { detectionId, zoom })
-    this.map.panTo(latLng, { animate: false })
+    this.flyTo(latLng.lat, latLng.lng, zoom, { adjustForOverlays: true })
     this.highlightDetection(detectionId)
   }
 
@@ -449,6 +640,7 @@ class MapService {
         element.classList.remove('marker--detection-selected')
         if (!this.focusState.active) {
           element.classList.remove('marker--detection-focus')
+          element.classList.add('marker--hidden')
         }
       }
     })
@@ -508,6 +700,77 @@ class MapService {
     }
     // Note: Don't clear selectedPin here - it's managed by highlightSelectedPin
     // This allows selection to persist during zoom/pan operations
+  }
+
+  // Detect overlapping markers (by pixel distance)
+  private getOverlappingMarkerIds(centerPinId: string, thresholdPx: number): string[] {
+    if (!this.map) return [centerPinId]
+    const centerMarker = this.markers.get(centerPinId)
+    if (!centerMarker) return [centerPinId]
+    const centerPoint = this.map.latLngToContainerPoint(centerMarker.getLatLng())
+    const result: string[] = []
+    this.markers.forEach((marker, id) => {
+      const pt = this.map!.latLngToContainerPoint(marker.getLatLng())
+      const dx = pt.x - centerPoint.x
+      const dy = pt.y - centerPoint.y
+      const dist = Math.sqrt(dx * dx + dy * dy)
+      if (dist <= thresholdPx) {
+        result.push(id)
+      }
+    })
+    return result
+  }
+
+  // Expand overlapping markers around the center marker with small offsets (spiderfy)
+  private spiderfyGroup(memberIds: string[], centerId: string): void {
+    if (!this.map) return
+    // Clear any existing spiderfy state
+    this.unspiderfy()
+    const centerMarker = this.markers.get(centerId)
+    if (!centerMarker) return
+    const centerLatLng = centerMarker.getLatLng()
+    const centerPoint = this.map.latLngToLayerPoint(centerLatLng)
+
+    const count = memberIds.length
+    const radiusPx = 28 // ring radius in pixels
+    const angleStep = (2 * Math.PI) / count
+    let startAngle = -Math.PI / 2 // start at top
+
+    // Record originals and compute new positions
+    memberIds.forEach((id, idx) => {
+      const marker = this.markers.get(id)
+      if (!marker) return
+      // Save original
+      this.spiderfiedMembers.set(id, { originalLatLng: marker.getLatLng() })
+      // Place at center for the centerId, or on ring for others
+      if (count === 1) return
+      const angle = startAngle + idx * angleStep
+      const offsetX = Math.cos(angle) * radiusPx
+      const offsetY = Math.sin(angle) * radiusPx
+      const newPoint = L.point(centerPoint.x + offsetX, centerPoint.y + offsetY)
+      const newLatLng = this.map.layerPointToLatLng(newPoint)
+      marker.setLatLng(newLatLng)
+      const el = marker.getElement()
+      if (el) el.classList.add('marker--spiderfied')
+    })
+
+    this.spiderfiedActive = true
+    this.spiderfiedCenterId = centerId
+  }
+
+  // Restore spiderfied markers to their original positions
+  private unspiderfy(): void {
+    if (!this.map || !this.spiderfiedActive) return
+    this.spiderfiedMembers.forEach(({ originalLatLng }, id) => {
+      const marker = this.markers.get(id)
+      if (!marker) return
+      marker.setLatLng(originalLatLng)
+      const el = marker.getElement()
+      if (el) el.classList.remove('marker--spiderfied')
+    })
+    this.spiderfiedMembers.clear()
+    this.spiderfiedActive = false
+    this.spiderfiedCenterId = null
   }
 
   // Public method to clear highlight marker (called from outside)
@@ -589,6 +852,9 @@ class MapService {
   }
 
   private fadeMarker(marker: L.Marker): void {
+    if ((marker as any).__focusLock) {
+      return
+    }
     const element = marker.getElement()
     console.log('fadeMarker called, element found:', !!element)
     if (element) {
@@ -665,21 +931,17 @@ class MapService {
       // Store pin data on marker for easy access
       ; (marker as any).pinData = pin
 
-    // Add popup
-    const popupContent = `
-      <div class="p-2">
-        <h3 class="font-semibold text-sm">${pin.title}</h3>
-        <p class="text-xs text-neutral-600">${pin.type} • ${pin.status}</p>
-        ${pin.description ? `<p class="text-xs mt-1">${pin.description}</p>` : ''}
-      </div>
-    `
-    marker.bindPopup(popupContent)
+    // Intentionally no Leaflet popup/tooltip bound to markers (UX requirement)
 
     // Add click handler
     marker.on('click', () => {
-      if (this.onPinClickCallback) {
-        this.onPinClickCallback(pin)
+      // If many markers overlap here, first click spiderfies them instead of immediate selection
+      const overlappingIds = this.getOverlappingMarkerIds(pin.id, 12) // 12px threshold for overlap
+      if (!this.spiderfiedActive && overlappingIds.length > 1) {
+        this.spiderfyGroup(overlappingIds, pin.id)
+        return
       }
+      if (this.onPinClickCallback) this.onPinClickCallback(pin)
     })
 
     // Add hover effects for faded markers
@@ -716,17 +978,22 @@ class MapService {
     // 1. Zoom is too high (near max zoom)
     // 2. A cluster is currently selected (show individual pins)
     // 3. Zoom is too low (below min zoom)
-    const shouldCluster = zoom >= CLUSTER_CONFIG.minZoom && 
+    const shouldCluster = this.clusteringEnabled &&
+                         zoom >= CLUSTER_CONFIG.minZoom && 
                          zoom <= CLUSTER_CONFIG.maxZoom && 
                          !this.selectedClusterId &&
                          zoom < (maxZoom - 2) // Hide clusters near max zoom
 
     if (shouldCluster) {
       isClusteringActive = true
+      // Hide detection range overlays when sensors are grouped into clusters
+      this.clearDetectionRanges()
       console.log('Creating clusters - zoom level requires clustering, no cluster selected')
       this.createClusters()
     } else {
       isClusteringActive = false
+      // Show detection ranges only when individual sensor markers are visible
+      this.addDetectionRanges()
       const reason = !this.selectedClusterId 
         ? (zoom < CLUSTER_CONFIG.minZoom ? 'zoom too low' : zoom >= (maxZoom - 2) ? 'zoom too high' : 'zoom out of range')
         : 'cluster selected'
@@ -746,6 +1013,14 @@ class MapService {
         }, 50)
       }
     }
+
+    // Ensure detection markers are re-added after clustering operations
+    this.registerDetectionMarkers(this.detectionPins)
+
+    // Re-apply focus styles after clustering alters markers
+    requestAnimationFrame(() => {
+      this.updateMarkerFocusStyles()
+    })
   }
 
   private createClusters(): void {
@@ -854,12 +1129,13 @@ class MapService {
       const cluster = this.createCluster(clusterPins)
 
       // Check if this cluster is too close to existing clusters
+      const clusterSpacing = this.getClusterSpacingForZoom()
       const tooClose = clusters.some(existingCluster => {
         const distance = this.calculatePixelDistance(
           { lat: cluster.center[0], lng: cluster.center[1] },
           { lat: existingCluster.center[0], lng: existingCluster.center[1] }
         )
-        return distance < CLUSTER_CONFIG.minClusterDistance
+        return distance < clusterSpacing
       })
 
       if (!tooClose) {
@@ -909,7 +1185,7 @@ class MapService {
           if (visited.has(otherPin.id)) return
 
           const distance = this.calculatePixelDistance(currentPin, otherPin)
-          if (distance <= CLUSTER_CONFIG.maxClusterRadius) {
+          if (distance <= this.getClusterRadiusForZoom()) {
             cluster.push(otherPin)
             visited.add(otherPin.id)
             toCheck.push(otherPin)
@@ -928,7 +1204,7 @@ class MapService {
     allPins.forEach(otherPin => {
       if (otherPin.id !== pin.id) {
         const distance = this.calculatePixelDistance(pin, otherPin)
-        if (distance <= CLUSTER_CONFIG.maxClusterRadius) {
+        if (distance <= this.getClusterRadiusForZoom()) {
           density++
         }
       }
@@ -993,14 +1269,14 @@ class MapService {
     })
   }
 
-  private calculatePixelDistance(pin1: MapPin, pin2: MapPin): number {
+  private calculatePixelDistance(pointA: { lat: number; lng: number }, pointB: { lat: number; lng: number }): number {
     if (!this.map) return Infinity
 
-    const point1 = this.map.latLngToContainerPoint([pin1.lat, pin1.lng])
-    const point2 = this.map.latLngToContainerPoint([pin2.lat, pin2.lng])
+    const pixelPoint1 = this.map.latLngToContainerPoint([pointA.lat, pointA.lng])
+    const pixelPoint2 = this.map.latLngToContainerPoint([pointB.lat, pointB.lng])
 
-    const dx = point1.x - point2.x
-    const dy = point1.y - point2.y
+    const dx = pixelPoint1.x - pixelPoint2.x
+    const dy = pixelPoint1.y - pixelPoint2.y
 
     return Math.sqrt(dx * dx + dy * dy)
   }
@@ -1016,98 +1292,72 @@ class MapService {
   }
 
   private getIconForPinType(type: string, status: string, isSelected: boolean = false, isFaded: boolean = false): any {
+    // RF detections act as trajectory checkpoints, so render them as small dots instead of large markers
+    if (type === 'target') {
+      const size = isSelected ? 22 : 16
+      const activeClass = isSelected ? 'trajectory-checkpoint--active' : ''
+
+      return L.divIcon({
+        className: `custom-marker detection-marker ${activeClass}`,
+        html: `
+          <div class="trajectory-checkpoint--map">
+            <div class="trajectory-checkpoint__wrapper">
+              <div class="trajectory-checkpoint__pulse"></div>
+              <div class="trajectory-checkpoint__dot"></div>
+            </div>
+          </div>
+        `,
+        iconSize: [size, size],
+        iconAnchor: [size / 2, size / 2]
+      } as any)
+    }
+
     const color = this.getColorForStatus(status, type)
     const isAlarm = status === 'critical'
     const isWarning = status === 'warning'
     const shouldPulse = isAlarm || isWarning // Only pulse for critical and warning status
 
-    console.log(`Creating icon for ${type}: isSelected=${isSelected}, shouldPulse=${shouldPulse}`)
-
-    // Create different icons based on pin type
-    let iconHtml = ''
-
-    // Get the appropriate icon for each type
-    let iconSvg = ''
-    let iconSize = 'w-4 h-4'
-    let markerSize = 'w-8 h-8'
-    
-    switch (type) {
-      case 'drone':
-        // Simple drone/airplane icon
-        iconSvg = `<svg class="${iconSize} text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z"/></svg>`
-        break
-      case 'target':
-        // Radio/wave icon for RF detections
-        iconSvg = `<svg class="${iconSize} text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"/></svg>`
-        break
-      case 'friendly':
-        // User/person icon for operators
-        iconSvg = `<svg class="${iconSize} text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>`
-        break
-      case 'sensor':
-        // GPS/static sensor icon
-        iconSvg = `<svg class="${iconSize} text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 0-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 0 0-7-7zm0 9.5a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5z"/></svg>`
-        break
-      default:
-        // Default circle icon
-        iconSvg = `<svg class="${iconSize} text-white" fill="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></svg>`
-    }
-
     // Determine sizes based on selection state (in pixels)
-    // Special handling for sensor/detector types - make them more prominent when selected
-    const isSensor = type === 'sensor'
+    const isSensor = type === 'sensor' || type === 'radar'
     const baseMarkerSize = type === 'drone' ? 32 : (isSensor ? 28 : 24)
     const selectedMarkerSize = type === 'drone' ? 48 : (isSensor ? 44 : 36)
     const markerSizePx = isSelected ? selectedMarkerSize : baseMarkerSize
-    const iconSizePx = isSelected ? (type === 'drone' ? 24 : (isSensor ? 22 : 20)) : (type === 'drone' ? 16 : (isSensor ? 14 : 16))
+    const iconSizePx = isSelected ? (type === 'drone' ? 26 : (isSensor ? 24 : 22)) : (type === 'drone' ? 20 : (isSensor ? 18 : 16))
+    const iconSvg = this.getSizedPhosphorSvg(type, iconSizePx)
     const pulseCircleSizePx = isSelected ? (type === 'drone' ? 64 : (isSensor ? 60 : 48)) : 0
     const pulseCircleBorderWidth = isSelected ? (type === 'drone' ? 4 : (isSensor ? 4 : 3)) : 0
-    const iconSizeClass = isSelected ? (type === 'drone' ? 'w-6 h-6' : 'w-5 h-5') : iconSize
-    const iconSizeStyle = isSelected && isSensor ? 'width: 22px; height: 22px;' : ''
 
     // Container size needs to accommodate the pulsing circle when selected
     const containerSizePx = isSelected ? pulseCircleSizePx : markerSizePx
     const markerOffsetPx = isSelected ? (pulseCircleSizePx - markerSizePx) / 2 : 0
 
-    if (type === 'drone') {
-      // Drone icon with enlarged version when selected
-      iconHtml = `
-        <div class="relative transition-all duration-300" style="width: ${containerSizePx}px; height: ${containerSizePx}px;">
-          <!-- Pulse animation circles (only for critical/warning) -->
-          ${shouldPulse ? `
-            <div class="absolute rounded-full" style="width: ${markerSizePx}px; height: ${markerSizePx}px; background-color: ${color}; animation: markerPulseOuter 4s ease-in-out infinite; left: ${markerOffsetPx}px; top: ${markerOffsetPx}px; opacity: ${isSelected ? '0.3' : '0.6'};"></div>
-            <div class="absolute rounded-full" style="width: ${markerSizePx}px; height: ${markerSizePx}px; background-color: ${color}; animation: markerPulseInner 4s ease-in-out infinite; animation-delay: 0.5s; left: ${markerOffsetPx}px; top: ${markerOffsetPx}px; opacity: ${isSelected ? '0.3' : '0.6'};"></div>
-          ` : ''}
-          
-          <!-- Main marker (enlarged when selected) -->
-          <div class="rounded-full border-2 border-white shadow-lg flex items-center justify-center relative z-10 transition-all duration-300" 
-               style="width: ${markerSizePx}px; height: ${markerSizePx}px; background-color: ${color}; left: ${markerOffsetPx}px; top: ${markerOffsetPx}px;">
-            ${iconSvg.replace(iconSize, iconSizeClass)}
-          </div>
-          
-          ${isSelected ? `<div class="absolute rounded-full border-4 border-blue-500 animate-pulse" style="width: ${pulseCircleSizePx}px; height: ${pulseCircleSizePx}px; left: 0; top: 0; border-color: #3b82f6; opacity: 0.6; animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; z-index: 5; box-shadow: 0 0 10px rgba(59, 130, 246, 0.5);"></div>` : ''}
+    const iconContainer = `
+      <div class="rounded-full border-2 border-white shadow-lg flex items-center justify-center relative z-10 transition-all duration-300" 
+           style="width: ${markerSizePx}px; height: ${markerSizePx}px; background-color: ${color}; left: ${markerOffsetPx}px; top: ${markerOffsetPx}px; ${isSelected && isSensor ? 'box-shadow: 0 0 8px rgba(34, 211, 238, 0.6), inset 0 0 8px rgba(34, 211, 238, 0.3);' : ''}">
+        <div style="width: ${iconSizePx}px; height: ${iconSizePx}px; color: #fff;">
+          ${iconSvg}
         </div>
+      </div>
+    `
+
+    const pulseMarkup = shouldPulse
+      ? `
+        <div class="absolute rounded-full" style="width: ${markerSizePx}px; height: ${markerSizePx}px; background-color: ${color}; animation: markerPulseOuter 4s ease-in-out infinite; left: ${markerOffsetPx}px; top: ${markerOffsetPx}px; opacity: ${isSelected ? '0.3' : '0.6'};"></div>
+        <div class="absolute rounded-full" style="width: ${markerSizePx}px; height: ${markerSizePx}px; background-color: ${color}; animation: markerPulseInner 4s ease-in-out infinite; animation-delay: 0.5s; left: ${markerOffsetPx}px; top: ${markerOffsetPx}px; opacity: ${isSelected ? '0.3' : '0.6'};"></div>
       `
-    } else {
-      // Other types with appropriate icons (enlarged when selected)
-      iconHtml = `
-        <div class="relative transition-all duration-300" style="width: ${containerSizePx}px; height: ${containerSizePx}px;">
-          <!-- Pulse animation circles (only for critical/warning) -->
-          ${shouldPulse ? `
-            <div class="absolute rounded-full" style="width: ${markerSizePx}px; height: ${markerSizePx}px; background-color: ${color}; animation: markerPulseOuter 4s ease-in-out infinite; left: ${markerOffsetPx}px; top: ${markerOffsetPx}px; opacity: ${isSelected ? '0.3' : '0.6'};"></div>
-            <div class="absolute rounded-full" style="width: ${markerSizePx}px; height: ${markerSizePx}px; background-color: ${color}; animation: markerPulseInner 4s ease-in-out infinite; animation-delay: 0.5s; left: ${markerOffsetPx}px; top: ${markerOffsetPx}px; opacity: ${isSelected ? '0.3' : '0.6'};"></div>
-          ` : ''}
-          
-          <!-- Main marker (enlarged when selected) -->
-          <div class="rounded-full border-2 border-white shadow-lg flex items-center justify-center relative z-10 transition-all duration-300" 
-               style="width: ${markerSizePx}px; height: ${markerSizePx}px; background-color: ${color}; left: ${markerOffsetPx}px; top: ${markerOffsetPx}px; ${isSelected && isSensor ? 'box-shadow: 0 0 8px rgba(34, 211, 238, 0.6), inset 0 0 8px rgba(34, 211, 238, 0.3);' : ''}">
-            ${iconSizeStyle ? iconSvg.replace(iconSize, iconSizeClass).replace(/class="([^"]*)"/, `style="${iconSizeStyle}" class="$1"`) : iconSvg.replace(iconSize, iconSizeClass)}
-          </div>
-          
-          ${isSelected ? `<div class="absolute rounded-full border-blue-500 animate-pulse" style="width: ${pulseCircleSizePx}px; height: ${pulseCircleSizePx}px; left: 0; top: 0; border: ${pulseCircleBorderWidth}px solid #3b82f6; opacity: ${isSensor ? '0.7' : '0.6'}; animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; z-index: 5; box-shadow: 0 0 ${isSensor ? '15px' : '10px'} rgba(59, 130, 246, ${isSensor ? '0.6' : '0.5'});"></div>` : ''}
-        </div>
-      `
-    }
+      : ''
+
+    const selectionPulse = isSelected
+      ? `<div class="absolute rounded-full border-blue-500 animate-pulse" style="width: ${pulseCircleSizePx}px; height: ${pulseCircleSizePx}px; left: 0; top: 0; border: ${pulseCircleBorderWidth}px solid #3b82f6; opacity: ${isSensor ? '0.7' : '0.6'}; animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; z-index: 5; box-shadow: 0 0 ${isSensor ? '15px' : '10px'} rgba(59, 130, 246, ${isSensor ? '0.6' : '0.5'});"></div>`
+      : ''
+
+    const iconHtml = `
+      <div class="relative transition-all duration-300" style="width: ${containerSizePx}px; height: ${containerSizePx}px;">
+        ${pulseMarkup}
+        ${iconContainer}
+        ${selectionPulse}
+      </div>
+    `
 
     // Update icon size and anchor based on selection state
     // Icon size includes the pulsing circle, so we need to account for that
@@ -1122,6 +1372,25 @@ class MapService {
       iconSize: leafletIconSize,
       iconAnchor: leafletIconAnchor
     } as any)
+  }
+
+  private getPhosphorIcon(type: string): string {
+    const iconMap: Record<string, string> = {
+      drone: DroneIconSvg,
+      friendly: UserIconSvg,
+      sensor: CellTowerIconSvg,
+      radar: CrosshairIconSvg,
+      threat: SkullIconSvg,
+      unknown: QuestionIconSvg
+    }
+
+    return iconMap[type] ?? MapPinIconSvg
+  }
+
+  private getSizedPhosphorSvg(type: string, size: number): string {
+    const svgRaw = this.getPhosphorIcon(type)
+    const withoutWidth = svgRaw.replace(/width="[^"]*"/g, '').replace(/height="[^"]*"/g, '')
+    return withoutWidth.replace('<svg ', `<svg width="${size}" height="${size}" `).replace('<svg', '<svg style="display:block"')
   }
 
   private getColorForStatus(status: string, type: string): string {
@@ -1198,7 +1467,12 @@ class MapService {
       maxZoom: 16 // Don't zoom too close
     })
 
-    // Force immediate re-clustering to ensure the marker is gone
+    // Clear selected cluster to allow other clusters to remain interactive
+    this.selectedClusterId = null
+    expandedClusters.delete(cluster.id)
+    expandedClusterPins.delete(cluster.id)
+
+    // Force immediate re-clustering so other clusters remain clickable
     setTimeout(() => {
       this.applyClustering()
     }, 50)
@@ -1283,10 +1557,24 @@ class MapService {
     }
   }
 
-  flyTo(lat: number, lng: number, zoom: number = 15): void {
-    if (this.map) {
+  flyTo(lat: number, lng: number, zoom: number = 15, options?: { adjustForOverlays?: boolean }): void {
+    if (!this.map) return
+
+    if (!options?.adjustForOverlays) {
       this.map.flyTo([lat, lng], zoom)
+      return
     }
+
+    const offset = this.getOverlayOffset()
+    if (offset.x === 0 && offset.y === 0) {
+      this.map.flyTo([lat, lng], zoom)
+      return
+    }
+
+    const pinPoint = this.map.latLngToContainerPoint([lat, lng])
+    const adjustedPoint = pinPoint.subtract(offset)
+    const adjustedLatLng = this.map.containerPointToLatLng(adjustedPoint)
+    this.map.flyTo(adjustedLatLng, zoom)
   }
 
   fitBounds(bounds: L.LatLngBounds): void {
@@ -1328,6 +1616,54 @@ class MapService {
     // this.clearHighlightMarker()
   }
 
+  private getOverlayOffset(): L.Point {
+    if (!this.map) {
+      return L.point(0, 0)
+    }
+
+    const container: HTMLElement = this.map.getContainer()
+    const rect = container.getBoundingClientRect()
+    let offsetX = 0
+    let offsetY = 0
+
+    const overlays = document.querySelectorAll<HTMLElement>('[data-map-overlay]')
+    overlays.forEach((overlay) => {
+      if (overlay.offsetWidth === 0 || overlay.offsetHeight === 0) {
+        return
+      }
+
+      const style = window.getComputedStyle(overlay)
+      if (style.visibility === 'hidden' || style.display === 'none' || Number(style.opacity) === 0) {
+        return
+      }
+
+      const overlayRect = overlay.getBoundingClientRect()
+      const overlapWidth = Math.max(0, Math.min(rect.right, overlayRect.right) - Math.max(rect.left, overlayRect.left))
+      const overlapHeight = Math.max(0, Math.min(rect.bottom, overlayRect.bottom) - Math.max(rect.top, overlayRect.top))
+
+      if (overlapWidth === 0 && overlapHeight === 0) {
+        return
+      }
+
+      const placement = overlay.dataset.mapOverlay ?? ''
+
+      if (placement.includes('right')) {
+        offsetX += overlapWidth / 2
+      } else if (placement.includes('left')) {
+        offsetX -= overlapWidth / 2
+      }
+
+      if (placement.includes('bottom')) {
+        offsetY += overlapHeight / 2
+      } else if (placement.includes('top')) {
+        offsetY -= overlapHeight / 2
+      }
+    })
+
+    return L.point(offsetX, offsetY)
+  }
+
+
   updateDroneTrajectories(trajectories: DroneTrajectory[]): void {
     if (!this.map) return
 
@@ -1348,8 +1684,7 @@ class MapService {
         polyline = L.polyline(latLngs, {
           color: '#22c55e',
           weight: 3,
-          opacity: 0.8,
-          dashArray: '4 6',
+          opacity: 1,
           lineCap: 'round'
         })
         polyline.addTo(this.map)
@@ -1394,6 +1729,18 @@ class MapService {
     if (this.map) {
       this.map.setView(center, zoom)
     }
+  }
+
+  // Check if a lat/lng is visible in the current map viewport considering left panel padding
+  isLatLngVisible(lat: number, lng: number, leftPaddingPx: number = 0): boolean {
+    if (!this.map) return false
+    const point = this.map.latLngToContainerPoint([lat, lng])
+    const size = this.map.getSize()
+    const minX = Math.max(0, leftPaddingPx)
+    const maxX = size.x
+    const minY = 0
+    const maxY = size.y
+    return point.x >= minX && point.x <= maxX && point.y >= minY && point.y <= maxY
   }
 
   private setTileLayer(type: 'dark' | 'light' | 'satellite'): void {
@@ -1486,21 +1833,32 @@ class MapService {
     this.detectionsById.clear()
 
     pins.forEach(pin => {
-      if (pin.type === 'target') {
-        const marker = this.markers.get(pin.id)
-        if (!marker) return
+      // Ensure marker exists for detection pins even though they aren't part of clustering
+      let marker = this.markers.get(pin.id)
+      if (!marker) {
+        marker = this.createMarker(pin)
+        this.markers.set(pin.id, marker)
+        marker.addTo(this.map!)
+      }
 
-        const detectionId =
-          typeof pin.data?.id === 'number'
-            ? pin.data.id
-            : Number(String(pin.id).replace('rf-detection-', ''))
+      const element = marker.getElement()
+      if (element) {
+        element.classList.remove('marker--hidden')
+        element.classList.remove('marker--detection-focus')
+        element.classList.remove('marker--detection-selected')
+      }
 
-        if (!Number.isNaN(detectionId)) {
-          this.detectionsById.set(detectionId, { marker, pin })
-        }
+      const detectionId =
+        typeof pin.data?.id === 'number'
+          ? pin.data.id
+          : Number(String(pin.id).replace('rf-detection-', ''))
+
+      if (!Number.isNaN(detectionId)) {
+        this.detectionsById.set(detectionId, { marker, pin })
       }
     })
   }
+
 }
 
 // Export singleton instance

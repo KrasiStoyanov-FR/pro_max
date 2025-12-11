@@ -10,7 +10,13 @@
         />
 
         <!-- Status summary card overlay -->
-        <StatusSummaryCard />
+        <StatusSummaryCard
+          :is-fullscreen-mode="false"
+          @open-drones-panel="handleOpenDronesPanel"
+          @open-detections-panel="handleOpenDetectionsPanel"
+          @open-operators-panel="handleOpenOperatorsPanel"
+          @open-database-status="handleOpenDatabaseStatus"
+        />
       </div>
     </template>
   </LayoutWrapper>
@@ -40,6 +46,27 @@ const handlePinSelected = () => {
 
 const handlePinDeselected = () => {
   // The map store will handle the deselection
+}
+
+// Status card panel handlers
+const handleOpenDronesPanel = () => {
+  // TODO: Implement drones panel
+  console.log('Open drones panel')
+}
+
+const handleOpenDetectionsPanel = () => {
+  // TODO: Implement detections panel
+  console.log('Open detections panel')
+}
+
+const handleOpenOperatorsPanel = () => {
+  // TODO: Implement operators panel
+  console.log('Open operators panel')
+}
+
+const handleOpenDatabaseStatus = () => {
+  // TODO: Implement database status modal
+  console.log('Open database status')
 }
 
 // Lifecycle

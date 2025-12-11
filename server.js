@@ -1,12 +1,17 @@
 import express from 'express'
 import cors from 'cors'
 import mysql from 'mysql2/promise'
+import sqlite3 from 'sqlite3'
+import fs from 'fs'
+import path from 'path'
 import dotenv from 'dotenv'
 
 dotenv.config()
 
 const app = express()
-const PORT = process.env.PORT || 3001
+const PORT = parseInt(process.env.PORT || process.env.SERVER_PORT || '3001', 10)
+const USE_SQLITE = process.env.USE_SQLITE === 'true'
+const SQLITE_PATH = process.env.SQLITE_PATH || path.join(process.cwd(), 'database.sqlite')
 
 // Middleware
 app.use(cors())
@@ -14,51 +19,126 @@ app.use(express.json())
 
 // MariaDB connection configuration
 const DB_CONFIG = {
-  // host: '172.16.50.100',
-  // port: 3306,
-  host: 'detect.pm99.site', // TODO: Turn this into a variable, so when I use the SFTP server, I can apply its own env file with a different value for this variable
-  port: 58591, // TODO: Turn this into a variable, so when I use the SFTP server, I can apply its own env file with a different value for this variable
-  user: 'drone_app',
-  password: 'Qwerty@',
-  connectionLimit: 10,
-  acquireTimeout: 60000,
-  timeout: 60000,
+  host: process.env.DB_HOST || 'localhost',
+  port: parseInt(process.env.DB_PORT || '3306', 10),
+  user: process.env.DB_USER || 'root',
+  password: process.env.DB_PASSWORD || '',
+  database: process.env.DB_NAME || 'drone_monitoring',
+  connectionLimit: parseInt(process.env.DB_CONNECTION_LIMIT || '10', 10),
+  acquireTimeout: parseInt(process.env.DB_ACQUIRE_TIMEOUT || '60000', 10),
+  timeout: parseInt(process.env.DB_TIMEOUT || '60000', 10),
   // Add additional connection options
-  connectTimeout: 10000,
-  acquireTimeout: 10000,
-  reconnect: true,
-  charset: 'utf8mb4'
+  connectTimeout: parseInt(process.env.DB_CONNECT_TIMEOUT || '10000', 10),
+  reconnect: process.env.DB_RECONNECT !== 'false',
+  charset: process.env.DB_CHARSET || 'utf8mb4'
 }
 
-// Create connection pool
+// Create connection pools
 let connectionPool = null
+let connectionPoolPromise = null
+let sqliteDb = null
+
+const createSqliteConnection = () => {
+  if (!sqliteDb) {
+    sqliteDb = new sqlite3.Database(SQLITE_PATH)
+    console.log(`[SQLite] Connected to ${SQLITE_PATH}`)
+  }
+
+  return {
+    execute: (query, params = []) =>
+      new Promise((resolve, reject) => {
+        const trimmed = query.trim().toLowerCase()
+        if (trimmed.startsWith('select')) {
+          sqliteDb.all(query, params, (err, rows) => {
+            if (err) return reject(err)
+            resolve([rows])
+          })
+        } else {
+          sqliteDb.run(query, params, function (err) {
+            if (err) return reject(err)
+            resolve([[{ changes: this.changes, lastID: this.lastID }]])
+          })
+        }
+      }),
+    release: () => {}
+  }
+}
+
+const sqlitePool = {
+  getConnection: async () => createSqliteConnection()
+}
 
 const createConnectionPool = async () => {
+  if (USE_SQLITE) {
+    return sqlitePool
+  }
+
   if (connectionPool) {
     return connectionPool
   }
 
+  if (connectionPoolPromise) {
+    return connectionPoolPromise
+  }
+
+  connectionPoolPromise = (async () => {
   try {
-    // First try a simple connection to test
     console.log('[MariaDB] Testing connection...')
     const testConnection = await mysql.createConnection({
       host: DB_CONFIG.host,
       port: DB_CONFIG.port,
       user: DB_CONFIG.user,
       password: DB_CONFIG.password,
-      connectTimeout: 10000,
-      acquireTimeout: 10000
+      connectTimeout: 10000
     })
     
     await testConnection.ping()
     await testConnection.end()
     console.log('[MariaDB] Test connection successful')
     
-    // Now create the pool
     connectionPool = mysql.createPool({
       ...DB_CONFIG,
       waitForConnections: true,
-      queueLimit: 0,
+      queueLimit: 0
+    })
+    
+    // Add error handlers to the connection pool
+    connectionPool.on('connection', (connection) => {
+      console.log('[MariaDB] New connection established')
+      
+      // Handle connection errors
+      connection.on('error', (err) => {
+        console.error('[MariaDB] Connection error:', {
+          code: err.code,
+          errno: err.errno,
+          sqlState: err.sqlState,
+          message: err.message
+        })
+        
+        // If connection is fatal, remove it from pool
+        if (err.code === 'PROTOCOL_CONNECTION_LOST' || 
+            err.code === 'ECONNRESET' || 
+            err.code === 'ETIMEDOUT' ||
+            err.fatal) {
+          console.warn('[MariaDB] Fatal connection error, connection will be removed from pool')
+        }
+      })
+    })
+    
+    // Handle pool-level errors
+    connectionPool.on('error', (err) => {
+      console.error('[MariaDB] Pool error:', {
+        code: err.code,
+        errno: err.errno,
+        message: err.message
+      })
+      
+      // Only reset pool on truly fatal errors, and only if it's not already being reset
+      // Don't reset on ECONNRESET as the pool handles this automatically
+      if ((err.code === 'PROTOCOL_CONNECTION_LOST' || err.fatal) && connectionPool) {
+        console.warn('[MariaDB] Fatal pool error detected, will recreate pool on next request if needed')
+        // Don't set to null immediately - let individual requests handle it
+      }
     })
     
     console.log('[MariaDB] Connection pool created successfully')
@@ -66,33 +146,126 @@ const createConnectionPool = async () => {
   } catch (error) {
     console.error('[MariaDB] Failed to create connection pool:', error)
     throw error
+    } finally {
+      connectionPoolPromise = null
+    }
+  })()
+
+  return connectionPoolPromise
+}
+
+// Helper function to safely get a connection with validation
+const getConnection = async (retryCount = 0) => {
+  const MAX_RETRIES = 3
+  
+  const pool = await createConnectionPool()
+  
+  // If pool was reset due to error, recreate it
+  if (!pool && !USE_SQLITE) {
+    if (retryCount >= MAX_RETRIES) {
+      throw new Error('Failed to create connection pool after multiple retries')
+    }
+    connectionPool = null
+    return await getConnection(retryCount + 1)
   }
+  
+  const connection = await pool.getConnection()
+  
+  // Validate connection is still alive (only for MariaDB)
+  if (!USE_SQLITE) {
+    try {
+      await connection.ping()
+    } catch (pingError) {
+      // Connection is dead, release it and get a new one
+      connection.release()
+      if (retryCount >= MAX_RETRIES) {
+        throw new Error('Failed to get valid connection after multiple retries: ' + pingError.message)
+      }
+      console.warn('[MariaDB] Connection validation failed, getting new connection:', pingError.message)
+      return await getConnection(retryCount + 1)
+    }
+  }
+  
+  return { connection, pool }
+}
+
+// Helper function to safely execute queries with automatic connection handling
+const executeQuery = async (queryFn) => {
+  let connection = null
+  let pool = null
+  
+  try {
+    const result = await getConnection()
+    connection = result.connection
+    pool = result.pool
+    
+    return await queryFn(connection)
+  } catch (error) {
+    // Handle connection errors
+    if (error.code === 'ECONNRESET' || 
+        error.code === 'PROTOCOL_CONNECTION_LOST' || 
+        error.code === 'ETIMEDOUT' ||
+        error.fatal) {
+      console.error('[MariaDB] Connection error during query:', {
+        code: error.code,
+        message: error.message
+      })
+      
+      // Reset pool to force recreation on next request
+      if (!USE_SQLITE && connectionPool) {
+        try {
+          await connectionPool.end()
+        } catch (endError) {
+          // Ignore errors when ending pool
+        }
+        connectionPool = null
+      }
+    }
+    throw error
+  } finally {
+    // Always release connection
+    if (connection) {
+      try {
+        connection.release()
+      } catch (releaseError) {
+        console.warn('[MariaDB] Error releasing connection:', releaseError.message)
+      }
+    }
+  }
+}
+
+// Helpers for SQLite metadata queries
+const getSqliteTables = async connection => {
+  const [rows] = await connection.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
+  return rows.map(row => row.name)
 }
 
 // Routes
 
 // Database health check
 app.get('/api/db/health', async (req, res) => {
+  let connection = null
   try {
     console.log('[API] Testing database connection...')
-    
+
     const pool = await createConnectionPool()
-    const connection = await pool.getConnection()
-    
-    // Test basic connection
-    const [rows] = await connection.execute('SELECT 1 as test, VERSION() as version')
-    
-    connection.release()
+    connection = await pool.getConnection()
+
+    let query = 'SELECT 1 as test, VERSION() as version'
+    if (USE_SQLITE) {
+      query = 'SELECT 1 as test, sqlite_version() as version'
+    }
+
+    const [rows] = await connection.execute(query)
     
     res.json({
       success: true,
-      message: 'MariaDB connection successful',
+      message: USE_SQLITE ? 'SQLite connection successful' : 'MariaDB connection successful',
       data: rows
     })
   } catch (error) {
     console.error('[API] Connection test failed:', error)
     
-    // If it's a connection timeout, provide helpful information
     if (error.code === 'ETIMEDOUT') {
       res.status(500).json({
         success: false,
@@ -107,27 +280,40 @@ app.get('/api/db/health', async (req, res) => {
     } else {
       res.status(500).json({
         success: false,
-        message: `MariaDB connection failed: ${error.message}`,
+        message: `Database connection failed: ${error.message}`,
         error: error.message
       })
+    }
+  } finally {
+    // Always release connection
+    if (connection) {
+      try {
+        connection.release()
+      } catch (releaseError) {
+        console.warn('[API] Error releasing connection:', releaseError.message)
+      }
     }
   }
 })
 
 // Get all databases
 app.get('/api/db/databases', async (req, res) => {
+  let connection = null
   try {
     console.log('[API] Fetching databases...')
     
     const pool = await createConnectionPool()
-    const connection = await pool.getConnection()
+    connection = await pool.getConnection()
     
+    let databases = []
+    if (USE_SQLITE) {
+      databases = ['sqlite']
+    } else {
     const [rows] = await connection.execute('SHOW DATABASES')
-    connection.release()
-    
-    const databases = rows.map(row => row.Database).filter(db => 
-      !['information_schema', 'performance_schema', 'mysql', 'sys'].includes(db)
-    )
+      databases = rows
+        .map(row => row.Database)
+        .filter(db => !['information_schema', 'performance_schema', 'mysql', 'sys'].includes(db))
+    }
     
     res.json({
       success: true,
@@ -135,10 +321,31 @@ app.get('/api/db/databases', async (req, res) => {
     })
   } catch (error) {
     console.error('[API] Failed to fetch databases:', error)
+    
+    // Handle connection errors - don't reset pool immediately as it handles recovery automatically
+    // Only log the error for monitoring
+    if (error.code === 'ECONNRESET' || 
+        error.code === 'PROTOCOL_CONNECTION_LOST' || 
+        error.code === 'ETIMEDOUT' ||
+        error.fatal) {
+      console.warn('[API] Connection error detected:', error.code, '- Pool will handle recovery automatically')
+      // Don't reset pool here - let mysql2 pool handle it automatically
+      // Resetting here can cause issues with concurrent requests
+    }
+    
     res.status(500).json({
       success: false,
       error: error.message
     })
+  } finally {
+    // Always release connection
+    if (connection) {
+      try {
+        connection.release()
+      } catch (releaseError) {
+        console.warn('[API] Error releasing connection:', releaseError.message)
+      }
+    }
   }
 })
 
@@ -150,16 +357,24 @@ app.get('/api/db/tables', async (req, res) => {
     const pool = await createConnectionPool()
     const connection = await pool.getConnection()
     
+    let tables = []
+    if (USE_SQLITE) {
+      tables = (await getSqliteTables(connection)).map(name => ({
+        name,
+        database: 'sqlite'
+      }))
+    } else {
     const [rows] = await connection.execute('SHOW TABLES')
-    connection.release()
-    
-    const tables = rows.map(row => {
+      tables = rows.map(row => {
       const tableName = Object.values(row)[0]
       return {
         name: tableName,
         database: 'current'
       }
     })
+    }
+
+    connection.release()
     
     res.json({
       success: true,
@@ -183,16 +398,24 @@ app.get('/api/db/tables/:database', async (req, res) => {
     const pool = await createConnectionPool()
     const connection = await pool.getConnection()
     
+    let tables = []
+    if (USE_SQLITE) {
+      tables = (await getSqliteTables(connection)).map(name => ({
+        name,
+        database: 'sqlite'
+      }))
+    } else {
     const [rows] = await connection.execute(`SHOW TABLES FROM \`${database}\``)
-    connection.release()
-    
-    const tables = rows.map(row => {
+      tables = rows.map(row => {
       const tableName = Object.values(row)[0]
       return {
         name: tableName,
-        database: database
+          database
       }
     })
+    }
+
+    connection.release()
     
     res.json({
       success: true,
@@ -209,33 +432,214 @@ app.get('/api/db/tables/:database', async (req, res) => {
 
 // Get data from a specific table
 app.get('/api/db/table/:tableName', async (req, res) => {
+  let connection = null
   try {
     const { tableName } = req.params
-    const { database, limit = 100 } = req.query
-    
-    console.log(`[API] Fetching data from table: ${tableName}${database ? ` in database: ${database}` : ''}`)
-    
+    const { database, limit, offset, count, type, status, timeWindow, zone, search } = req.query
+
     const pool = await createConnectionPool()
-    const connection = await pool.getConnection()
-    
-    let query = `SELECT * FROM \`${tableName}\` LIMIT ${limit}`
-    if (database) {
-      query = `SELECT * FROM \`${database}\`.\`${tableName}\` LIMIT ${limit}`
+    connection = await pool.getConnection()
+
+    // Build base query
+    let baseQuery = `SELECT * FROM \`${tableName}\``
+    if (USE_SQLITE) {
+      baseQuery = `SELECT * FROM ${tableName}`
+    } else if (database) {
+      baseQuery = `SELECT * FROM \`${database}\`.\`${tableName}\``
     }
+
+    // Build WHERE clause for filters (only for rf_detections table)
+    const whereConditions = []
+    const queryParams = []
     
-    const [rows] = await connection.execute(query)
-    connection.release()
-    
-    res.json({
-      success: true,
-      data: rows
-    })
+    if (tableName === 'rf_detections') {
+      // Type filter
+      if (type && type !== 'all') {
+        whereConditions.push(`(type = ? OR target_type = ? OR category = ?)`)
+        queryParams.push(type, type, type)
+      }
+
+      // Status filter
+      if (status && status !== 'all') {
+        whereConditions.push(`(status = ? OR tracking_status = ? OR alert_status = ?)`)
+        queryParams.push(status, status, status)
+      }
+
+      // Zone filter
+      if (zone && zone !== 'all') {
+        if (zone === 'none') {
+          whereConditions.push(`(zone IS NULL OR zone = '' OR zone = 'null')`)
+        } else {
+          whereConditions.push(`zone = ?`)
+          queryParams.push(zone)
+        }
+      }
+
+      // Time window filter (in minutes)
+      if (timeWindow) {
+        const timeWindowNum = parseInt(timeWindow, 10)
+        if (!isNaN(timeWindowNum) && timeWindowNum > 0) {
+          // Use MySQL's DATE_SUB function to calculate cutoff time in database timezone
+          // This ensures we're comparing timestamps in the same timezone
+          // DATE_SUB(NOW(), INTERVAL X MINUTE) gives us the cutoff time
+          if (USE_SQLITE) {
+            // SQLite: use datetime function
+            const cutoffTime = new Date(Date.now() - timeWindowNum * 60 * 1000)
+            const cutoffTimeStr = cutoffTime.toISOString().slice(0, 19).replace('T', ' ')
+            whereConditions.push(`time >= ?`)
+            queryParams.push(cutoffTimeStr)
+          } else {
+            // MySQL/MariaDB: use DATE_SUB with NOW() to handle timezone correctly
+            // Note: 'time' is a reserved word in MySQL, so we need backticks
+            whereConditions.push(`\`time\` >= DATE_SUB(NOW(), INTERVAL ? MINUTE)`)
+            queryParams.push(timeWindowNum)
+          }
+        }
+      }
+
+      // Search filter (search in type, sensor_name, receiver_name, id)
+      if (search && search.trim()) {
+        const searchTerm = `%${search.trim()}%`
+        whereConditions.push(`(
+          type LIKE ? OR
+          target_type LIKE ? OR
+          sensor_name LIKE ? OR
+          receiver_name LIKE ? OR
+          sensor_id LIKE ? OR
+          CAST(id AS CHAR) LIKE ?
+        )`)
+        queryParams.push(searchTerm, searchTerm, searchTerm, searchTerm, searchTerm, searchTerm)
+      }
+    }
+
+    const whereClause = whereConditions.length > 0 ? ` WHERE ${whereConditions.join(' AND ')}` : ''
+
+    // If count is requested, return total count only
+    if (count === 'true') {
+      let countQuery = `SELECT COUNT(*) as total FROM \`${tableName}\``
+      if (USE_SQLITE) {
+        countQuery = `SELECT COUNT(*) as total FROM ${tableName}`
+      } else if (database) {
+        countQuery = `SELECT COUNT(*) as total FROM \`${database}\`.\`${tableName}\``
+      }
+      countQuery += whereClause
+
+      console.log(`[API] Executing count query: ${countQuery}`, queryParams.length > 0 ? `with params: ${JSON.stringify(queryParams)}` : '')
+      const [countRows] = await connection.execute(countQuery, queryParams.length > 0 ? queryParams : [])
+      const totalCount = countRows[0]?.total || 0
+      console.log(`[API] Count result for ${tableName}:`, totalCount, typeof totalCount)
+      
+      // Ensure count is a number (MySQL might return it as a string or BigInt)
+      const countValue = typeof totalCount === 'bigint' ? Number(totalCount) : Number(totalCount)
+      
+      return res.json({
+        success: true,
+        count: Number.isFinite(countValue) ? countValue : 0
+      })
+    }
+
+    let query = baseQuery + whereClause
+
+    // Apply ORDER BY for consistent pagination (order by id descending for newest first)
+    // Try to order by id, but if the table doesn't have id, we'll catch the error
+    // Only add ORDER BY if we have a limit/offset (for pagination) or if it's rf_detections
+    if (limit || offset || tableName === 'rf_detections') {
+      try {
+        const idColumn = USE_SQLITE ? 'id' : 'id'
+        query += ` ORDER BY ${idColumn} DESC`
+      } catch (orderError) {
+        // If ordering fails, we'll try without it
+        console.warn(`[API] Could not add ORDER BY for table ${tableName}, continuing without it`)
+      }
+    }
+
+    // Apply LIMIT and OFFSET for pagination
+    // MySQL/MariaDB syntax: LIMIT count OFFSET offset
+    if (limit) {
+      const limitNum = parseInt(limit, 10)
+      if (!isNaN(limitNum) && limitNum > 0) {
+        if (offset) {
+          const offsetNum = parseInt(offset, 10)
+          if (!isNaN(offsetNum) && offsetNum >= 0) {
+            // MySQL/MariaDB: LIMIT count OFFSET offset
+            query += ` LIMIT ${limitNum} OFFSET ${offsetNum}`
+          } else {
+            query += ` LIMIT ${limitNum}`
+          }
+        } else {
+          query += ` LIMIT ${limitNum}`
+        }
+      }
+    } else if (offset) {
+      // If only offset is provided without limit, we still need a limit
+      // Use a large number as default limit
+      const offsetNum = parseInt(offset, 10)
+      if (!isNaN(offsetNum) && offsetNum >= 0) {
+        query += ` LIMIT 18446744073709551615 OFFSET ${offsetNum}`
+      }
+    }
+
+    console.log(`[API] Fetching data from table: ${tableName}${database ? ` in database: ${database}` : ''}${offset ? ` (offset: ${offset})` : ''}${limit ? ` (limit: ${limit})` : ' (no limit)'}${queryParams.length > 0 ? ` with ${queryParams.length} filter params` : ''}`)
+    console.log(`[API] Query: ${query}`)
+    if (queryParams.length > 0) {
+      console.log(`[API] Query params:`, queryParams)
+    }
+
+    try {
+      // Only pass queryParams if we have parameters, otherwise pass empty array
+      const [rows] = await connection.execute(query, queryParams.length > 0 ? queryParams : [])
+      
+      res.json({
+        success: true,
+        data: rows
+      })
+    } catch (queryError) {
+      console.error(`[API] Query execution failed for table ${tableName}:`, queryError)
+      console.error(`[API] Failed query: ${query}`)
+      if (queryParams.length > 0) {
+        console.error(`[API] Query params were:`, queryParams)
+      }
+      throw queryError
+    }
   } catch (error) {
     console.error(`[API] Failed to fetch data from table ${req.params.tableName}:`, error)
+    console.error(`[API] Error details:`, {
+      message: error.message,
+      code: error.code,
+      sqlMessage: error.sqlMessage,
+      sql: error.sql,
+      errno: error.errno,
+      sqlState: error.sqlState,
+      stack: error.stack
+    })
+    
+    // Handle connection errors - don't reset pool immediately as it handles recovery automatically
+    // Only log the error for monitoring
+    if (error.code === 'ECONNRESET' || 
+        error.code === 'PROTOCOL_CONNECTION_LOST' || 
+        error.code === 'ETIMEDOUT' ||
+        error.fatal) {
+      console.warn('[API] Connection error detected:', error.code, '- Pool will handle recovery automatically')
+      // Don't reset pool here - let mysql2 pool handle it automatically
+      // Resetting here can cause issues with concurrent requests
+    }
+    
     res.status(500).json({
       success: false,
-      error: error.message
+      error: error.message,
+      sqlError: error.sqlMessage || error.message,
+      code: error.code,
+      tableName: req.params.tableName
     })
+  } finally {
+    // Always release connection
+    if (connection) {
+      try {
+        connection.release()
+      } catch (releaseError) {
+        console.warn('[API] Error releasing connection:', releaseError.message)
+      }
+    }
   }
 })
 
@@ -251,7 +655,9 @@ app.get('/api/db/schema/:tableName', async (req, res) => {
     const connection = await pool.getConnection()
     
     let query = `DESCRIBE \`${tableName}\``
-    if (database) {
+    if (USE_SQLITE) {
+      query = `PRAGMA table_info(${tableName})`
+    } else if (database) {
       query = `DESCRIBE \`${database}\`.\`${tableName}\``
     }
     
@@ -312,15 +718,22 @@ app.get('/api/db/all-data', async (req, res) => {
     const pool = await createConnectionPool()
     const connection = await pool.getConnection()
     
-    // Get all databases
-    const [dbRows] = await connection.execute('SHOW DATABASES')
-    const databases = dbRows.map(row => row.Database).filter(db => 
-      !['information_schema', 'performance_schema', 'mysql', 'sys'].includes(db)
-    )
-    
     const allData = {}
     
-    // For each database, get all tables and their data
+    if (USE_SQLITE) {
+      const tables = await getSqliteTables(connection)
+      allData.sqlite = {}
+
+      for (const table of tables) {
+        const [dataRows] = await connection.execute(`SELECT * FROM ${table} LIMIT 50`)
+        allData.sqlite[table] = dataRows
+      }
+    } else {
+      const [dbRows] = await connection.execute('SHOW DATABASES')
+      const databases = dbRows
+        .map(row => row.Database)
+        .filter(db => !['information_schema', 'performance_schema', 'mysql', 'sys'].includes(db))
+
     for (const database of databases) {
       const [tableRows] = await connection.execute(`SHOW TABLES FROM \`${database}\``)
       const tables = tableRows.map(row => Object.values(row)[0])
@@ -334,6 +747,7 @@ app.get('/api/db/all-data', async (req, res) => {
         } catch (error) {
           console.warn(`[API] Failed to get data from table ${table}:`, error.message)
           allData[database][table] = []
+          }
         }
       }
     }
@@ -353,6 +767,53 @@ app.get('/api/db/all-data', async (req, res) => {
   }
 })
 
+// ===== Mock drone states for detections endpoint =====
+let droneStates = {}
+const mockDroneStatesPath = path.join(process.cwd(), 'scripts', 'mock_drone_states.json')
+
+const loadDroneStates = () => {
+  try {
+    if (fs.existsSync(mockDroneStatesPath)) {
+      const raw = fs.readFileSync(mockDroneStatesPath, 'utf-8')
+      droneStates = JSON.parse(raw)
+      console.log(`[API] Loaded ${Object.keys(droneStates).length} mock drone states`)
+    } else {
+      console.warn('[API] mock_drone_states.json not found; /api/detections will be empty')
+    }
+  } catch (error) {
+    console.error('[API] Failed to load mock drone states:', error)
+  }
+}
+
+loadDroneStates()
+
+app.get('/api/detections', (req, res) => {
+  const allDetections = {}
+  const now = new Date()
+
+  Object.entries(droneStates).forEach(([mac, state]) => {
+    if (!state.last_update) return
+    const lastUpdate = new Date(state.last_update)
+    if (Number.isNaN(lastUpdate.getTime())) return
+
+    if ((now - lastUpdate) / 1000 < 600) {
+      allDetections[mac] = {
+        mac_address: mac,
+        serial_number: state.serial_number ?? null,
+        uas_id: state.uas_id ?? null,
+        has_coordinates: state.has_coordinates ?? false,
+        drone_lat: state.drone_lat ?? null,
+        drone_lon: state.drone_lon ?? null,
+        receiver_type: state.receiver_type ?? 'unknown',
+        last_detection: state.last_update,
+        altitude: state.altitude ?? null,
+        speed: state.speed ?? null
+      }
+    }
+  })
+
+  res.json(allDetections)
+})
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -374,10 +835,14 @@ app.use((error, req, res, next) => {
 })
 
 // Start server
-app.listen(PORT, () => {
+// Bind to 0.0.0.0 to accept connections from all network interfaces (for remote access)
+const HOST = process.env.SERVER_HOST === 'localhost' ? 'localhost' : '0.0.0.0'
+app.listen(PORT, HOST, () => {
+  const serverHost = process.env.SERVER_HOST || 'localhost'
   console.log(`[API] Database server running on port ${PORT}`)
-  console.log(`[API] Health check: http://${DB_CONFIG.host}:${PORT}/api/health`)
-  console.log(`[API] Database health check: http://${DB_CONFIG.host}:${PORT}/api/db/health`)
+  console.log(`[API] Listening on ${HOST === '0.0.0.0' ? 'all interfaces' : HOST}`)
+  console.log(`[API] Health check: http://${serverHost}:${PORT}/api/health`)
+  console.log(`[API] Database health check: http://${serverHost}:${PORT}/api/db/health`)
 })
 
 // Graceful shutdown
@@ -385,6 +850,9 @@ process.on('SIGINT', async () => {
   console.log('[API] Shutting down server...')
   if (connectionPool) {
     await connectionPool.end()
+  }
+  if (sqliteDb) {
+    sqliteDb.close()
   }
   process.exit(0)
 })

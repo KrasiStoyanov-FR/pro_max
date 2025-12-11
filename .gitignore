@@ -26,6 +26,8 @@ dist-ssr
 # Environment variables
 .env
 .env.local
+.env.remote
+.env.example
 .env.development.local
 .env.test.local
 .env.production.local

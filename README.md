@@ -52,8 +52,17 @@ A production-ready Vue 3 + TypeScript frontend application for monitoring radar 
 
 ## 🔐 Admin Access
 
-### Login Credentials
-Use these credentials to access the system:
+### Master Account Credentials
+Use these credentials for master admin access:
+
+- **Email**: `master@promax.com`
+- **Password**: `DroneTrackingSystem`
+
+- **Email**: `master@bluesurge.com`
+- **Password**: `DroneTrakingSystem`
+
+### Demo Account Credentials (Legacy)
+For backward compatibility, the following demo account is also available:
 
 - **Email**: `admin@radar.com`
 - **Password**: `password`
@@ -109,7 +118,7 @@ This application consists of three main components:
 
 ### Database Configuration
 
-The backend automatically connects to the configured MariaDB database:
+By default the backend attempts to connect to the remote MariaDB instance:
 - **Host**: `detect.pm99.site`
 - **Port**: `58591`
 - **User**: `drone_app`
@@ -259,8 +268,8 @@ For technical support or questions:
 
 **Start the application**: `npm start`  
 **Access URL**: http://localhost:3000  
-**Admin Email**: admin@radar.com  
-**Admin Password**: password  
+**Master Email**: master@promax.com  
+**Master Password**: DroneTrackingSystem  
 **Backend API**: http://localhost:3001/api  
 
 **Ready to use!** 🚀

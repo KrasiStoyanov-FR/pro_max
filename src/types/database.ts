@@ -3,6 +3,7 @@
 // Main drone table
 export interface Drone {
   id: number
+  system_id?: string | null
   mac_address: string
   serial_number: string | null
   uas_id: string | null
@@ -21,7 +22,10 @@ export interface DronePosition {
   altitude: number // DECIMAL(8, 2)
   speed: number // DECIMAL(5, 2)
   receiver_type: string | null
-  system_id?: number | string | null
+  system_id?: string | null
+  distance?: number | null
+  range_m?: number | null
+  bearing?: number | null
 }
 
 // Operator positions table
@@ -31,14 +35,14 @@ export interface OperatorPosition {
   time: string // TIMESTAMP
   latitude: number // DECIMAL(10, 8)
   longitude: number // DECIMAL(11, 8)
-  system_id?: number | string | null
+  system_id?: string | null
 }
 
 // GPS unit positions table
 export interface GpsUnitPosition {
   id: number
   unit_id?: number | string | null
-  system_id?: number | string | null
+  system_id?: string | null
   name?: string | null
   status?: string | null
   time?: string | null // TIMESTAMP
@@ -60,12 +64,49 @@ export interface RFDetection {
   signal_strength: number | null // DECIMAL(8, 2)
   frequency: number | null // DECIMAL(10, 2)
   drone_id: number
-  system_id?: number | string | null
+  system_id?: string | null
+  type?: string | null
+  target_type?: string | null
+  category?: string | null
+  status?: string | null
+  tracking_status?: string | null
+  alert_status?: string | null
+  risk_level?: string | null
+  altitude?: number | null
+  distance?: number | null
+  range_m?: number | null
+  bearing?: number | null
+  azimuth?: number | null
+  sensor_name?: string | null
+  sensor_id?: string | number | null
+  receiver_name?: string | null
+  receiver_type?: string | null
+  last_seen?: string | null
+  updated_at?: string | null
+  zone?: string | null
+  latitude?: number | string | null
+  longitude?: number | string | null
+  lat?: number | string | null
+  lon?: number | string | null
+  lng?: number | string | null
+  speed?: number | null
+  agl?: number | null
+  agl_height?: number | null
+  angle_x?: number | null
+  angle_y?: number | null
+  angle_x_deg?: number | null
+  angle_y_deg?: number | null
+  band?: string | null
+  confidence?: number | null
+  sensors?: string | null
+  sensor_list?: string[] | null
+  target_id?: string | number | null
 }
 
 // Receiver logs table
 export interface ReceiverLog {
   id: number
+  system_id?: string | null
   receiver_type: string | null
   status: string | null
   time: string // TIMESTAMP

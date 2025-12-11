@@ -14,7 +14,7 @@
           Welcome Back!
         </h2>
         <p class="mt-2 text-sm text-neutral-100">
-          Sign in to access the radar monitoring system
+          Sign in to access the Drone Tracking System
         </p>
       </div>
 
@@ -83,51 +83,49 @@
         </div>
 
         <!-- Error message -->
-        <div v-if="errorMessage" class="rounded-md bg-red-50 p-4">
+        <div v-if="errorMessage" class="p-4 bg-red-900/50 rounded-xl border border-red-600/30 backdrop-blur-lg">
           <div class="flex">
             <div class="flex-shrink-0">
-              <svg class="h-5 w-5 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                  d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z">
-                </path>
-              </svg>
+              <PhWarningCircle :size="20" class="text-red-500" weight="bold" />
             </div>
             <div class="ml-3">
-              <h3 class="text-sm font-medium text-red-800">Sign in failed</h3>
-              <div class="mt-2 text-sm text-red-700">
+              <h3 class="text-sm font-medium text-white">Sign in failed</h3>
+              <div class="mt-2 text-sm text-neutral-100">
                 <p>{{ errorMessage }}</p>
               </div>
             </div>
           </div>
         </div>
 
-        <!-- Demo credentials -->
-        <div class="p-4 bg-blue-900/50 rounded-xl border border-blue-600/30 backdrop-blur-lg">
+        <!-- Master Account Credentials -->
+        <!-- <div class="p-4 bg-blue-900/50 rounded-xl border border-blue-600/30 backdrop-blur-lg">
           <div class="flex">
             <div class="flex-shrink-0">
               <PhInfo :size="20" class="text-blue-500" weight="bold" />
             </div>
             <div class="ml-3">
-              <h3 class="text-sm font-medium text-white">Demo Credentials</h3>
+              <h3 class="text-sm font-medium text-white">Master Account</h3>
               <div class="mt-2 text-sm text-neutral-100">
-                <p><strong>Email:</strong> admin@radar.com</p>
-                <p><strong>Password:</strong> password</p>
+                <p><strong>Email:</strong> master@promax.com</p>
+                <p><strong>Password:</strong> DroneTrackingSystem</p>
               </div>
             </div>
           </div>
-        </div>
+        </div> -->
       </form>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { useAuth } from '@/composables/useAuth'
-import { PhInfo, PhMagnifyingGlass } from '@phosphor-icons/vue'
+import { useAuthStore } from '@/store/auth'
+import { PhInfo, PhMagnifyingGlass, PhWarningCircle } from '@phosphor-icons/vue'
 
 // Composables
 const { login } = useAuth()
+const authStore = useAuthStore()
 
 // State
 const isLoading = ref(false)
@@ -141,6 +139,15 @@ const form = reactive({
   email: '',
   password: '',
   rememberMe: false
+})
+
+// Restore remembered email on mount
+onMounted(() => {
+  const rememberedEmail = authStore.getRememberedEmail()
+  if (rememberedEmail) {
+    form.email = rememberedEmail
+    form.rememberMe = true
+  }
 })
 
 // Methods
@@ -172,7 +179,8 @@ const handleLogin = async () => {
   try {
     const result = await login({
       email: form.email,
-      password: form.password
+      password: form.password,
+      rememberMe: form.rememberMe
     })
 
     if (!result.success) {

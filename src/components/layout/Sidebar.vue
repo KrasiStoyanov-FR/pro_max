@@ -98,7 +98,7 @@
 
 <script setup lang="ts">
 import { useAuth } from '@/composables/useAuth';
-import { PhCompass, PhLayout, PhCaretLeft, PhUser, PhCaretDown } from '@phosphor-icons/vue'
+import { PhCompass, PhLayout, PhCaretLeft, PhUser, PhCaretDown, PhTarget, PhCellTower, PhSiren, PhClockCounterClockwise, PhFileText, PhGear, PhSignOut } from '@phosphor-icons/vue'
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useRoute } from 'vue-router'
 
@@ -129,34 +129,46 @@ const route = useRoute()
 // Uncomment routes in router/index.ts and create corresponding page components
 const navigationItems = [
   {
-    name: 'Map',
-    label: 'Map',
+    name: 'Live View',
+    label: 'Live View',
     href: '/map',
     icon: PhCompass
   },
   {
-    name: 'Dashboard',
-    label: 'Dashboard',
-    href: '/dashboard',
-    icon: PhLayout
+    name: 'Detections',
+    label: 'Detections',
+    href: '/detections',
+    icon: PhTarget
   },
   {
-    name: 'Account',
-    label: 'Account',
-    href: '/account',
-    icon: PhLayout
+    name: 'Sensors',
+    label: 'Sensors',
+    href: '/sensors',
+    icon: PhCellTower
   },
   {
-    name: 'Receivers',
-    label: 'Receivers',
-    href: '/receivers',
-    icon: PhLayout
+    name: 'Incidents',
+    label: 'Incidents',
+    href: '/incidents',
+    icon: PhSiren
   },
   {
-    name: 'Controls',
-    label: 'Controls',
-    href: '/controls',
-    icon: PhLayout
+    name: 'History',
+    label: 'History',
+    href: '/history',
+    icon: PhClockCounterClockwise
+  },
+  {
+    name: 'Reports',
+    label: 'Reports',
+    href: '/reports',
+    icon: PhFileText
+  },
+  {
+    name: 'Settings',
+    label: 'Settings',
+    href: '/settings',
+    icon: PhGear
   },
 ]
 
