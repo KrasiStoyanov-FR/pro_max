@@ -58,6 +58,9 @@ Use these credentials for master admin access:
 - **Email**: `master@promax.com`
 - **Password**: `DroneTrackingSystem`
 
+- **Email**: `master@bluesurge.com`
+- **Password**: `DroneTrakingSystem`
+
 ### Demo Account Credentials (Legacy)
 For backward compatibility, the following demo account is also available:
 

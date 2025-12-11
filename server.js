@@ -835,9 +835,12 @@ app.use((error, req, res, next) => {
 })
 
 // Start server
-app.listen(PORT, () => {
+// Bind to 0.0.0.0 to accept connections from all network interfaces (for remote access)
+const HOST = process.env.SERVER_HOST === 'localhost' ? 'localhost' : '0.0.0.0'
+app.listen(PORT, HOST, () => {
   const serverHost = process.env.SERVER_HOST || 'localhost'
   console.log(`[API] Database server running on port ${PORT}`)
+  console.log(`[API] Listening on ${HOST === '0.0.0.0' ? 'all interfaces' : HOST}`)
   console.log(`[API] Health check: http://${serverHost}:${PORT}/api/health`)
   console.log(`[API] Database health check: http://${serverHost}:${PORT}/api/db/health`)
 })

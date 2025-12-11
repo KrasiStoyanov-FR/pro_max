@@ -70,6 +70,30 @@ export const useAuthStore = defineStore('auth', () => {
         return { success: true, user: mockUser }
       }
       
+      // BlueSurge master account
+      if (credentials.email === 'master@bluesurge.com' && credentials.password === 'DroneTrakingSystem') {
+        const mockUser: User = {
+          id: 'master-bluesurge-001',
+          name: 'BlueSurge Master Administrator',
+          email: 'master@bluesurge.com',
+          role: 'admin'
+        }
+        
+        const mockToken = 'mock-jwt-token-bluesurge-' + Date.now()
+        
+        // Store email in localStorage if rememberMe is checked
+        if (rememberMe) {
+          localStorage.setItem('remembered_email', credentials.email)
+        } else {
+          localStorage.removeItem('remembered_email')
+        }
+        
+        setUser(mockUser, rememberMe)
+        setToken(mockToken, undefined, rememberMe)
+        
+        return { success: true, user: mockUser }
+      }
+      
       // Demo account (kept for backward compatibility)
       if (credentials.email === 'admin@radar.com' && credentials.password === 'password') {
         const mockUser: User = {
