@@ -98,7 +98,7 @@
 
 <script setup lang="ts">
 import { useAuth } from '@/composables/useAuth';
-import { PhCompass, PhLayout, PhCaretLeft, PhUser, PhCaretDown, PhTarget, PhCellTower, PhSiren, PhClockCounterClockwise, PhFileText, PhGear, PhSignOut } from '@phosphor-icons/vue'
+import { PhCompass, PhCaretLeft, PhUser, PhCaretDown, PhTarget, PhCellTower, PhSiren, PhClockCounterClockwise, PhFileText, PhGear, PhSignOut, PhDrone } from '@phosphor-icons/vue'
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useRoute } from 'vue-router'
 
@@ -145,6 +145,12 @@ const navigationItems = [
     label: 'Sensors',
     href: '/sensors',
     icon: PhCellTower
+  },
+  {
+    name: 'Drones',
+    label: 'Drones',
+    href: '/drones',
+    icon: PhDrone
   },
   {
     name: 'Incidents',
