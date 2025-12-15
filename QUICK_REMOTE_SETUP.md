@@ -89,3 +89,4 @@ DB_PORT=3307  # or whatever port your database uses
 3. Test: `mysql -h localhost -u drone_app -p'Qwerty@' drone_monitoring -e "SELECT 1;"`
 
 
+

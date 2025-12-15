@@ -349,6 +349,97 @@ app.get('/api/db/databases', async (req, res) => {
   }
 })
 
+// Delete a record by primary key from any table
+// Example: DELETE /api/db/table/gps_unit_position/123?database=drone_app
+app.delete('/api/db/table/:tableName/:recordId', async (req, res) => {
+  let connection = null
+  try {
+    const { tableName, recordId } = req.params
+    const { database, pkColumn } = req.query
+
+    if (!recordId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Record ID is required in the URL path'
+      })
+    }
+
+    const pool = await createConnectionPool()
+    connection = await pool.getConnection()
+
+    // Get table schema to identify primary key
+    let schemaQuery = ''
+    if (USE_SQLITE) {
+      schemaQuery = `PRAGMA table_info(${tableName})`
+    } else if (database) {
+      schemaQuery = `DESCRIBE \`${database}\`.\`${tableName}\``
+    } else {
+      schemaQuery = `DESCRIBE \`${tableName}\``
+    }
+
+    const [schemaRows] = await connection.execute(schemaQuery)
+
+    // Determine primary key column
+    let primaryKeyColumn = pkColumn
+    if (!primaryKeyColumn) {
+      const pkRow = schemaRows.find(row => {
+        if (USE_SQLITE) {
+          return row.pk === 1
+        } else {
+          return row.Key === 'PRI'
+        }
+      })
+      if (pkRow) {
+        primaryKeyColumn = USE_SQLITE ? pkRow.name : pkRow.Field
+      } else {
+        // Common fallbacks
+        const fallbackPk = ['id', 'unit_id', 'device_id', 'sensor_id', 'rowid'].find(col =>
+          schemaRows.some(row => {
+            if (USE_SQLITE) {
+              return row.name === col
+            }
+            return row.Field === col
+          })
+        )
+        primaryKeyColumn = fallbackPk || 'id'
+      }
+    }
+
+    // Build DELETE query
+    let deleteQuery = ''
+    if (USE_SQLITE) {
+      deleteQuery = `DELETE FROM ${tableName} WHERE ${primaryKeyColumn} = ?`
+    } else if (database) {
+      deleteQuery = `DELETE FROM \`${database}\`.\`${tableName}\` WHERE \`${primaryKeyColumn}\` = ?`
+    } else {
+      deleteQuery = `DELETE FROM \`${tableName}\` WHERE \`${primaryKeyColumn}\` = ?`
+    }
+
+    const [result] = await connection.execute(deleteQuery, [recordId])
+
+    const affected = (result && (result.affectedRows ?? result.changes)) || 0
+
+    res.json({
+      success: true,
+      data: { deleted: affected }
+    })
+  } catch (error) {
+    console.error('[API] Failed to delete record:', error)
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to delete record'
+    })
+  } finally {
+    if (connection) {
+      try {
+        connection.release()
+      } catch (releaseError) {
+        console.warn('[API] Error releasing connection:', releaseError.message)
+      }
+    }
+  }
+})
+
 // Get all tables (from current database)
 app.get('/api/db/tables', async (req, res) => {
   try {
@@ -423,6 +514,157 @@ app.get('/api/db/tables/:database', async (req, res) => {
     })
   } catch (error) {
     console.error('[API] Failed to fetch tables:', error)
+    res.status(500).json({
+      success: false,
+      error: error.message
+    })
+  }
+})
+
+// Create/Insert data into a specific table
+app.post('/api/db/table/:tableName', async (req, res) => {
+  let connection = null
+  try {
+    const { tableName } = req.params
+    const { database } = req.query
+    const { data } = req.body
+
+    if (!data || typeof data !== 'object') {
+      return res.status(400).json({
+        success: false,
+        error: 'Request body must contain a "data" object with the record to insert'
+      })
+    }
+
+    const pool = await createConnectionPool()
+    connection = await pool.getConnection()
+
+    // Get table schema to check which columns exist
+    let schemaQuery = ''
+    if (USE_SQLITE) {
+      schemaQuery = `PRAGMA table_info(${tableName})`
+    } else if (database) {
+      schemaQuery = `DESCRIBE \`${database}\`.\`${tableName}\``
+    } else {
+      schemaQuery = `DESCRIBE \`${tableName}\``
+    }
+
+    const [schemaRows] = await connection.execute(schemaQuery)
+    const existingColumns = new Set(
+      schemaRows.map(row => {
+        if (USE_SQLITE) {
+          return row.name
+        } else {
+          return row.Field
+        }
+      })
+    )
+
+    // Filter data to only include columns that exist in the table
+    const validColumns = Object.keys(data).filter(key => {
+      // Skip id if it's auto-increment
+      if (key === 'id') return false
+      // Only include columns that exist in the table
+      return existingColumns.has(key) && data[key] !== undefined && data[key] !== null
+    })
+
+    if (validColumns.length === 0) {
+      connection.release()
+      return res.status(400).json({
+        success: false,
+        error: 'No valid columns to insert. Available columns: ' + Array.from(existingColumns).join(', ')
+      })
+    }
+
+    const values = validColumns.map(col => data[col])
+    const placeholders = validColumns.map(() => '?').join(', ')
+
+    let insertQuery = ''
+    if (USE_SQLITE) {
+      insertQuery = `INSERT INTO ${tableName} (${validColumns.join(', ')}) VALUES (${placeholders})`
+    } else if (database) {
+      insertQuery = `INSERT INTO \`${database}\`.\`${tableName}\` (${validColumns.map(col => `\`${col}\``).join(', ')}) VALUES (${placeholders})`
+    } else {
+      insertQuery = `INSERT INTO \`${tableName}\` (${validColumns.map(col => `\`${col}\``).join(', ')}) VALUES (${placeholders})`
+    }
+
+    const [result] = await connection.execute(insertQuery, values)
+
+    // Get the primary key column name from schema
+    let primaryKeyColumn = null
+    if (USE_SQLITE) {
+      primaryKeyColumn = schemaRows.find(row => row.pk === 1)
+    } else {
+      primaryKeyColumn = schemaRows.find(row => row.Key === 'PRI')
+    }
+
+    let pkColumnName = null
+    if (primaryKeyColumn) {
+      pkColumnName = USE_SQLITE ? primaryKeyColumn.name : primaryKeyColumn.Field
+    }
+
+    // If no primary key found, try common column names
+    if (!pkColumnName) {
+      const commonPkNames = ['id', 'unit_id', 'device_id', 'sensor_id']
+      for (const name of commonPkNames) {
+        if (existingColumns.has(name)) {
+          pkColumnName = name
+          break
+        }
+      }
+    }
+
+    // Fallback for SQLite
+    if (!pkColumnName && USE_SQLITE) {
+      pkColumnName = 'rowid'
+    }
+
+    // Fetch the inserted record using the actual primary key column
+    const insertId = USE_SQLITE ? result.lastID : result.insertId
+    
+    if (!pkColumnName) {
+      // If we still can't find a primary key, just return the data we inserted
+      connection.release()
+      return res.json({
+        success: true,
+        data: data,
+        message: 'Record created successfully (could not fetch inserted record - no primary key found)'
+      })
+    }
+
+    let selectQuery = ''
+    if (USE_SQLITE) {
+      if (pkColumnName === 'rowid') {
+        selectQuery = `SELECT * FROM ${tableName} WHERE rowid = ?`
+      } else {
+        selectQuery = `SELECT * FROM ${tableName} WHERE ${pkColumnName} = ?`
+      }
+    } else if (database) {
+      selectQuery = `SELECT * FROM \`${database}\`.\`${tableName}\` WHERE \`${pkColumnName}\` = ?`
+    } else {
+      selectQuery = `SELECT * FROM \`${tableName}\` WHERE \`${pkColumnName}\` = ?`
+    }
+
+    const [rows] = await connection.execute(selectQuery, [insertId])
+
+    connection.release()
+
+    res.json({
+      success: true,
+      data: rows[0] || data,
+      message: 'Record created successfully'
+    })
+  } catch (error) {
+    console.error(`[API] Failed to insert into ${req.params.tableName}:`, error)
+    
+    if (connection) {
+      try {
+        connection.release()
+      } catch (releaseError) {
+        console.warn('[API] Error releasing connection:', releaseError.message)
+      }
+    }
+
     res.status(500).json({
       success: false,
       error: error.message

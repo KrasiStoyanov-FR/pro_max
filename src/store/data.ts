@@ -422,7 +422,18 @@ export const useDataStore = defineStore('data', () => {
       if (response.success && response.data) {
         gpsUnitPositions.value.clear()
         response.data.forEach(unit => {
-          const key = unit.id || unit.unit_id || String(unit.system_id) || String(Date.now())
+          // Build a unique key to avoid overwriting devices that share unit_id/system_id
+          const latVal = (unit as any)?.gps_lat ?? unit.latitude ?? (unit as any)?.lat ?? null
+          const lonVal = (unit as any)?.gps_lon ?? unit.longitude ?? (unit as any)?.lng ?? null
+          const timeVal = unit.time ?? (unit as any)?.timestamp ?? null
+
+          const key =
+            unit.id ??
+            unit.unit_id ??
+            (unit.system_id ? String(unit.system_id) : null) ??
+            // Fallback: include coordinates and time to differentiate rows
+            `row:${latVal ?? 'na'}:${lonVal ?? 'na'}:${timeVal ?? 'na'}:${Math.random().toString(36).slice(2)}`
+
           gpsUnitPositions.value.set(key, unit)
         })
         updateIndexes()
@@ -446,6 +457,45 @@ export const useDataStore = defineStore('data', () => {
 
   const getGpsUnitsBySystemId = (systemId: string): GpsUnitPosition[] => {
     return gpsUnitsBySystemId.value.get(systemId) || []
+  }
+
+  // Remove a GPS unit position locally by matching id/unit_id/system_id
+  const removeGpsUnitPosition = (pk: string | number) => {
+    const targetKey = String(pk)
+    const targetNum = Number(pk)
+    let removed = false
+    let removedKey: string | number | null = null
+
+    // Try to delete by map key directly if present
+    if (gpsUnitPositions.value.has(pk as any)) {
+      gpsUnitPositions.value.delete(pk as any)
+      removed = true
+      removedKey = pk
+    } else {
+      // Fallback: find by id/unit_id/system_id match (handle both string and number comparisons)
+      for (const [key, unit] of gpsUnitPositions.value.entries()) {
+        const matches =
+          (unit.id !== null && unit.id !== undefined && (String(unit.id) === targetKey || Number(unit.id) === targetNum)) ||
+          (unit.unit_id !== null && unit.unit_id !== undefined && (String(unit.unit_id) === targetKey || Number(unit.unit_id) === targetNum)) ||
+          (unit.system_id !== null && unit.system_id !== undefined && String(unit.system_id) === targetKey)
+        if (matches) {
+          gpsUnitPositions.value.delete(key)
+          removed = true
+          removedKey = key
+          break
+        }
+      }
+    }
+
+    if (removed) {
+      console.log('[DataStore] Removed GPS unit position:', { pk, removedKey, remaining: gpsUnitPositions.value.size })
+      updateIndexes()
+      // Clear cache to force refresh on next fetch
+      lastFetched.value.delete('gps_unit_positions_all')
+      lastFetched.value.delete('gps_unit_positions_undefined')
+    } else {
+      console.warn('[DataStore] Failed to find GPS unit position to remove:', pk, 'Available keys:', Array.from(gpsUnitPositions.value.keys()).slice(0, 5))
+    }
   }
 
   const getGpsUnitByUnitId = (unitId: number | string): GpsUnitPosition | undefined => {
@@ -588,6 +638,7 @@ export const useDataStore = defineStore('data', () => {
     fetchGpsUnitPositions,
     getGpsUnitPosition,
     getGpsUnitsBySystemId,
+    removeGpsUnitPosition,
     getGpsUnitByUnitId,
 
     // Receiver Logs

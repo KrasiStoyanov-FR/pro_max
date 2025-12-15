@@ -25,7 +25,6 @@
                 Refresh
               </button>
               <p class="text-xs text-neutral-400">
-                Auto-refresh every 10s &middot;
                 <span class="font-medium text-white">{{ sensors.length }}</span>
                 sensors
               </p>
@@ -59,7 +58,9 @@
                 :sensors="sensors"
                 :is-loading="isLoading"
                 :selected-id="selectedSensorId"
+            :deleting-id="deletingId"
                 @show-details="handleShowDetails"
+            @delete-sensor="handleDeleteSensor"
               />
             </div>
 
@@ -93,11 +94,14 @@ import type { SensorItem } from '@/types/sensors'
 import { useAuth } from '@/composables/useAuth'
 import { useDataStore } from '@/store/data'
 import type { ReceiverLog } from '@/types/database'
+import { databaseApi } from '@/services/api'
 
 useAuth()
 
+// Static sensors - no periodic refresh needed
+// When mobile sensors are added, enable refreshInterval
 const { sensors, isLoading, error, refresh } = useSensors({
-  refreshInterval: 10000,
+  refreshInterval: 0, // Disabled for static sensors
   enabled: true
 })
 
@@ -134,6 +138,7 @@ onBeforeUnmount(() => {
 
 const selectedSensorId = ref<string | null>(null)
 const panelVisible = ref(false)
+const deletingId = ref<string | null>(null)
 
 const selectedSensor = computed(() => {
   return sensors.value.find(sensor => sensor.id === selectedSensorId.value) ?? null
@@ -155,6 +160,57 @@ const selectedSensorLogs = computed(() => {
 const handleShowDetails = (sensor: SensorItem) => {
   selectedSensorId.value = sensor.id
   panelVisible.value = true
+}
+
+const handleDeleteSensor = async (sensor: SensorItem) => {
+  if (deletingId.value) return
+  const confirmed = window.confirm(`Delete sensor "${sensor.name}"?`)
+  if (!confirmed) return
+
+  deletingId.value = sensor.id
+  try {
+    const source = sensor.source as any
+
+    // For gps_unit_position, the real primary key is unit_id (not the synthetic sensor.id)
+    const pkRaw = source?.unit_id
+    if (pkRaw === null || pkRaw === undefined) {
+      throw new Error('Cannot delete: this sensor has no unit_id from the database.')
+    }
+    const pk = pkRaw
+
+    console.log('[Sensors] Deleting sensor using unit_id:', {
+      sensorId: sensor.id,
+      pk,
+      sourceId: source?.id,
+      sourceUnitId: source?.unit_id,
+      sourceSystemId: source?.system_id,
+      source
+    })
+
+    // Clear API cache first to ensure fresh data after deletion
+    databaseApi.clearCache()
+
+    // Delete from backend; backend auto-detects that unit_id is the PK for gps_unit_position
+    const response = await databaseApi.deleteGpsUnitPosition(pk)
+    if (!response.success) {
+      throw new Error(response.error || 'Failed to delete sensor')
+    }
+
+    console.log('[Sensors] Successfully deleted sensor:', pk, 'Deleted count:', response.data?.deleted)
+
+    // Remove locally after successful deletion
+    dataStore.removeGpsUnitPosition(pk)
+
+    // Force refresh to get latest data (with cache cleared)
+    await refresh()
+  } catch (err: any) {
+    console.error('[Sensors] Failed to delete sensor', err)
+    window.alert(err?.message || 'Failed to delete sensor')
+    // Refresh on error to restore state
+    await refresh()
+  } finally {
+    deletingId.value = null
+  }
 }
 
 const closeDetails = () => {

@@ -91,10 +91,12 @@ const props = defineProps<{
   sensors: SensorItem[]
   isLoading: boolean
   selectedId: string | null
+  deletingId?: string | null
 }>()
 
 const emit = defineEmits<{
   (e: 'show-details', sensor: SensorItem): void
+  (e: 'delete-sensor', sensor: SensorItem): void
 }>()
 
 const statusClasses = (status: SensorStatus) => {
@@ -118,6 +120,13 @@ const formatDate = (value: string | null): string => {
 const formatSignal = (value: number | null | undefined): string => {
   if (value === null || value === undefined || Number.isNaN(value)) return '—'
   return `${value} dBm`
+}
+
+// Check if sensor can be deleted (has valid unit_id in source)
+const canDeleteSensor = (sensor: SensorItem): boolean => {
+  const source = sensor.source as any
+  // Only show delete button if sensor has a valid unit_id (the database primary key)
+  return !!(source?.unit_id || source?.id)
 }
 </script>
 
