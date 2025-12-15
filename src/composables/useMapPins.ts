@@ -905,8 +905,22 @@ const toTimeValue = (value: string | undefined | null) => value ? new Date(value
             return acc
           }
 
+          // Build canonical system id for associations
           const canonicalSystemId = unit.system_id ?? (typeof unit.unit_id !== 'undefined' ? String(unit.unit_id) : null)
-          const unitKey = canonicalSystemId ?? (unit.name ?? String(unit.id))
+
+          // Build a unique key that allows multiple entries per unit_id/system_id by including coordinates (and time if present)
+          const baseKey =
+            (typeof unit.unit_id !== 'undefined' && unit.unit_id !== null ? String(unit.unit_id) : null) ??
+            (unit.system_id ?? null) ??
+            ((unit as any)?.unit_name ?? null) ??
+            (unit.name ?? 'unknown')
+
+          const keyParts = [String(baseKey), String(lat), String(lng)]
+          if (unit.time) {
+            keyParts.push(String(unit.time))
+          }
+          const unitKey = keyParts.join(':')
+
           if (seenSensorKeys.has(unitKey)) {
             return acc
           }
@@ -915,8 +929,8 @@ const toTimeValue = (value: string | undefined | null) => value ? new Date(value
           const statusRaw = typeof unit.status === 'string' ? unit.status.toLowerCase() : null
           const status = statusRaw === 'inactive' || statusRaw === 'offline' ? 'inactive' : 'active'
           
-          // Use unit name if available, otherwise construct label
-          const displayName = unit.name || `RF Receiver ${unitKey}`
+          // Use unit_name or name if available, otherwise construct label
+          const displayName = (unit as any)?.unit_name || unit.name || `RF Receiver ${baseKey}`
           const description = unit.status 
             ? `Detection Source • Status: ${unit.status}` 
             : 'RF Detection Receiver • Active monitoring'
@@ -1162,7 +1176,10 @@ const toTimeValue = (value: string | undefined | null) => value ? new Date(value
   }
 
   // Refresh pins
-  const refreshPins = async () => {
+  const refreshPins = async (clearCacheFirst = false) => {
+    if (clearCacheFirst) {
+      databaseApi.clearCache()
+    }
     await loadPins()
   }
 

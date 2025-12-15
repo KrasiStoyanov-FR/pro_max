@@ -170,3 +170,4 @@ mysql -h localhost -u drone_app -p'Qwerty@' drone_monitoring -e "SELECT 1;"
 **This will tell us exactly where the problem is.**
 
 
+

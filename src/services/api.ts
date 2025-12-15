@@ -354,6 +354,113 @@ export const databaseApi = {
     })
   },
 
+  // Create a new device (GPS unit)
+  async createDevice(deviceData: {
+    unitId?: string | number | null
+    name: string
+    location?: string | null
+    partNumber?: string | null
+    latitude: number
+    longitude: number
+    additionalInfo?: string | null
+  }): Promise<DatabaseResponse<GpsUnitPosition>> {
+    try {
+      // Clear cache for GPS unit positions to force refresh
+      apiCache.delete('gps_unit_positions_all')
+      apiCache.delete('gps_unit_positions_undefined')
+      
+      // Prepare the device data for the database
+      // Map form fields to actual database column names
+      // Based on the actual schema: unit_id, gps_lat, gps_lon, unit_name
+      const payload: any = {
+        gps_lat: deviceData.latitude,
+        gps_lon: deviceData.longitude
+      }
+
+      // Map unit_id - try to convert to number if it's a numeric string
+      if (deviceData.unitId) {
+        const unitIdNum = Number(deviceData.unitId)
+        payload.unit_id = !isNaN(unitIdNum) ? unitIdNum : deviceData.unitId
+      }
+
+      // Map name to unit_name if provided
+      if (deviceData.name) {
+        payload.unit_name = deviceData.name
+      }
+
+      // Note: The backend will filter out any columns that don't exist in the table
+      // So we can try to include optional fields and they'll be ignored if not present
+
+      // Insert into database via API
+      const response = await api.post(`/table/gps_unit_position?database=${DATABASE_NAME}`, {
+        data: payload
+      })
+
+      // Backend returns { success: true, data: <created record> }
+      if (response.data.success && response.data.data) {
+        return {
+          success: true,
+          data: response.data.data as GpsUnitPosition
+        }
+      }
+
+      return {
+        success: false,
+        error: response.data.error || 'Failed to create device'
+      }
+    } catch (error: any) {
+      console.error('[API] Failed to create device:', error)
+      const errorMessage = error.response?.data?.error || error.message || 'Unknown error'
+      return {
+        success: false,
+        error: errorMessage
+      }
+    }
+  },
+
+  // Delete a GPS unit position by id (primary key)
+  async deleteGpsUnitPosition(recordId: string | number, pkColumn?: string): Promise<DatabaseResponse<{ deleted: number }>> {
+    try {
+      // Clear cache for GPS unit positions to force refresh after deletion
+      apiCache.delete('gps_unit_positions_all')
+      apiCache.delete('gps_unit_positions_undefined')
+      
+      const pkParam = pkColumn ? `&pkColumn=${encodeURIComponent(pkColumn)}` : ''
+      console.log('[API] Deleting GPS unit position:', { recordId, pkColumn, url: `/table/gps_unit_position/${recordId}?database=${DATABASE_NAME}${pkParam}` })
+      
+      const response = await api.delete(`/table/gps_unit_position/${recordId}?database=${DATABASE_NAME}${pkParam}`)
+      
+      console.log('[API] Delete response:', response.data)
+      
+      if (response.data.success) {
+        const deletedCount = response.data.data?.deleted ?? 0
+        if (deletedCount > 0) {
+          return {
+            success: true,
+            data: response.data.data
+          }
+        } else {
+          return {
+            success: false,
+            error: `No records were deleted. The record with ${pkColumn || 'primary key'}="${recordId}" may not exist.`
+          }
+        }
+      } else {
+        return {
+          success: false,
+          error: response.data.error || 'Delete request failed'
+        }
+      }
+    } catch (error: any) {
+      console.error('[API] Failed to delete GPS unit position:', error)
+      const errorMessage = error.response?.data?.error || error.message || 'Unknown error'
+      return {
+        success: false,
+        error: errorMessage
+      }
+    }
+  },
+
   // Get individual items by ID
   async getDroneById(id: number | string): Promise<DatabaseResponse<Drone>> {
     return getCachedData(`drone_${id}`, async () => {

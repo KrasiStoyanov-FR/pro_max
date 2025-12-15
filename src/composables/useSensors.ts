@@ -75,8 +75,10 @@ const normalizeType = (record: GpsUnitPosition): SensorType => {
 }
 
 const resolveName = (record: GpsUnitPosition): string => {
+  // Check both 'name' and 'unit_name' columns (database uses unit_name)
   return (
     record.name ||
+    (record as any)?.unit_name ||
     (record.system_id ? `System ${record.system_id}` : null) ||
     (record.unit_id ? `Unit ${record.unit_id}` : null) ||
     'Unnamed sensor'
@@ -132,7 +134,10 @@ const mapSensorRecord = (record: GpsUnitPosition): SensorItem => {
 }
 
 export function useSensors(options: UseSensorsOptions = {}): UseSensorsResult {
-  const { refreshInterval = 10000, enabled = true } = options
+  // NOTE: Periodic refresh is disabled for static sensors
+  // When mobile sensors are added, set refreshInterval > 0 to enable auto-refresh
+  // For now, sensors are static (fixed location) so no periodic refresh is needed
+  const { refreshInterval = 0, enabled = true } = options
 
   const dataStore = useDataStore()
   const { gpsUnitPositionsList, loading, errors } = storeToRefs(dataStore)
@@ -152,7 +157,9 @@ export function useSensors(options: UseSensorsOptions = {}): UseSensorsResult {
   const error = computed(() => errors.value?.gpsUnitPositions ?? null)
 
   const enabledRef: Ref<boolean> = isRef(enabled) ? enabled : ref(enabled)
-  let refreshTimer: ReturnType<typeof setInterval> | null = null
+  
+  // TODO: Re-enable when mobile sensors are added
+  // let refreshTimer: ReturnType<typeof setInterval> | null = null
   let refreshPromise: Promise<void> | null = null
 
   const refresh = async (): Promise<void> => {
@@ -172,24 +179,27 @@ export function useSensors(options: UseSensorsOptions = {}): UseSensorsResult {
     return refreshPromise
   }
 
-  const startAutoRefresh = () => {
-    if (refreshTimer || refreshInterval <= 0) return
-    refreshTimer = setInterval(() => {
-      void refresh()
-    }, refreshInterval)
-  }
+  // TODO: Re-enable when mobile sensors are added
+  // const startAutoRefresh = () => {
+  //   if (refreshTimer || refreshInterval <= 0) return
+  //   refreshTimer = setInterval(() => {
+  //     void refresh()
+  //   }, refreshInterval)
+  // }
 
-  const stopAutoRefresh = () => {
-    if (refreshTimer) {
-      clearInterval(refreshTimer)
-      refreshTimer = null
-    }
-  }
+  // const stopAutoRefresh = () => {
+  //   if (refreshTimer) {
+  //     clearInterval(refreshTimer)
+  //     refreshTimer = null
+  //   }
+  // }
 
   const boot = async () => {
     if (!enabledRef.value) return
+    // Initial fetch only - no periodic refresh for static sensors
     await refresh()
-    startAutoRefresh()
+    // TODO: Re-enable when mobile sensors are added
+    // startAutoRefresh()
   }
 
   if (enabledRef.value) {
@@ -200,12 +210,14 @@ export function useSensors(options: UseSensorsOptions = {}): UseSensorsResult {
     if (isEnabled) {
       void boot()
     } else {
-      stopAutoRefresh()
+      // TODO: Re-enable when mobile sensors are added
+      // stopAutoRefresh()
     }
   })
 
   onBeforeUnmount(() => {
-    stopAutoRefresh()
+    // TODO: Re-enable when mobile sensors are added
+    // stopAutoRefresh()
   })
 
   return {
