@@ -7,7 +7,7 @@ This document outlines all the configuration improvements made to prepare the pr
 ### 1. Backend Server Configuration (`server.js`)
 
 #### Database Configuration
-- **Host**: Moved from hardcoded `detect.pm99.site` to `DB_HOST` environment variable
+- **Host**: Moved from hardcoded `dds.pm99.site` to `DB_HOST` environment variable
   - Default: `localhost`
   - Previous commented value: `172.16.50.100` (can now be set via env)
 
@@ -75,9 +75,9 @@ This document outlines all the configuration improvements made to prepare the pr
 
 #### Allowed Hosts
 - **Allowed Hosts**: Made configurable via `VITE_ALLOWED_HOSTS` environment variable
-  - Format: Comma-separated list (e.g., `detect.pm99.site,localhost`)
+  - Format: Comma-separated list (e.g., `dds.pm99.site,localhost`)
   - Default: empty array
-  - Previously hardcoded: `['detect.pm99.site']`
+  - Previously hardcoded: `['dds.pm99.site']`
 
 ### 4. Environment Variables File (`env.example`)
 
@@ -142,12 +142,12 @@ Completely rewritten with comprehensive documentation:
 2. Edit `.env.production` with production settings:
    ```env
    VITE_API_BASE_URL=http://172.16.50.50:3001/api/db
-   DB_HOST=detect.pm99.site
+   DB_HOST=dds.pm99.site
    DB_PORT=58591
    DB_USER=drone_app
    DB_PASSWORD=your_secure_password_here
    DB_NAME=drone_monitoring
-   VITE_ALLOWED_HOSTS=detect.pm99.site
+   VITE_ALLOWED_HOSTS=dds.pm99.site
    ```
 
 ### Security Best Practices
@@ -195,6 +195,7 @@ After updating your environment variables:
 - Existing functionality is preserved
 - The configuration is now more maintainable and professional
 - Easy to add new configuration options in the future
+
 
 
 

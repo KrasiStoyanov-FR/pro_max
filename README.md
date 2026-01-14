@@ -91,7 +91,7 @@ This application consists of three main components:
 - **API Endpoints**: Database health checks, table queries, custom SQL execution
 
 ### Database (MariaDB)
-- **Host**: `detect.pm99.site:58591`
+- **Host**: `dds.pm99.site:58591`
 - **Database**: `drone_app`
 - **Connection**: Configured in `server.js`
 
@@ -119,7 +119,7 @@ This application consists of three main components:
 ### Database Configuration
 
 By default the backend attempts to connect to the remote MariaDB instance:
-- **Host**: `detect.pm99.site`
+- **Host**: `dds.pm99.site`
 - **Port**: `58591`
 - **User**: `drone_app`
 - **Database**: Configured for drone monitoring
@@ -228,7 +228,7 @@ CMD ["nginx", "-g", "daemon off;"]
 
 2. **Database connection issues**
    - Check if the MariaDB server is accessible
-   - Verify network connectivity to `detect.pm99.site:58591`
+   - Verify network connectivity to `dds.pm99.site:58591`
    - Check backend logs for connection errors
 
 3. **Build failures**

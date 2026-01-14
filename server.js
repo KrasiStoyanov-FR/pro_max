@@ -9,9 +9,9 @@ import dotenv from 'dotenv'
 dotenv.config()
 
 const app = express()
-const PORT = parseInt(process.env.PORT || process.env.SERVER_PORT || '3001', 10)
+const PORT = process.env.PORT || 3001
 const USE_SQLITE = process.env.USE_SQLITE === 'true'
-const SQLITE_PATH = process.env.SQLITE_PATH || path.join(process.cwd(), 'database.sqlite')
+const SQLITE_PATH = path.join(process.cwd(), 'database.sqlite')
 
 // Middleware
 app.use(cors())
@@ -1077,14 +1077,10 @@ app.use((error, req, res, next) => {
 })
 
 // Start server
-// Bind to 0.0.0.0 to accept connections from all network interfaces (for remote access)
-const HOST = process.env.SERVER_HOST === 'localhost' ? 'localhost' : '0.0.0.0'
-app.listen(PORT, HOST, () => {
-  const serverHost = process.env.SERVER_HOST || 'localhost'
+app.listen(PORT, () => {
   console.log(`[API] Database server running on port ${PORT}`)
-  console.log(`[API] Listening on ${HOST === '0.0.0.0' ? 'all interfaces' : HOST}`)
-  console.log(`[API] Health check: http://${serverHost}:${PORT}/api/health`)
-  console.log(`[API] Database health check: http://${serverHost}:${PORT}/api/db/health`)
+  console.log(`[API] Health check: http://${DB_CONFIG.host}:${PORT}/api/health`)
+  console.log(`[API] Database health check: http://${DB_CONFIG.host}:${PORT}/api/db/health`)
 })
 
 // Graceful shutdown

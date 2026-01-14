@@ -171,3 +171,4 @@ mysql -h localhost -u drone_app -p'Qwerty@' drone_monitoring -e "SELECT 1;"
 
 
 
+

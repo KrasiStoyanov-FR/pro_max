@@ -12,10 +12,8 @@ export default defineConfig({
   },
   server: {
     port: parseInt(process.env.VITE_PORT || process.env.PORT || '3000', 10),
-    host: process.env.VITE_HOST !== 'false',
-    allowedHosts: process.env.VITE_ALLOWED_HOSTS 
-      ? process.env.VITE_ALLOWED_HOSTS.split(',').map(host => host.trim())
-      : [],
+    host: process.env.VITE_HOST === 'true' || process.env.VITE_HOST === undefined,
+    allowedHosts: ['dds.pm99.site'],
     watch: {
       usePolling: true,
       interval: 100
