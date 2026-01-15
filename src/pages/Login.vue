@@ -1,14 +1,31 @@
 <template>
   <div class="min-h-screen flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8 hero-background">
-    <div class="max-w-md w-full space-y-8 p-8 rounded-2xl bg-white/5 backdrop-blur-xl">
+    <div class="max-w-md w-full space-y-8 p-8 relative rounded-2xl bg-white/5 backdrop-blur-xl">
+      <!-- Flag (brand-specific) -->
+      <img 
+        v-if="showFlag && flagPath" 
+        :src="flagPath" 
+        alt="Brand Flag" 
+        class="w-auto h-8 absolute -top-4 right-0 left-0 mx-auto rounded-md" 
+      />
+
       <!-- Header -->
       <div class="text-center">
         <div class="flex items-center justify-center">
-          <img src="@/assets/images/logo.png" srcset="@/assets/images/logo@0_25x.png 0.25x,
-                    @/assets/images/logo@0_5x.png 0.5x,
-                    @/assets/images/logo.png 1x,
-                    @/assets/images/logo@2x.png 2x,
-                    @/assets/images/logo@3x.png 3x" alt="DTS Logo" class="h-12 w-full object-contain" />
+          <!-- Logo with brand-specific handling -->
+          <img 
+            v-if="logo.srcset"
+            :src="logo.src" 
+            :srcset="logo.srcset"
+            alt="DTS Logo" 
+            class="h-12 w-full object-contain" 
+          />
+          <img 
+            v-else
+            :src="logo.src"
+            alt="DTS Logo" 
+            class="max-h-24 w-full object-contain" 
+          />
         </div>
         <h2 class="mt-6 text-3xl font-extrabold text-white">
           Welcome Back!
@@ -118,14 +135,21 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import { useAuth } from '@/composables/useAuth'
 import { useAuthStore } from '@/store/auth'
+import { useBrand } from '@/composables/useBrand'
 import { PhInfo, PhMagnifyingGlass, PhWarningCircle } from '@phosphor-icons/vue'
 
 // Composables
 const { login } = useAuth()
 const authStore = useAuthStore()
+const { getLogo, shouldShowFlag, getFlag } = useBrand()
+
+// Brand-specific assets
+const logo = computed(() => getLogo())
+const showFlag = computed(() => shouldShowFlag())
+const flagPath = computed(() => getFlag())
 
 // State
 const isLoading = ref(false)

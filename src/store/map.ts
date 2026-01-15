@@ -397,8 +397,6 @@ export const useMapStore = defineStore('map', () => {
     hasSelectedCluster,
     availableViewportData,
     focusModeActive,
-    focusModeType,
-    focusedDetectorPinId,
     linkedSensorDroneIds,
     
     // Actions

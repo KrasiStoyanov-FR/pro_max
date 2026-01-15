@@ -1545,18 +1545,6 @@ class MapService {
     this.applyClustering()
   }
 
-  // Clear expanded clusters (useful when zooming out significantly)
-  clearExpandedClusters(): void {
-    const previousSize = expandedClusters.size
-    expandedClusters.clear()
-    expandedClusterPins.clear()
-    // Also clear selected cluster to allow clusters to reappear
-    this.selectedClusterId = null
-    if (previousSize > 0) {
-      console.log(`[MapService] Cleared ${previousSize} expanded clusters and selected cluster`)
-    }
-  }
-
   flyTo(lat: number, lng: number, zoom: number = 15, options?: { adjustForOverlays?: boolean }): void {
     if (!this.map) return
 

@@ -18,7 +18,7 @@
             <!-- DTS Logo -->
             <div class="w-8 h-8 bg-neutral-800 rounded-full flex items-center justify-center">
               <!-- <span class="text-white font-bold text-xs">DTS</span> -->
-              <img src="@/assets/images/logo.png" alt="Logo">
+              <img :src="logoPath" alt="Logo">
             </div>
 
             <!-- Right side - Title -->
@@ -49,10 +49,10 @@
             <span class="h-10 transform translate-y-0.5 bg-primary-500 transition-all duration-[400ms] ease-in-out"
               :style="`
                 margin-top: ${currentNavigationItemOffsetTop}rem;
-                border-top-right-radius: ${isCollapsed ? '0.75rem' : '9999px'};
-                border-bottom-right-radius: ${isCollapsed ? '0.75rem' : '9999px'};
-                border-top-left-radius: ${isCollapsed ? '0.75rem' : '0'};
-                border-bottom-left-radius: ${isCollapsed ? '0.75rem' : '0'};
+                border-top-right-radius: ${isCollapsed ? sidebarCollapsedRadius : '9999px'};
+                border-bottom-right-radius: ${isCollapsed ? sidebarCollapsedRadius : '9999px'};
+                border-top-left-radius: ${isCollapsed ? sidebarCollapsedRadius : '0'};
+                border-bottom-left-radius: ${isCollapsed ? sidebarCollapsedRadius : '0'};
               `"></span>
           </div>
         </div>
@@ -98,6 +98,7 @@
 
 <script setup lang="ts">
 import { useAuth } from '@/composables/useAuth';
+import { useBrand } from '@/composables/useBrand';
 import { PhCompass, PhCaretLeft, PhUser, PhCaretDown, PhTarget, PhCellTower, PhSiren, PhClockCounterClockwise, PhFileText, PhGear, PhSignOut, PhDrone } from '@phosphor-icons/vue'
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useRoute } from 'vue-router'
@@ -116,6 +117,14 @@ defineEmits<{
 
 // Composables
 const { user, logout } = useAuth()
+const { getLogo, brandUI } = useBrand()
+
+// Brand-specific values
+const logoPath = computed(() => {
+  const logo = getLogo()
+  return logo.src
+})
+const sidebarCollapsedRadius = computed(() => brandUI.value.sidebarCollapsedRadius)
 
 // State
 const isUserMenuOpen = ref(false)

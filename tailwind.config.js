@@ -1,3 +1,76 @@
+// Load environment variables from .env file
+import dotenv from 'dotenv'
+import { fileURLToPath } from 'url'
+import { dirname, resolve } from 'path'
+import { existsSync } from 'fs'
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = dirname(__filename)
+
+// Load .env file (supports .env, .env.local, .env.production, etc.)
+// Try .env.local first (higher priority), then .env
+const envLocalPath = resolve(__dirname, '.env.local')
+const envPath = resolve(__dirname, '.env')
+
+if (existsSync(envLocalPath)) {
+  dotenv.config({ path: envLocalPath })
+} else if (existsSync(envPath)) {
+  dotenv.config({ path: envPath })
+}
+
+/**
+ * Get brand colors in HEX format for Tailwind config
+ * Reads from environment variable at build time
+ * 
+ * The brand is determined by:
+ * 1. VITE_APP_BRAND environment variable (from .env file or cross-env)
+ * 2. Falls back to 'original' if not set
+ */
+function getBrandColors() {
+  // Get brand from environment variable
+  // Check both process.env (for cross-env) and loaded dotenv values
+  const brandId = (process.env.VITE_APP_BRAND || 'original').toLowerCase().trim()
+  
+  // Debug logging (can be removed in production)
+  if (process.env.NODE_ENV !== 'production') {
+    console.log('[Tailwind Config] VITE_APP_BRAND:', process.env.VITE_APP_BRAND || 'undefined (using default: original)')
+    console.log('[Tailwind Config] Selected brand:', brandId)
+  }
+  
+  // Brand color definitions (HEX format)
+  const brandColors = {
+    original: {
+      50: '#E6FCF8',
+      100: '#CCF9F1',
+      200: '#B3F6EA',
+      300: '#99F3E3',
+      400: '#66ECD4',
+      500: '#33E6C6',
+      600: '#00E0B8',
+      700: '#00866E',
+      800: '#004337',
+      900: '#001612',
+    },
+    pakistan: {
+      50: '#F5F8FF',
+      100: '#DEE9FF',
+      200: '#C7D9FF',
+      300: '#ADC8FF',
+      400: '#7AA6FF',
+      500: '#4582FF',
+      600: '#0C5AFA',
+      700: '#083AA1',
+      800: '#05215C',
+      900: '#031130',
+    },
+  }
+
+  // Return colors for the specified brand, fallback to original
+  return brandColors[brandId] || brandColors.original
+}
+
+const primaryColors = getBrandColors()
+
 /** @type {import('tailwindcss').Config} */
 export default {
   content: [
@@ -30,16 +103,16 @@ export default {
       black: '#000000',
       white: '#FFFFFF',
       primary: {
-        50: '#E6FCF8',
-        100: '#CCF9F1',
-        200: '#B3F6EA',
-        300: '#99F3E3',
-        400: '#66ECD4',
-        500: '#33E6C6',
-        600: '#00E0B8',
-        700: '#00866E',
-        800: '#004337',
-        900: '#001612',
+        50: primaryColors[50],
+        100: primaryColors[100],
+        200: primaryColors[200],
+        300: primaryColors[300],
+        400: primaryColors[400],
+        500: primaryColors[500],
+        600: primaryColors[600],
+        700: primaryColors[700],
+        800: primaryColors[800],
+        900: primaryColors[900],
       },
       neutral: {
         50: '#FAFAFA',

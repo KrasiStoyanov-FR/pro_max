@@ -1,43 +1,43 @@
 {
-  "hash": "2bfc96d9",
+  "hash": "48c3839c",
   "configHash": "81d02dab",
-  "lockfileHash": "e3b0c442",
-  "browserHash": "4a3b6ce3",
+  "lockfileHash": "da7c3c52",
+  "browserHash": "7c136c4a",
   "optimized": {
     "@phosphor-icons/vue": {
       "src": "../../node_modules/@phosphor-icons/vue/dist/index.mjs",
       "file": "@phosphor-icons_vue.js",
-      "fileHash": "86f9e6db",
+      "fileHash": "628a53c9",
       "needsInterop": false
     },
     "axios": {
       "src": "../../node_modules/axios/index.js",
       "file": "axios.js",
-      "fileHash": "2d9e06ce",
+      "fileHash": "0ba7f6ec",
       "needsInterop": false
     },
     "leaflet": {
       "src": "../../node_modules/leaflet/dist/leaflet-src.js",
       "file": "leaflet.js",
-      "fileHash": "48d377eb",
+      "fileHash": "e9c7fc35",
       "needsInterop": true
     },
     "pinia": {
       "src": "../../node_modules/pinia/dist/pinia.mjs",
       "file": "pinia.js",
-      "fileHash": "e6e5e0b2",
+      "fileHash": "9ed547c1",
       "needsInterop": false
     },
     "vue": {
       "src": "../../node_modules/vue/dist/vue.runtime.esm-bundler.js",
       "file": "vue.js",
-      "fileHash": "31172367",
+      "fileHash": "2f833159",
       "needsInterop": false
     },
     "vue-router": {
       "src": "../../node_modules/vue-router/dist/vue-router.mjs",
       "file": "vue-router.js",
-      "fileHash": "6a52bc96",
+      "fileHash": "843497c3",
       "needsInterop": false
     }
   },
