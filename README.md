@@ -97,13 +97,25 @@ This application consists of three main components:
 
 ## 📋 Available Scripts
 
-- `npm run dev` - Start frontend development server only
+### Development
+- `npm run dev` - Start frontend development server only (original brand)
+- `npm run dev:original` - Start frontend with original brand
+- `npm run dev:pakistan` - Start frontend with Pakistan brand
 - `npm run server` - Start backend server only  
-- `npm start` - Start both frontend and backend concurrently
-- `npm run build` - Build frontend for production
+- `npm start` - Start both frontend and backend concurrently (original brand)
+- `npm start:original` - Start full stack with original brand
+- `npm start:pakistan` - Start full stack with Pakistan brand
+
+### Build
+- `npm run build` - Build frontend for production (original brand)
+- `npm run build:original` - Build with original brand
+- `npm run build:pakistan` - Build with Pakistan brand
 - `npm run preview` - Preview production build
+
+### Utilities
 - `npm run lint` - Run ESLint
 - `npm run format` - Format code with Prettier
+- `node scripts/init-sqlite.js` - Initialize SQLite database (Pakistan local)
 
 ## 🔧 Configuration
 
@@ -118,11 +130,20 @@ This application consists of three main components:
 
 ### Database Configuration
 
-By default the backend attempts to connect to the remote MariaDB instance:
-- **Host**: `dds.pm99.site`
-- **Port**: `58591`
-- **User**: `drone_app`
-- **Database**: Configured for drone monitoring
+The application supports two database modes:
+
+**1. Remote MariaDB/MySQL (Default):**
+- Configured via environment variables in `.env`
+- Requires a remote database server
+- See `env.example` for configuration
+
+**2. Local SQLite (Pakistan Local Deployment):**
+- File-based database (no server required)
+- Perfect for local deployment
+- Configured via `USE_SQLITE=true` in `.env`
+- Database file: `database.sqlite` in project root
+- See `env.pakistan.local.example` for configuration
+- See [PAKISTAN_LOCAL_SETUP.md](PAKISTAN_LOCAL_SETUP.md) for setup guide
 
 ## 🌐 API Endpoints
 
@@ -163,13 +184,57 @@ The backend provides the following endpoints:
 ## 🚀 Deployment
 
 ### Development
+
+**Original Brand (Default):**
 ```bash
 npm start  # Starts both frontend and backend
+# or explicitly
+npm start:original
 ```
 
+**Pakistan Brand:**
+```bash
+npm start:pakistan
+```
+
+### Pakistan Local Deployment (SQLite)
+
+For Pakistan client's **local deployment** with a **local SQLite database** (no remote database server required):
+
+1. **Copy the Pakistan local configuration:**
+   ```bash
+   cp env.pakistan.local.example .env
+   ```
+
+2. **Initialize the SQLite database (first time only):**
+   ```bash
+   node scripts/init-sqlite.js
+   ```
+
+3. **Start the application:**
+   ```bash
+   npm start:pakistan
+   ```
+
+4. **Access the application:**
+   - Localhost: `http://localhost:3000`
+   - IP Address: `http://YOUR_IP:3000` (see network configuration)
+   - Custom URL: If configured
+
+📖 **See [PAKISTAN_LOCAL_SETUP.md](PAKISTAN_LOCAL_SETUP.md) for complete setup instructions.**
+
 ### Production Build
+
+**Original Brand:**
 ```bash
 npm run build
+# or explicitly
+npm run build:original
+```
+
+**Pakistan Brand:**
+```bash
+npm run build:pakistan
 ```
 
 The built files will be in the `dist/` directory, ready for deployment to any static hosting service.
@@ -227,9 +292,19 @@ CMD ["nginx", "-g", "daemon off;"]
    ```
 
 2. **Database connection issues**
+   
+   **For Remote MariaDB/MySQL:**
    - Check if the MariaDB server is accessible
-   - Verify network connectivity to `dds.pm99.site:58591`
+   - Verify network connectivity to the database host
    - Check backend logs for connection errors
+   - Verify `USE_SQLITE=false` in `.env`
+   
+   **For Local SQLite (Pakistan):**
+   - Verify `USE_SQLITE=true` in `.env`
+   - Check that `database.sqlite` file exists
+   - Run `node scripts/init-sqlite.js` to initialize database
+   - Check file permissions (ensure app can read/write)
+   - See [PAKISTAN_LOCAL_SETUP.md](PAKISTAN_LOCAL_SETUP.md) for troubleshooting
 
 3. **Build failures**
    ```bash
@@ -246,10 +321,14 @@ CMD ["nginx", "-g", "daemon off;"]
 
 For technical support or questions:
 
-1. Check the [security documentation](src/utils/security.md)
-2. Review the [Vue.js documentation](https://vuejs.org/)
-3. Check [TailwindCSS documentation](https://tailwindcss.com/)
-4. Open an issue in the repository
+1. **Pakistan Local Deployment**: See [PAKISTAN_LOCAL_SETUP.md](PAKISTAN_LOCAL_SETUP.md)
+2. **Multi-Brand Setup**: See [MULTI_BRAND_SETUP.md](MULTI_BRAND_SETUP.md)
+3. **Configuration**: See [CONFIGURATION_IMPROVEMENTS.md](CONFIGURATION_IMPROVEMENTS.md)
+4. **Troubleshooting**: See [TROUBLESHOOTING.md](TROUBLESHOOTING.md)
+5. Check the [security documentation](src/utils/security.md)
+6. Review the [Vue.js documentation](https://vuejs.org/)
+7. Check [TailwindCSS documentation](https://tailwindcss.com/)
+8. Open an issue in the repository
 
 ## 🔮 Roadmap
 
