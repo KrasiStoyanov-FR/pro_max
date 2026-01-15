@@ -358,11 +358,8 @@ export const databaseApi = {
   async createDevice(deviceData: {
     unitId?: string | number | null
     name: string
-    location?: string | null
-    partNumber?: string | null
     latitude: number
     longitude: number
-    additionalInfo?: string | null
   }): Promise<DatabaseResponse<GpsUnitPosition>> {
     try {
       // Clear cache for GPS unit positions to force refresh
@@ -410,6 +407,76 @@ export const databaseApi = {
       }
     } catch (error: any) {
       console.error('[API] Failed to create device:', error)
+      const errorMessage = error.response?.data?.error || error.message || 'Unknown error'
+      return {
+        success: false,
+        error: errorMessage
+      }
+    }
+  },
+
+  // Update a GPS unit position device
+  async updateDevice(
+    existingDevice: GpsUnitPosition,
+    deviceData: {
+      unitId?: string | number | null
+      name: string
+      latitude: number
+      longitude: number
+    }
+  ): Promise<DatabaseResponse<GpsUnitPosition>> {
+    try {
+      // Clear cache for GPS unit positions to force refresh
+      apiCache.delete('gps_unit_positions_all')
+      apiCache.delete('gps_unit_positions_undefined')
+      
+      // Determine the primary key - for gps_unit_position, prefer id (numeric) over unit_id (may contain spaces/special chars)
+      // Use id if available, otherwise fall back to unit_id
+      const pkValue = existingDevice.id ?? existingDevice.unit_id
+      const pkColumn = existingDevice.id !== null && existingDevice.id !== undefined ? 'id' : 'unit_id'
+      
+      if (!pkValue) {
+        return {
+          success: false,
+          error: 'Cannot update device: no primary key found'
+        }
+      }
+
+      // Prepare the update payload
+      const payload: any = {
+        gps_lat: deviceData.latitude,
+        gps_lon: deviceData.longitude
+      }
+
+      // Map name to unit_name
+      if (deviceData.name) {
+        payload.unit_name = deviceData.name
+      }
+
+      // Note: unit_id cannot be changed during update (it's the primary key)
+      // The backend will filter out any columns that don't exist in the table
+
+      // Update via API using PUT method
+      // Encode pkValue to handle special characters and spaces
+      const encodedPkValue = encodeURIComponent(String(pkValue))
+      const url = `/table/gps_unit_position/${encodedPkValue}?database=${DATABASE_NAME}&pkColumn=${encodeURIComponent(pkColumn)}`
+
+      const response = await api.put(url, { data: payload })
+
+      // Backend returns { success: true, data: <updated record> }
+      if (response.data.success && response.data.data) {
+        return {
+          success: true,
+          data: response.data.data as GpsUnitPosition
+        }
+      }
+
+      return {
+        success: false,
+        error: response.data.error || 'Failed to update device'
+      }
+    } catch (error: any) {
+      console.error('[API] Failed to update device:', error)
       const errorMessage = error.response?.data?.error || error.message || 'Unknown error'
       return {
         success: false,

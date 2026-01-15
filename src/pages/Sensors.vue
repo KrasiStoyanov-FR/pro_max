@@ -58,9 +58,10 @@
                 :sensors="sensors"
                 :is-loading="isLoading"
                 :selected-id="selectedSensorId"
-            :deleting-id="deletingId"
+                :deleting-id="deletingId"
                 @show-details="handleShowDetails"
-            @delete-sensor="handleDeleteSensor"
+                @edit-sensor="handleEditSensor"
+                @delete-sensor="handleDeleteSensor"
               />
             </div>
 
@@ -79,6 +80,15 @@
           </div>
         </div>
       </section>
+
+      <!-- Device Edit/Create Modal -->
+      <DeviceCreationModal
+        :visible="isDeviceModalOpen"
+        :device="editingDevice"
+        @close="closeDeviceModal"
+        @device-created="handleDeviceCreated"
+        @device-updated="handleDeviceUpdated"
+      />
     </template>
   </LayoutWrapper>
 </template>
@@ -89,14 +99,17 @@ import { storeToRefs } from 'pinia'
 import LayoutWrapper from '@/components/layout/LayoutWrapper.vue'
 import SensorsTable from '@/views/sensors/components/SensorsTable.vue'
 import SensorDetailsPanel from '@/views/sensors/components/SensorDetailsPanel.vue'
+import DeviceCreationModal from '@/components/devices/DeviceCreationModal.vue'
 import { useSensors } from '@/composables/useSensors'
 import type { SensorItem } from '@/types/sensors'
 import { useAuth } from '@/composables/useAuth'
+import { usePermissions } from '@/composables/usePermissions'
 import { useDataStore } from '@/store/data'
-import type { ReceiverLog } from '@/types/database'
+import type { ReceiverLog, GpsUnitPosition } from '@/types/database'
 import { databaseApi } from '@/services/api'
 
 useAuth()
+const { hasPermission } = usePermissions()
 
 // Static sensors - no periodic refresh needed
 // When mobile sensors are added, enable refreshInterval
@@ -139,6 +152,8 @@ onBeforeUnmount(() => {
 const selectedSensorId = ref<string | null>(null)
 const panelVisible = ref(false)
 const deletingId = ref<string | null>(null)
+const isDeviceModalOpen = ref(false)
+const editingDevice = ref<GpsUnitPosition | null>(null)
 
 const selectedSensor = computed(() => {
   return sensors.value.find(sensor => sensor.id === selectedSensorId.value) ?? null
@@ -162,7 +177,73 @@ const handleShowDetails = (sensor: SensorItem) => {
   panelVisible.value = true
 }
 
+const handleEditSensor = (sensor: SensorItem) => {
+  // Check permission before allowing edit
+  if (!hasPermission('sensors.edit')) {
+    window.alert('You do not have permission to edit sensors.')
+    return
+  }
+
+  // Get the source device data
+  const source = sensor.source as any
+  if (!source) {
+    window.alert('Cannot edit: sensor data not available.')
+    return
+  }
+
+  // Convert sensor source to GpsUnitPosition format
+  editingDevice.value = {
+    id: source.id ?? null,
+    unit_id: source.unit_id ?? null,
+    system_id: source.system_id ?? null,
+    name: (source as any)?.unit_name ?? source.name ?? sensor.name,
+    status: source.status ?? null,
+    time: source.time ?? null,
+    latitude: sensor.latitude ?? (source as any)?.gps_lat ?? source.latitude ?? null,
+    longitude: sensor.longitude ?? (source as any)?.gps_lon ?? source.longitude ?? null,
+    ...source
+  } as GpsUnitPosition
+
+  isDeviceModalOpen.value = true
+}
+
+const closeDeviceModal = () => {
+  isDeviceModalOpen.value = false
+  editingDevice.value = null
+}
+
+const handleDeviceCreated = async (createdDevice: GpsUnitPosition) => {
+  // Refresh sensors list
+  await refresh()
+  closeDeviceModal()
+}
+
+const handleDeviceUpdated = async (updatedDevice: GpsUnitPosition) => {
+  // Refresh sensors list
+  await refresh()
+  closeDeviceModal()
+  
+  // If the updated device was selected, update the selection
+  if (selectedSensorId.value) {
+    // The sensor list will refresh, so the selection should still work
+    // But we might want to refresh the details panel if it's open
+    if (panelVisible.value) {
+      // Force a refresh of the selected sensor
+      const sensor = sensors.value.find(s => s.id === selectedSensorId.value)
+      if (sensor) {
+        // The panel will automatically update when sensors refresh
+      }
+    }
+  }
+}
+
 const handleDeleteSensor = async (sensor: SensorItem) => {
+  // Check permission before allowing deletion
+  if (!hasPermission('sensors.delete')) {
+    window.alert('You do not have permission to delete sensors.')
+    return
+  }
+
   if (deletingId.value) return
   const confirmed = window.confirm(`Delete sensor "${sensor.name}"?`)
   if (!confirmed) return

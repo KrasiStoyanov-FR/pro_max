@@ -52,7 +52,7 @@ export const useAuthStore = defineStore('auth', () => {
           id: 'master-001',
           name: 'Master Administrator',
           email: 'master@promax.com',
-          role: 'admin'
+          role: 'master_admin'
         }
         
         const mockToken = 'mock-jwt-token-master-' + Date.now()
@@ -76,7 +76,7 @@ export const useAuthStore = defineStore('auth', () => {
           id: 'master-bluesurge-001',
           name: 'BlueSurge Master Administrator',
           email: 'master@bluesurge.com',
-          role: 'admin'
+          role: 'master_admin'
         }
         
         const mockToken = 'mock-jwt-token-bluesurge-' + Date.now()
@@ -94,7 +94,7 @@ export const useAuthStore = defineStore('auth', () => {
         return { success: true, user: mockUser }
       }
       
-      // Demo account (kept for backward compatibility)
+      // Demo account (kept for backward compatibility) - Admin role
       if (credentials.email === 'admin@radar.com' && credentials.password === 'password') {
         const mockUser: User = {
           id: '1',
@@ -104,6 +104,30 @@ export const useAuthStore = defineStore('auth', () => {
         }
         
         const mockToken = 'mock-jwt-token-' + Date.now()
+        
+        // Store email in localStorage if rememberMe is checked
+        if (rememberMe) {
+          localStorage.setItem('remembered_email', credentials.email)
+        } else {
+          localStorage.removeItem('remembered_email')
+        }
+        
+        setUser(mockUser, rememberMe)
+        setToken(mockToken, undefined, rememberMe)
+        
+        return { success: true, user: mockUser }
+      }
+      
+      // Regular user account for testing permissions
+      if (credentials.email === 'user@radar.com' && credentials.password === 'password') {
+        const mockUser: User = {
+          id: '2',
+          name: 'Regular User',
+          email: 'user@radar.com',
+          role: 'user'
+        }
+        
+        const mockToken = 'mock-jwt-token-user-' + Date.now()
         
         // Store email in localStorage if rememberMe is checked
         if (rememberMe) {

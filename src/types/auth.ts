@@ -1,8 +1,10 @@
+export type UserRole = 'master_admin' | 'admin' | 'user'
+
 export interface User {
   id: string
   name: string
   email: string
-  role: 'admin' | 'operator' | 'viewer'
+  role: UserRole
 }
 
 export interface LoginCredentials {

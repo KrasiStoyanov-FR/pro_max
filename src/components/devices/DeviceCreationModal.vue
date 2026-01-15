@@ -8,9 +8,9 @@
       <header class="border-b border-white/10 px-6 py-4">
         <div class="flex items-center justify-between">
           <div>
-            <h2 class="text-xl font-semibold">Add New Device</h2>
+            <h2 class="text-xl font-semibold">{{ isEditMode ? 'Edit Device' : 'Add New Device' }}</h2>
             <p class="text-sm text-neutral-400">
-              Create a new device and add it to the map
+              {{ isEditMode ? 'Update device information' : 'Create a new device and add it to the map' }}
             </p>
           </div>
           <button
@@ -26,31 +26,22 @@
 
       <form @submit.prevent="handleSubmit" class="px-6 py-4">
         <div class="space-y-6">
-          <!-- Unit ID Selection -->
+          <!-- Unit ID -->
           <div>
             <label for="unit-id" class="block text-sm font-medium text-white mb-2">
-              Unit ID <span class="text-xs text-neutral-400">(optional)</span>
+              Unit ID <span class="text-red-400">*</span>
             </label>
-            <select
+            <input
               id="unit-id"
               v-model="form.unitId"
-              class="w-full rounded-lg border border-white/20 bg-neutral-800/70 px-3 py-2 text-sm text-white placeholder:text-neutral-300 focus:border-primary-400 focus:outline-none focus:ring-2 focus:ring-primary-500/50"
-              :disabled="isLoadingUnitIds"
-            >
-              <option value="">None (create new unit)</option>
-              <option
-                v-for="unitId in availableUnitIds"
-                :key="unitId"
-                :value="unitId"
-              >
-                {{ unitId }}
-              </option>
-            </select>
+              type="text"
+              required
+              class="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder:text-neutral-400 focus:border-primary-400 focus:outline-none focus:ring-2 focus:ring-primary-500/50"
+              placeholder="Enter unit ID"
+              :disabled="isEditMode"
+            />
             <p v-if="errors.unitId" class="mt-1 text-sm text-red-400">{{ errors.unitId }}</p>
-            <p v-if="isLoadingUnitIds" class="mt-1 text-xs text-neutral-400">Loading available unit IDs...</p>
-            <p v-else-if="availableUnitIds.length === 0" class="mt-1 text-xs text-neutral-400">
-              No existing unit IDs found. Leave as "None" to create a new device without a unit ID.
-            </p>
+            <p v-if="isEditMode" class="mt-1 text-xs text-neutral-400">Unit ID cannot be changed when editing</p>
           </div>
 
           <!-- Device Name -->
@@ -67,34 +58,6 @@
               placeholder="Enter device name"
             />
             <p v-if="errors.name" class="mt-1 text-sm text-red-400">{{ errors.name }}</p>
-          </div>
-
-          <!-- Location -->
-          <div>
-            <label for="location" class="block text-sm font-medium text-white mb-2">
-              Location
-            </label>
-            <input
-              id="location"
-              v-model="form.location"
-              type="text"
-              class="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder:text-neutral-400 focus:border-primary-400 focus:outline-none focus:ring-2 focus:ring-primary-500/50"
-              placeholder="Enter location description (e.g., Building A, Room 101)"
-            />
-          </div>
-
-          <!-- Part Number -->
-          <div>
-            <label for="part-number" class="block text-sm font-medium text-white mb-2">
-              Part Number
-            </label>
-            <input
-              id="part-number"
-              v-model="form.partNumber"
-              type="text"
-              class="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder:text-neutral-400 focus:border-primary-400 focus:outline-none focus:ring-2 focus:ring-primary-500/50"
-              placeholder="Enter part number"
-            />
           </div>
 
           <!-- GPS Coordinates -->
@@ -146,26 +109,12 @@
             </div>
           </div>
 
-          <!-- Additional Info -->
-          <div>
-            <label for="additional-info" class="block text-sm font-medium text-white mb-2">
-              Additional Info
-            </label>
-            <textarea
-              id="additional-info"
-              v-model="form.additionalInfo"
-              rows="3"
-              class="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder:text-neutral-400 focus:border-primary-400 focus:outline-none focus:ring-2 focus:ring-primary-500/50 resize-none"
-              placeholder="Enter any additional information about the device"
-            />
-          </div>
-
           <!-- Error State -->
           <div
             v-if="error"
             class="rounded-lg border border-rose-500/40 bg-rose-500/10 p-4 text-sm text-rose-100"
           >
-            <p class="font-medium text-rose-50">Failed to create device</p>
+            <p class="font-medium text-rose-50">Failed to {{ isEditMode ? 'update' : 'create' }} device</p>
             <p class="text-rose-200/80">{{ error }}</p>
           </div>
         </div>
@@ -184,7 +133,7 @@
             class="rounded-lg border border-primary-500/50 bg-primary-500/20 px-4 py-2 text-sm font-medium text-white transition hover:bg-primary-500/30 disabled:cursor-not-allowed disabled:opacity-60"
             :disabled="isSubmitting || !isFormValid"
           >
-            {{ isSubmitting ? 'Creating...' : 'Create Device' }}
+            {{ isSubmitting ? (isEditMode ? 'Updating...' : 'Creating...') : (isEditMode ? 'Update Device' : 'Create Device') }}
           </button>
         </footer>
       </form>
@@ -196,25 +145,25 @@
 import { ref, reactive, computed, watch, onMounted } from 'vue'
 import { databaseApi } from '@/services/api'
 import { useDataStore } from '@/store/data'
+import { usePermissions } from '@/composables/usePermissions'
 import type { GpsUnitPosition } from '@/types/database'
 
 export interface DeviceFormData {
   unitId: string
   name: string
-  location: string
-  partNumber: string
   latitude: string
   longitude: string
-  additionalInfo: string
 }
 
 const props = defineProps<{
   visible?: boolean
+  device?: GpsUnitPosition | null // Device to edit (null for create mode)
 }>()
 
 const emit = defineEmits<{
   (e: 'close'): void
   (e: 'device-created', device: GpsUnitPosition): void
+  (e: 'device-updated', device: GpsUnitPosition): void
 }>()
 
 const visible = computed(() => {
@@ -222,57 +171,43 @@ const visible = computed(() => {
 })
 
 const dataStore = useDataStore()
+const { hasPermission } = usePermissions()
+
+const isEditMode = computed(() => !!props.device)
 
 const form = reactive<DeviceFormData>({
   unitId: '',
   name: '',
-  location: '',
-  partNumber: '',
   latitude: '',
-  longitude: '',
-  additionalInfo: ''
+  longitude: ''
 })
 
 const errors = reactive<Partial<Record<keyof DeviceFormData, string>>>({})
 const isSubmitting = ref(false)
 const error = ref<string | null>(null)
 const isGettingLocation = ref(false)
-const isLoadingUnitIds = ref(false)
 
-// Get available unit IDs from existing devices
-const availableUnitIds = computed(() => {
-  const unitIds = new Set<string | number>()
-  dataStore.gpsUnitPositionsList.forEach(unit => {
-    if (unit.unit_id !== null && unit.unit_id !== undefined) {
-      unitIds.add(unit.unit_id)
-    }
-  })
-  // Sort unit IDs (handle both numbers and strings)
-  return Array.from(unitIds)
-    .map(id => String(id))
-    .sort((a, b) => {
-      // Try to sort as numbers first, then as strings
-      const numA = Number(a)
-      const numB = Number(b)
-      if (!isNaN(numA) && !isNaN(numB)) {
-        return numA - numB
-      }
-      return a.localeCompare(b)
-    })
-})
+// Extract coordinates from device (handles various column name formats)
+const extractLatitude = (device: GpsUnitPosition | null): number | null => {
+  if (!device) return null
+  const lat = (device as any)?.gps_lat ?? device.latitude ?? (device as any)?.lat ?? (device as any)?.latitude_deg
+  if (lat === null || lat === undefined) return null
+  const num = typeof lat === 'string' ? parseFloat(lat) : lat
+  return Number.isFinite(num) ? num : null
+}
 
-// Load unit IDs when modal opens
-const loadUnitIds = async () => {
-  if (availableUnitIds.value.length === 0) {
-    isLoadingUnitIds.value = true
-    try {
-      await dataStore.fetchGpsUnitPositions(undefined, true)
-    } catch (err) {
-      console.error('Failed to load unit IDs:', err)
-    } finally {
-      isLoadingUnitIds.value = false
-    }
-  }
+const extractLongitude = (device: GpsUnitPosition | null): number | null => {
+  if (!device) return null
+  const lng = (device as any)?.gps_lon ?? device.longitude ?? (device as any)?.lng ?? (device as any)?.longitude_deg
+  if (lng === null || lng === undefined) return null
+  const num = typeof lng === 'string' ? parseFloat(lng) : lng
+  return Number.isFinite(num) ? num : null
+}
+
+// Extract device name (handles various column name formats)
+const extractDeviceName = (device: GpsUnitPosition | null): string => {
+  if (!device) return ''
+  return (device as any)?.unit_name ?? device.name ?? ''
 }
 
 const isFormValid = computed(() => {
@@ -368,6 +303,19 @@ const getCurrentLocation = () => {
 }
 
 const handleSubmit = async () => {
+  // Check permission before submitting
+  if (isEditMode.value) {
+    if (!hasPermission('devices.edit')) {
+      error.value = 'You do not have permission to edit devices.'
+      return
+    }
+  } else {
+    if (!hasPermission('devices.create')) {
+      error.value = 'You do not have permission to create devices.'
+      return
+    }
+  }
+
   if (!validateForm()) {
     return
   }
@@ -380,27 +328,36 @@ const handleSubmit = async () => {
     const deviceData = {
       unitId: form.unitId.trim() || null,
       name: form.name.trim(),
-      location: form.location.trim() || null,
-      partNumber: form.partNumber.trim() || null,
       latitude: Number(form.latitude),
-      longitude: Number(form.longitude),
-      additionalInfo: form.additionalInfo.trim() || null
+      longitude: Number(form.longitude)
     }
 
-    // Call API to create device
-    const response = await databaseApi.createDevice(deviceData)
-    
-    if (!response.success || !response.data) {
-      throw new Error(response.error || 'Failed to create device')
-    }
+    if (isEditMode.value && props.device) {
+      // Update existing device
+      const response = await databaseApi.updateDevice(props.device, deviceData)
+      
+      if (!response.success || !response.data) {
+        throw new Error(response.error || 'Failed to update device')
+      }
 
-    // Emit success event with created device
-    emit('device-created', response.data)
+      // Emit success event with updated device
+      emit('device-updated', response.data)
+    } else {
+      // Create new device
+      const response = await databaseApi.createDevice(deviceData)
+      
+      if (!response.success || !response.data) {
+        throw new Error(response.error || 'Failed to create device')
+      }
+
+      // Emit success event with created device
+      emit('device-created', response.data)
+    }
     
-    // Close modal on success (parent will also handle this, but this ensures it closes)
+    // Close modal on success
     handleClose()
   } catch (err) {
-    error.value = err instanceof Error ? err.message : 'Failed to create device'
+    error.value = err instanceof Error ? err.message : `Failed to ${isEditMode.value ? 'update' : 'create'} device`
     // Keep modal open so user can fix and retry
   } finally {
     isSubmitting.value = false
@@ -415,31 +372,42 @@ const handleClose = () => {
 const resetForm = () => {
   form.unitId = ''
   form.name = ''
-  form.location = ''
-  form.partNumber = ''
   form.latitude = ''
   form.longitude = ''
-  form.additionalInfo = ''
   Object.keys(errors).forEach(key => {
     errors[key as keyof DeviceFormData] = ''
   })
   error.value = null
 }
 
-// Reset form when modal closes and load unit IDs when it opens
-watch(visible, (isVisible) => {
-  if (!isVisible) {
-    resetForm()
+const loadFormData = () => {
+  if (props.device) {
+    // Edit mode: prefill form with device data
+    form.unitId = props.device.unit_id ? String(props.device.unit_id) : ''
+    form.name = extractDeviceName(props.device)
+    const lat = extractLatitude(props.device)
+    const lng = extractLongitude(props.device)
+    form.latitude = lat !== null ? String(lat) : ''
+    form.longitude = lng !== null ? String(lng) : ''
   } else {
-    // Load unit IDs when modal opens
-    loadUnitIds()
+    // Create mode: reset form
+    resetForm()
   }
-})
+}
 
-// Also load on mount if modal is already visible
+// Watch for device changes and modal visibility
+watch([() => props.device, visible], ([newDevice, isVisible]) => {
+  if (isVisible) {
+    loadFormData()
+  } else {
+    resetForm()
+  }
+}, { immediate: true })
+
+// Load form data on mount if modal is already visible
 onMounted(() => {
   if (visible.value) {
-    loadUnitIds()
+    loadFormData()
   }
 })
 </script>

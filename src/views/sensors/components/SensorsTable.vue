@@ -69,13 +69,32 @@
               {{ formatSignal(sensor.network.signalStrength) }}
             </td>
             <td class="px-4 py-4 text-right">
-              <button
-                type="button"
-                class="inline-flex items-center rounded-md border border-white/20 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-white/10"
-                @click="emit('show-details', sensor)"
-              >
-                Details
-              </button>
+              <div class="flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  class="inline-flex items-center rounded-md border border-white/20 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-white/10"
+                  @click="emit('show-details', sensor)"
+                >
+                  Details
+                </button>
+                <button
+                  v-if="canEditSensor(sensor)"
+                  type="button"
+                  class="inline-flex items-center rounded-md border border-primary-500/50 bg-primary-500/20 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-primary-500/30"
+                  @click="emit('edit-sensor', sensor)"
+                >
+                  Edit
+                </button>
+                <button
+                  v-if="canDeleteSensor(sensor)"
+                  type="button"
+                  class="inline-flex items-center rounded-md border border-rose-500/50 bg-rose-500/20 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-rose-500/30"
+                  @click="emit('delete-sensor', sensor)"
+                  :disabled="sensor.id === deletingId"
+                >
+                  {{ sensor.id === deletingId ? 'Deleting...' : 'Delete' }}
+                </button>
+              </div>
             </td>
           </tr>
         </tbody>
@@ -86,6 +105,7 @@
 
 <script setup lang="ts">
 import type { SensorItem, SensorStatus } from '@/types/sensors'
+import { usePermissions } from '@/composables/usePermissions'
 
 const props = defineProps<{
   sensors: SensorItem[]
@@ -96,8 +116,11 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'show-details', sensor: SensorItem): void
+  (e: 'edit-sensor', sensor: SensorItem): void
   (e: 'delete-sensor', sensor: SensorItem): void
 }>()
+
+const { hasPermission } = usePermissions()
 
 const statusClasses = (status: SensorStatus) => {
   switch (status) {
@@ -122,10 +145,25 @@ const formatSignal = (value: number | null | undefined): string => {
   return `${value} dBm`
 }
 
-// Check if sensor can be deleted (has valid unit_id in source)
-const canDeleteSensor = (sensor: SensorItem): boolean => {
+// Check if sensor can be edited (user has permission AND sensor has valid source)
+const canEditSensor = (sensor: SensorItem): boolean => {
+  // First check permission
+  if (!hasPermission('sensors.edit')) {
+    return false
+  }
+  // Then check if sensor has a valid source (the database record)
   const source = sensor.source as any
-  // Only show delete button if sensor has a valid unit_id (the database primary key)
+  return !!(source?.unit_id || source?.id)
+}
+
+// Check if sensor can be deleted (has valid unit_id in source AND user has permission)
+const canDeleteSensor = (sensor: SensorItem): boolean => {
+  // First check permission
+  if (!hasPermission('sensors.delete')) {
+    return false
+  }
+  // Then check if sensor has a valid unit_id (the database primary key)
+  const source = sensor.source as any
   return !!(source?.unit_id || source?.id)
 }
 </script>

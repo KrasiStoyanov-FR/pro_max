@@ -18,8 +18,9 @@
           @open-database-status="handleOpenDatabaseStatus"
         />
 
-        <!-- Add Device Button -->
+        <!-- Add Device Button (only show if user has permission) -->
         <AddDeviceButton
+          v-if="hasPermission('devices.create')"
           position="bottom-left"
           @click="openDeviceModal"
         />
@@ -40,6 +41,7 @@ import { computed, onMounted, ref, watch, onBeforeUnmount } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useMapStore } from '@/store/map'
 import { useAuth } from '@/composables/useAuth'
+import { usePermissions } from '@/composables/usePermissions'
 import { useMapPins } from '@/composables/useMapPins'
 import { databaseApi } from '@/services/api'
 import { mapService } from '@/services/mapService'
@@ -54,6 +56,7 @@ import type { GpsUnitPosition, RFDetection } from '@/types/database'
 
 // Composables
 useAuth()
+const { hasPermission } = usePermissions()
 const mapStore = useMapStore()
 const dataStore = useDataStore()
 const { pins: mapPins, selectedPin, initializeMap, loadPins, refreshPins, isMapReady } = useMapPins()
@@ -74,6 +77,11 @@ const handlePinDeselected = () => {
 }
 
 const openDeviceModal = () => {
+  // Check permission before opening modal
+  if (!hasPermission('devices.create')) {
+    window.alert('You do not have permission to create devices.')
+    return
+  }
   isDeviceModalOpen.value = true
 }
 
