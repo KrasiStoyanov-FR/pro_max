@@ -23,6 +23,19 @@ export const useMapStore = defineStore('map', () => {
   const focusModeType = ref<'none' | 'drone' | 'sensor'>('none')
   const focusedTrajectoryTimestamp = ref<string | null>(null)
   const focusedDetectionId = ref<number | null>(null)
+  
+  // Map filters - which marker types to show
+  const visibleMarkerTypes = ref<Set<MapPin['type']>>(new Set(['drone', 'sensor', 'target', 'friendly', 'radar', 'threat', 'unknown']))
+  
+  // Time window filter - how far back to show data (in milliseconds)
+  // null means use env/default values, otherwise use the user-selected value
+  const timeWindowMs = ref<number | null>(null)
+  
+  // Sensor filter mode - how to filter sensors
+  // 'all' = show all sensors
+  // 'with_detections' = only sensors with recent RF detections (within time window)
+  // 'without_detections' = only sensors without any RF detections
+  const sensorFilterMode = ref<'all' | 'with_detections' | 'without_detections'>('all')
 
   // Viewport tracking for panels
   const availableViewport = ref({
@@ -373,6 +386,126 @@ export const useMapStore = defineStore('map', () => {
     focusedDetectionId.value = id
   }
 
+  const toggleMarkerType = (type: MapPin['type']) => {
+    if (visibleMarkerTypes.value.has(type)) {
+      visibleMarkerTypes.value.delete(type)
+    } else {
+      visibleMarkerTypes.value.add(type)
+    }
+    // Create a new Set to trigger reactivity
+    visibleMarkerTypes.value = new Set(visibleMarkerTypes.value)
+  }
+
+  const setMarkerTypeVisible = (type: MapPin['type'], visible: boolean) => {
+    if (visible) {
+      visibleMarkerTypes.value.add(type)
+    } else {
+      visibleMarkerTypes.value.delete(type)
+    }
+    // Create a new Set to trigger reactivity
+    visibleMarkerTypes.value = new Set(visibleMarkerTypes.value)
+  }
+
+  const isMarkerTypeVisible = (type: MapPin['type']): boolean => {
+    return visibleMarkerTypes.value.has(type)
+  }
+
+  const getFilteredPins = (): MapPin[] => {
+    // First filter by visible marker types
+    let filtered = pins.value.filter(pin => visibleMarkerTypes.value.has(pin.type))
+    
+    // Apply sensor filter mode if sensors are visible
+    if (visibleMarkerTypes.value.has('sensor') && sensorFilterMode.value !== 'all') {
+      // Get detection window for "recent" detections
+      const isTestMode = import.meta.env.VITE_TEST_MODE === 'true'
+      const ONE_YEAR_MS = 365 * 24 * 60 * 60 * 1000
+      
+      let detectionWindowMs: number
+      const userWindow = timeWindowMs.value
+      if (userWindow !== null && userWindow > 0) {
+        detectionWindowMs = userWindow
+      } else if (isTestMode) {
+        detectionWindowMs = ONE_YEAR_MS
+      } else {
+        const envValue = import.meta.env.VITE_DETECTION_WINDOW_MS
+        detectionWindowMs = envValue ? parseInt(envValue, 10) : 60 * 60 * 1000 // Default: 1 hour
+      }
+      
+      const cutoffTime = Date.now() - detectionWindowMs
+      
+      filtered = filtered.filter(pin => {
+        if (pin.type !== 'sensor') {
+          return true // Keep non-sensor pins
+        }
+        
+        // Check if sensor has detections
+        const detections = Array.isArray(pin.data?.detections) ? pin.data.detections : []
+        const now = Date.now()
+        const hasRecentDetections = detections.some((detection: any) => {
+          if (!detection.timestamp) return false
+          // Handle both boolean true and number 1 as active status
+          const isActive = detection.status === true || detection.status === 1
+          if (!isActive) return false
+          const detectionTime = new Date(detection.timestamp).getTime()
+          return detectionTime >= cutoffTime
+        })
+        
+        // Log sensor filtering decision
+        if (sensorFilterMode.value !== 'all' && detections.length > 0) {
+          console.log(`[MapStore] Sensor filter check for ${pin.id}:`, {
+            sensorId: pin.id,
+            systemId: pin.data?.system_id,
+            filterMode: sensorFilterMode.value,
+            totalDetections: detections.length,
+            windowMs: detectionWindowMs,
+            windowHours: (detectionWindowMs / (60 * 60 * 1000)).toFixed(2),
+            cutoffTime: new Date(cutoffTime).toISOString(),
+            detections: detections.map((d: any) => ({
+              id: d.id,
+              timestamp: d.timestamp,
+              timestampISO: d.timestamp ? new Date(d.timestamp).toISOString() : null,
+              timestampMs: d.timestamp ? new Date(d.timestamp).getTime() : null,
+              ageMs: d.timestamp ? (now - new Date(d.timestamp).getTime()) : null,
+              ageHours: d.timestamp ? ((now - new Date(d.timestamp).getTime()) / (60 * 60 * 1000)).toFixed(2) : null,
+              status: d.status,
+              isRecent: d.timestamp ? new Date(d.timestamp).getTime() >= cutoffTime : false,
+                passesFilter: d.timestamp && (d.status === true || d.status === 1) ? new Date(d.timestamp).getTime() >= cutoffTime && (d.status === true || d.status === 1) : false
+            })),
+            hasRecentDetections,
+            willShow: sensorFilterMode.value === 'with_detections' ? hasRecentDetections : !hasRecentDetections
+          })
+        }
+        
+        // Apply filter mode
+        if (sensorFilterMode.value === 'with_detections') {
+          return hasRecentDetections
+        } else if (sensorFilterMode.value === 'without_detections') {
+          return !hasRecentDetections
+        }
+        
+        return true // 'all' mode - show all sensors
+      })
+    }
+    
+    return filtered
+  }
+
+  const setTimeWindow = (windowMs: number | null) => {
+    timeWindowMs.value = windowMs
+  }
+
+  const getTimeWindow = (): number | null => {
+    return timeWindowMs.value
+  }
+
+  const setSensorFilterMode = (mode: 'all' | 'with_detections' | 'without_detections') => {
+    sensorFilterMode.value = mode
+  }
+
+  const getSensorFilterMode = (): 'all' | 'with_detections' | 'without_detections' => {
+    return sensorFilterMode.value
+  }
+
   return {
     // State
     pins,
@@ -388,6 +521,9 @@ export const useMapStore = defineStore('map', () => {
     focusModeType,
     focusedTrajectoryTimestamp,
     focusedDetectionId,
+    visibleMarkerTypes,
+    timeWindowMs,
+    sensorFilterMode,
     
     // Getters
     selectedPinData,
@@ -420,7 +556,15 @@ export const useMapStore = defineStore('map', () => {
     exitFocusMode,
     setFocusedTrajectoryTimestamp,
     setFocusedDetectionId,
-    focusDetectionPin
+    focusDetectionPin,
+    toggleMarkerType,
+    setMarkerTypeVisible,
+    isMarkerTypeVisible,
+    getFilteredPins,
+    setTimeWindow,
+    getTimeWindow,
+    setSensorFilterMode,
+    getSensorFilterMode
   }
 })
 

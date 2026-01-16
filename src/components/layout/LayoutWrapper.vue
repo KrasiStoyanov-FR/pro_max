@@ -22,10 +22,6 @@
             @zoom-to-map-pin="handleZoomToPin" />
         </div>
 
-        <!-- Detection Details Panel (bottom panel) -->
-        <div class="absolute left-0 right-0 bottom-0 z-40 pointer-events-none" style="padding: 1rem;">
-          <DetectionDetailsPanel :selected-detection="selectedDetection" @close="handleDetectionClose" />
-        </div>
 
         <!-- Map/Content Area -->
         <div class="flex-1 overflow-hidden relative z-0">
@@ -39,7 +35,6 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { useMapStore } from '@/store/map'
-import DetectionDetailsPanel from '@/components/map/DetectionDetailsPanel.vue'
 import { mapService } from '@/services/mapService'
 import InfoPanel from './InfoPanel.vue'
 import Sidebar from './Sidebar.vue'
@@ -225,8 +220,6 @@ const handleFocusDetection = (detection: DetectionCheckpoint) => {
 
 const handleDetectionClose = () => {
   mapStore.setFocusedDetectionId(null)
-  const service = mapService as unknown as { highlightDetection?: (id: number | null) => void }
-  service.highlightDetection?.(null)
 }
 
 const handleZoomToPin = (pin: MapPin) => {

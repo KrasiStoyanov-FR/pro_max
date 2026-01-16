@@ -104,6 +104,7 @@ class MapService {
   private selectedPin: MapPin | null = null // Track selected pin to maintain selection state during zoom/pan
   private detectionRangeCircles: Map<string, L.Circle> = new Map() // Detection range visualization
   private clusteringEnabled: boolean = false
+  public visibleMarkerTypes: Set<MapPin['type']> | null = null
 
   private getClusterRadiusForZoom(): number {
     if (!this.map) return CLUSTER_CONFIG.maxClusterRadius
@@ -231,8 +232,13 @@ class MapService {
     this.controls.set('zoom', zoomControl)
   }
 
-  addPins(pins: MapPin[]): void {
+  addPins(pins: MapPin[], visibleTypes?: Set<MapPin['type']>): void {
     if (!this.map) return
+
+    // Store visible marker types for Focus Mode filtering
+    if (visibleTypes) {
+      this.visibleMarkerTypes = visibleTypes
+    }
 
     // Store detection pins separately so they don't appear by default
     this.detectionPins = pins.filter(pin => pin.type === 'target')
@@ -389,15 +395,20 @@ class MapService {
       const element = marker.getElement()
       if (!element) return
 
+      // Check if RF detections (target type) are visible according to filter
+      const isTargetTypeVisible = this.visibleMarkerTypes?.has('target') ?? true
+
       const pinDroneTargetId = pin.data?.drone_id !== undefined && pin.data?.drone_id !== null
         ? String(pin.data.drone_id)
         : null
 
-      if (
+      const isInFocusMode = 
         pin.id === this.focusState.dronePinId ||
         (this.focusState.droneTargetId !== null && pinDroneTargetId === this.focusState.droneTargetId) ||
         (mode === 'sensor' && pinDroneTargetId !== null && linkedDroneIds.includes(pinDroneTargetId))
-      ) {
+
+      // Only show in Focus Mode if target type is visible
+      if (isInFocusMode && isTargetTypeVisible) {
         element.classList.add('marker--detection-focus')
         element.classList.remove('marker--hidden')
         if (this.highlightedDetectionId !== null) {
@@ -498,6 +509,15 @@ class MapService {
 
   showTrajectoryCheckpoints(dronePinId: string, points: DroneTrajectoryPoint[]): void {
     if (!this.map) return
+
+    // Trajectory checkpoints are from drone_positions (GPS coordinates), not RF detections
+    // They're shown when drones are visible, independent of RF detections
+    const isDroneTypeVisible = this.visibleMarkerTypes?.has('drone') ?? true
+    if (!isDroneTypeVisible) {
+      // Don't show trajectory checkpoints if drones filter is disabled
+      this.clearTrajectoryCheckpoints(dronePinId)
+      return
+    }
 
     this.clearTrajectoryCheckpoints(dronePinId)
 
@@ -662,7 +682,7 @@ class MapService {
       const existingMarker = this.markers.get(selectedPin.id)
       if (existingMarker) {
         // Recreate the marker with isSelected=true to get enlarged version
-        const newIcon = this.getIconForPinType(selectedPin.type, selectedPin.status, true, false)
+        const newIcon = this.getIconForPinType(selectedPin.type, selectedPin.status, true, false, selectedPin.data)
         existingMarker.setIcon(newIcon)
         // Ensure it's on top
         existingMarker.setZIndexOffset(1000)
@@ -681,7 +701,7 @@ class MapService {
       this.markers.forEach((marker, pinId) => {
         const pin = this.allPins.find(p => p.id === pinId)
         if (pin) {
-          const newIcon = this.getIconForPinType(pin.type, pin.status, false, false)
+          const newIcon = this.getIconForPinType(pin.type, pin.status, false, false, pin.data)
           marker.setIcon(newIcon)
           marker.setZIndexOffset(0)
         }
@@ -802,7 +822,7 @@ class MapService {
       console.log(`Processing existing marker ${pinId}: isSelected=${isSelected}, isFaded=${isFaded}`)
 
       // Update marker icon to reflect selection state
-      const newIcon = this.getIconForPinType(pin.type, pin.status, isSelected, isFaded)
+      const newIcon = this.getIconForPinType(pin.type, pin.status, isSelected, isFaded, pin.data)
       marker.setIcon(newIcon)
       
       // Update z-index
@@ -922,7 +942,7 @@ class MapService {
     }
 
     const marker = L.marker([pin.lat, pin.lng], {
-      icon: this.getIconForPinType(pin.type, pin.status, isSelected, isFaded)
+      icon: this.getIconForPinType(pin.type, pin.status, isSelected, isFaded, pin.data)
     })
 
       // Store fade state on marker for hover effects
@@ -1006,7 +1026,7 @@ class MapService {
         setTimeout(() => {
           const marker = this.markers.get(pinToUse.id)
           if (marker) {
-            const newIcon = this.getIconForPinType(pinToUse.type, pinToUse.status, true, false)
+            const newIcon = this.getIconForPinType(pinToUse.type, pinToUse.status, true, false, pinToUse.data)
             marker.setIcon(newIcon)
             marker.setZIndexOffset(1000)
           }
@@ -1235,7 +1255,7 @@ class MapService {
   }
 
   private createClusterMarker(cluster: PinCluster): L.Marker {
-    const clusterIcon = this.createClusterIcon(cluster.pins.length)
+    const clusterIcon = this.createClusterIcon(cluster.pins.length, cluster.pins)
 
     const marker = L.marker(cluster.center, {
       icon: clusterIcon,
@@ -1252,15 +1272,35 @@ class MapService {
     return marker
   }
 
-  private createClusterIcon(count: number): L.DivIcon {
+  private createClusterIcon(count: number, pins: MapPin[] = []): L.DivIcon {
     const size = CLUSTER_CONFIG.clusterIconSize
-    const color = count > 10 ? '#ef4444' : count > 5 ? '#f59e0b' : '#10b981'
+    
+    // Check if cluster contains sensors with RF detections AND RF Detections filter is enabled
+    const rfDetectionsFilterEnabled = this.visibleMarkerTypes?.has('target') ?? true
+    const hasSensorsWithDetections = rfDetectionsFilterEnabled && pins.some(pin => 
+      pin.type === 'sensor' && 
+      (pin.data?.hasRFDetections === true || (Array.isArray(pin.data?.detections) && pin.data.detections.length > 0))
+    )
+    
+    // Use orange color scheme if cluster contains sensors with RF detections AND filter is enabled
+    const backgroundColor = hasSensorsWithDetections 
+      ? '#f97316' // Orange-500 for sensors with detections
+      : '#3b82f6' // Default blue
+    const borderColor = hasSensorsWithDetections
+      ? '#ea580c' // Orange-600 for border
+      : '#2563eb' // Blue-600 for border
+    const textColor = '#ffffff'
+    
+    // Add glow effect for clusters with sensors that have RF detections (only when filter is enabled)
+    const glowStyle = hasSensorsWithDetections
+      ? 'box-shadow: 0 0 12px rgba(249, 115, 22, 0.8), 0 0 6px rgba(249, 115, 22, 0.6);'
+      : ''
 
     return L.divIcon({
       html: `
-        <div class="flex items-center justify-center w-full h-full rounded-full border-2 border-white shadow-lg" 
-             style="background-color: ${color}; width: ${size}px; height: ${size}px; pointer-events: auto;">
-          <span class="text-white font-bold text-sm">${count}</span>
+        <div class="flex items-center justify-center w-full h-full rounded-full border-2 shadow-lg" 
+             style="background-color: ${backgroundColor}; border-color: ${borderColor}; width: ${size}px; height: ${size}px; pointer-events: auto; ${glowStyle}">
+          <span class="font-bold text-sm" style="color: ${textColor};">${count}</span>
         </div>
       `,
       className: 'cluster-icon',
@@ -1291,8 +1331,8 @@ class MapService {
     // Note: Don't clear selectedClusterId here - it's managed separately
   }
 
-  private getIconForPinType(type: string, status: string, isSelected: boolean = false, isFaded: boolean = false): any {
-    // RF detections act as trajectory checkpoints, so render them as small dots instead of large markers
+  private getIconForPinType(type: string, status: string, isSelected: boolean = false, isFaded: boolean = false, pinData?: any): any {
+    // RF detections are shown at sensor locations with pulse animation
     if (type === 'target') {
       const size = isSelected ? 22 : 16
       const activeClass = isSelected ? 'trajectory-checkpoint--active' : ''
@@ -1315,7 +1355,20 @@ class MapService {
     const color = this.getColorForStatus(status, type)
     const isAlarm = status === 'critical'
     const isWarning = status === 'warning'
-    const shouldPulse = isAlarm || isWarning // Only pulse for critical and warning status
+    // Sensors with RF detections should pulse to indicate activity
+    const hasRFDetections = pinData?.hasRFDetections === true || (Array.isArray(pinData?.detections) && pinData.detections.length > 0)
+    const shouldPulse = isAlarm || isWarning || (type === 'sensor' && hasRFDetections) // Pulse for critical, warning, or sensors with detections
+    
+    // For sensors with RF detections, use orange/red color scheme (moderate alert level)
+    const sensorColor = (type === 'sensor' && hasRFDetections) 
+      ? '#f97316' // Orange-500 - moderate alert, not too alarming
+      : color
+    const sensorBorderColor = (type === 'sensor' && hasRFDetections)
+      ? '#ea580c' // Orange-600 - slightly darker for border
+      : '#ffffff' // White border for normal sensors
+    const sensorPulseColor = (type === 'sensor' && hasRFDetections)
+      ? '#f97316' // Orange-500 for pulse
+      : color
 
     // Determine sizes based on selection state (in pixels)
     const isSensor = type === 'sensor' || type === 'radar'
@@ -1331,20 +1384,31 @@ class MapService {
     const containerSizePx = isSelected ? pulseCircleSizePx : markerSizePx
     const markerOffsetPx = isSelected ? (pulseCircleSizePx - markerSizePx) / 2 : 0
 
+    // Add red/orange glow for sensors with RF detections
+    const sensorGlow = (type === 'sensor' && hasRFDetections && !isSelected)
+      ? `box-shadow: 0 0 12px rgba(249, 115, 22, 0.8), 0 0 6px rgba(249, 115, 22, 0.6), inset 0 0 8px rgba(249, 115, 22, 0.3);`
+      : (isSelected && isSensor ? 'box-shadow: 0 0 8px rgba(34, 211, 238, 0.6), inset 0 0 8px rgba(34, 211, 238, 0.3);' : '')
+    
     const iconContainer = `
-      <div class="rounded-full border-2 border-white shadow-lg flex items-center justify-center relative z-10 transition-all duration-300" 
-           style="width: ${markerSizePx}px; height: ${markerSizePx}px; background-color: ${color}; left: ${markerOffsetPx}px; top: ${markerOffsetPx}px; ${isSelected && isSensor ? 'box-shadow: 0 0 8px rgba(34, 211, 238, 0.6), inset 0 0 8px rgba(34, 211, 238, 0.3);' : ''}">
+      <div class="rounded-full border-2 shadow-lg flex items-center justify-center relative z-10 transition-all duration-300" 
+           style="width: ${markerSizePx}px; height: ${markerSizePx}px; background-color: ${sensorColor}; border-color: ${sensorBorderColor}; left: ${markerOffsetPx}px; top: ${markerOffsetPx}px; ${sensorGlow}">
         <div style="width: ${iconSizePx}px; height: ${iconSizePx}px; color: #fff;">
           ${iconSvg}
         </div>
       </div>
     `
 
+    // Enhanced pulse for sensors with RF detections - use orange/red colors
     const pulseMarkup = shouldPulse
       ? `
-        <div class="absolute rounded-full" style="width: ${markerSizePx}px; height: ${markerSizePx}px; background-color: ${color}; animation: markerPulseOuter 4s ease-in-out infinite; left: ${markerOffsetPx}px; top: ${markerOffsetPx}px; opacity: ${isSelected ? '0.3' : '0.6'};"></div>
-        <div class="absolute rounded-full" style="width: ${markerSizePx}px; height: ${markerSizePx}px; background-color: ${color}; animation: markerPulseInner 4s ease-in-out infinite; animation-delay: 0.5s; left: ${markerOffsetPx}px; top: ${markerOffsetPx}px; opacity: ${isSelected ? '0.3' : '0.6'};"></div>
+        <div class="absolute rounded-full" style="width: ${markerSizePx}px; height: ${markerSizePx}px; background-color: ${sensorPulseColor}; animation: markerPulseOuter 4s ease-in-out infinite; left: ${markerOffsetPx}px; top: ${markerOffsetPx}px; opacity: ${isSelected ? '0.3' : (type === 'sensor' && hasRFDetections ? '0.7' : '0.6')};"></div>
+        <div class="absolute rounded-full" style="width: ${markerSizePx}px; height: ${markerSizePx}px; background-color: ${sensorPulseColor}; animation: markerPulseInner 4s ease-in-out infinite; animation-delay: 0.5s; left: ${markerOffsetPx}px; top: ${markerOffsetPx}px; opacity: ${isSelected ? '0.3' : (type === 'sensor' && hasRFDetections ? '0.7' : '0.6')};"></div>
       `
+      : ''
+    
+    // Add an outer alert ring for sensors with RF detections (moderate alert level)
+    const alertRing = (type === 'sensor' && hasRFDetections && !isSelected)
+      ? `<div class="absolute rounded-full border-2" style="width: ${markerSizePx + 8}px; height: ${markerSizePx + 8}px; left: ${markerOffsetPx - 4}px; top: ${markerOffsetPx - 4}px; border-color: rgba(249, 115, 22, 0.6); animation: alertRingPulse 2s ease-in-out infinite; z-index: 1;"></div>`
       : ''
 
     const selectionPulse = isSelected
@@ -1353,6 +1417,7 @@ class MapService {
 
     const iconHtml = `
       <div class="relative transition-all duration-300" style="width: ${containerSizePx}px; height: ${containerSizePx}px;">
+        ${alertRing}
         ${pulseMarkup}
         ${iconContainer}
         ${selectionPulse}
@@ -1394,9 +1459,14 @@ class MapService {
   }
 
   private getColorForStatus(status: string, type: string): string {
-    // Use type-based colors for markers (ignore status for colors)
+    // For inactive drones, return grey regardless of type
+    if (type === 'drone' && status === 'inactive') {
+      return '#6b7280' // Grey for inactive drones
+    }
+    
+    // Use type-based colors for active markers
     switch (type) {
-      case 'drone': return '#22c55e'    // Green for drones (primary color palette)
+      case 'drone': return '#22c55e'    // Green for active drones (primary color palette)
       case 'target': return '#f59e0b'   // Yellow for RF detections
       case 'friendly': return '#3b82f6' // Blue for operators
       case 'sensor': return '#22d3ee'    // Cyan for GPS/static sensors

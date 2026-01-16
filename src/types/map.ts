@@ -29,6 +29,7 @@ export interface DetectionCheckpoint {
   signalStrength: number | null
   status: boolean
   systemId?: string | number | null
+  droneId?: number | null
 }
 
 export interface MapViewport {

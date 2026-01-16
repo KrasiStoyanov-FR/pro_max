@@ -222,7 +222,7 @@ const handleDeviceCreated = async (createdDevice: GpsUnitPosition): Promise<void
       // Fallback: if pin not found after refresh, add it manually and zoom
       mapStore.addPin(devicePin)
       if (mapService && isMapReady.value) {
-        mapService.addPins([devicePin])
+        mapService.addPins([devicePin], mapStore.visibleMarkerTypes)
         setTimeout(() => {
           mapService.flyTo(lat, lng, 15, { adjustForOverlays: true })
         }, 300)
@@ -384,7 +384,7 @@ watch(gpsUnitPositionsList, (newDevices) => {
         if (!existingPin) {
           mapStore.addPin(pin)
           if (mapService) {
-            mapService.addPins([pin])
+            mapService.addPins([pin], mapStore.visibleMarkerTypes)
           }
           console.log('[Map] Added new device to map:', pin.id)
         }
@@ -424,7 +424,7 @@ watch(rfDetectionsList, (newDetections) => {
         if (!existingPin) {
           mapStore.addPin(pin)
           if (mapService) {
-            mapService.addPins([pin])
+            mapService.addPins([pin], mapStore.visibleMarkerTypes)
           }
           console.log('[Map] Added new detection to map:', pin.id)
         }

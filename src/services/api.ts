@@ -807,10 +807,31 @@ export const databaseApi = {
         }
 
         // Count active drones (deduplicated, recent positions)
+        // Time window configuration from environment variables
+        const isTestMode = import.meta.env.VITE_TEST_MODE === 'true'
+        const ONE_YEAR_MS = 365 * 24 * 60 * 60 * 1000
+        
+        const getActiveWindow = (): number => {
+          if (isTestMode) return ONE_YEAR_MS
+          const envValue = import.meta.env.VITE_ACTIVE_POSITION_WINDOW_MS
+          return envValue ? parseInt(envValue, 10) : 15 * 60 * 1000 // Default: 15 minutes
+        }
+        
+        // Helper to format time window for logging
+        const formatTimeWindow = (ms: number): string => {
+          if (ms >= 365 * 24 * 60 * 60 * 1000) return '1 year'
+          if (ms >= 24 * 60 * 60 * 1000) return `${Math.round(ms / (24 * 60 * 60 * 1000))} days`
+          if (ms >= 60 * 60 * 1000) return `${Math.round(ms / (60 * 60 * 1000))} hours`
+          if (ms >= 60 * 1000) return `${Math.round(ms / (60 * 1000))} minutes`
+          return `${Math.round(ms / 1000)} seconds`
+        }
+        
         let activeDrones = 0
-        const activeWindowMs = 10 * 60 * 1000 // 10 minutes
-        const cutoffTime = Date.now() - activeWindowMs
+        const activeWindowMs = getActiveWindow()
+        const cutoffTime = activeWindowMs > 0 ? Date.now() - activeWindowMs : 0
 
+        // Use Set to track unique drones by drone_id (and system_id if available)
+        // This ensures we count unique drones, not unique positions
         const uniqueActiveDrones = new Set<string>()
 
         if (
@@ -824,45 +845,45 @@ export const databaseApi = {
               return
             }
 
-            const key =
-              buildEntityKey(
-                position.system_id,
-                position.drone_id,
-                normalizeCoordinate(position.latitude, 3),
-                normalizeCoordinate(position.longitude, 3)
-              ) || `position:${position.id}`
+            // Count unique drones, not unique positions
+            // Use drone_id as primary identifier, with system_id as secondary for uniqueness
+            // Don't include coordinates - we want to count the drone once, not once per position
+            const key = position.drone_id !== null && position.drone_id !== undefined
+              ? `drone:${position.drone_id}${position.system_id ? `:system:${position.system_id}` : ''}`
+              : null
 
-            if (!uniqueActiveDrones.has(key)) {
+            if (key && !uniqueActiveDrones.has(key)) {
               uniqueActiveDrones.add(key)
             }
           })
         }
 
-        // Fallback to drone table active flags if no recent positions
-        if (
-          uniqueActiveDrones.size === 0 &&
-          dronesResponse.status === 'fulfilled' &&
-          dronesResponse.value.success &&
-          Array.isArray(dronesResponse.value.data)
-        ) {
-          dronesResponse.value.data.forEach(drone => {
-            if (!drone.is_active) return
-            const key =
-              buildEntityKey(drone.system_id, drone.serial_number, drone.mac_address, drone.uas_id) ||
-              `drone:${drone.id}`
-            if (!uniqueActiveDrones.has(key)) {
-              uniqueActiveDrones.add(key)
-            }
-          })
-        }
-
+        // Only count drones with positions in the configured time window
         activeDrones = uniqueActiveDrones.size
+        
+        // Log for debugging
+        console.log(`[SystemStatus] Active drones: ${activeDrones} unique drones (time window: ${formatTimeWindow(activeWindowMs)}, source: ${isTestMode ? 'test mode' : (import.meta.env.VITE_ACTIVE_POSITION_WINDOW_MS ? 'env' : 'default')})`)
 
         // Count RF detections (deduplicated by system + drone + timestamp)
+        // Time window from environment variables, or 1 year in test mode
+        const getDetectionWindow = (): number => {
+          if (isTestMode) return ONE_YEAR_MS
+          const envValue = import.meta.env.VITE_DETECTION_WINDOW_MS
+          return envValue ? parseInt(envValue, 10) : 60 * 60 * 1000 // Default: 1 hour
+        }
+        
         let rfDetections = 0
         if (detectionsResponse.status === 'fulfilled' && detectionsResponse.value.success && Array.isArray(detectionsResponse.value.data)) {
+          const detectionWindowMs = getDetectionWindow()
+          const detectionCutoff = detectionWindowMs > 0 ? Date.now() - detectionWindowMs : 0
           const uniqueDetections = new Set<string>()
           detectionsResponse.value.data.forEach(detection => {
+            // Filter to only count detections within the configured window
+            const detectionTime = detection.time ? new Date(detection.time).getTime() : NaN
+            if (Number.isNaN(detectionTime) || detectionTime < detectionCutoff) {
+              return
+            }
+            
             const timestamp = normalizeTimestamp(detection.time)
             const key =
               buildEntityKey(detection.system_id, detection.drone_id, timestamp) ||

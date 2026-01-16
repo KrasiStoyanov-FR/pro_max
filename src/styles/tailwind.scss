@@ -327,3 +327,15 @@
     opacity: 0.3;
   }
 }
+
+/* Alert ring pulse for sensors with RF detections - moderate alert level */
+@keyframes alertRingPulse {
+  0%, 100% {
+    opacity: 0.6;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.3;
+    transform: scale(1.15);
+  }
+}

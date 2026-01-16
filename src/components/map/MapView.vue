@@ -23,6 +23,9 @@
       </div>
     </div>
 
+    <!-- Map filters overlay -->
+    <MapFilters />
+
     <!-- Map controls overlay -->
     <div class="absolute bottom-4 right-4 lg:bottom-6 lg:right-6 z-20">
       <div class="flex flex-col space-y-1">
@@ -83,6 +86,7 @@ import { computed, onMounted, onUnmounted, watch } from 'vue'
 import { PhWarning, PhArrowClockwise, PhGpsFix, PhStack, PhPlus, PhMinus } from '@phosphor-icons/vue'
 import { useMapPins } from '@/composables/useMapPins'
 import { mapService } from '@/services/mapService'
+import MapFilters from './MapFilters.vue'
 
 // Props
 interface Props {

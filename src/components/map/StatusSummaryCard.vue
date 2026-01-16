@@ -111,7 +111,9 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
+import { storeToRefs } from 'pinia'
 import { useSystemStatus } from '@/composables/useSystemStatus'
+import { useMapStore } from '@/store/map'
 import Tooltip from '@/components/shared/Tooltip.vue'
 import type { DatabaseStatus } from '@/types/system'
 
@@ -132,17 +134,130 @@ const emit = defineEmits<{
   openDatabaseStatus: []
 }>()
 
-// System status hook
+// System status hook (for database status)
 const {
   status,
   isLoading,
   error,
   isStale,
-  databaseStatus,
-  activeDrones,
-  rfDetections,
-  operatorsOnline
+  databaseStatus
 } = useSystemStatus()
+
+// Map store (for filtered counts)
+const mapStore = useMapStore()
+const { pins, visibleMarkerTypes, timeWindowMs } = storeToRefs(mapStore)
+
+// Helper to check if a timestamp is within the active time window
+const isWithinTimeWindow = (timestamp: string | null | undefined): boolean => {
+  if (!timestamp) return false
+  
+  const isTestMode = import.meta.env.VITE_TEST_MODE === 'true'
+  const ONE_YEAR_MS = 365 * 24 * 60 * 60 * 1000
+  
+  // Get time window (same logic as useMapPins)
+  const userWindow = timeWindowMs.value
+  let windowMs: number
+  
+  if (userWindow !== null && userWindow > 0) {
+    windowMs = userWindow
+  } else if (isTestMode) {
+    windowMs = ONE_YEAR_MS
+  } else {
+    const envValue = import.meta.env.VITE_ACTIVE_POSITION_WINDOW_MS
+    windowMs = envValue ? parseInt(envValue, 10) : 15 * 60 * 1000
+  }
+  
+  const timestampMs = new Date(timestamp).getTime()
+  const now = Date.now()
+  return timestampMs > 0 && (now - timestampMs) <= windowMs
+}
+
+// Count visible drones (filtered by type and time window)
+const activeDrones = computed(() => {
+  return pins.value.filter(pin => {
+    // Must be a drone type
+    if (pin.type !== 'drone') return false
+    
+    // Must be visible according to type filter
+    if (!visibleMarkerTypes.value.has('drone')) return false
+    
+    // Must be within time window
+    return isWithinTimeWindow(pin.timestamp)
+  }).length
+})
+
+// Count visible RF detections (filtered by type and time window)
+const rfDetections = computed(() => {
+  // Get detection window (same logic as useMapPins)
+  const isTestMode = import.meta.env.VITE_TEST_MODE === 'true'
+  const ONE_YEAR_MS = 365 * 24 * 60 * 60 * 1000
+  
+  const userWindow = timeWindowMs.value
+  let windowMs: number
+  
+  if (userWindow !== null && userWindow > 0) {
+    windowMs = userWindow
+  } else if (isTestMode) {
+    windowMs = ONE_YEAR_MS
+  } else {
+    const envValue = import.meta.env.VITE_DETECTION_WINDOW_MS
+    windowMs = envValue ? parseInt(envValue, 10) : 60 * 60 * 1000
+  }
+  
+  const cutoffTime = Date.now() - windowMs
+  
+  // RF detections are now attached to sensor pins, not separate target pins
+  // Count detections from sensor pins that are within the time window
+  let totalDetections = 0
+  
+  pins.value.forEach(pin => {
+    // Only count from sensor pins
+    if (pin.type !== 'sensor') return
+    
+    // Must be visible according to type filter
+    if (!visibleMarkerTypes.value.has('sensor')) return
+    
+    // Get detections from sensor pin data
+    const detections = Array.isArray(pin.data?.detections) ? pin.data.detections : []
+    
+    // Count detections within time window
+    detections.forEach((detection: any) => {
+      const timestampMs = detection.timestamp ? new Date(detection.timestamp).getTime() : 0
+      if (timestampMs > 0 && timestampMs >= cutoffTime) {
+        totalDetections++
+      }
+    })
+  })
+  
+  // Debug logging
+  console.log(`[StatusSummaryCard] RF Detections count:`, {
+    totalDetections,
+    filterEnabled: visibleMarkerTypes.value.has('sensor'),
+    timeWindowMinutes: Math.round(windowMs / 1000 / 60),
+    cutoffTime: new Date(cutoffTime).toISOString()
+  })
+  
+  return totalDetections
+})
+
+// Count visible operators (filtered by type and time window)
+const operatorsOnline = computed(() => {
+  // Operators use 5 minute window (from api.ts)
+  const OPERATOR_WINDOW_MS = 5 * 60 * 1000
+  const cutoffTime = Date.now() - OPERATOR_WINDOW_MS
+  
+  return pins.value.filter(pin => {
+    // Must be a friendly (operator) type
+    if (pin.type !== 'friendly') return false
+    
+    // Must be visible according to type filter
+    if (!visibleMarkerTypes.value.has('friendly')) return false
+    
+    // Must be within time window
+    const timestampMs = pin.timestamp ? new Date(pin.timestamp).getTime() : 0
+    return timestampMs > 0 && timestampMs >= cutoffTime
+  }).length
+})
 
 const widgetRef = ref<HTMLElement | null>(null)
 
