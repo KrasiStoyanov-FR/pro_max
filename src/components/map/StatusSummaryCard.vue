@@ -124,9 +124,9 @@ const {
   databaseStatus
 } = useSystemStatus()
 
-// Map store (for filtered counts)
+// Map store (for counts based on time window only)
 const mapStore = useMapStore()
-const { pins, visibleMarkerTypes, timeWindowMs } = storeToRefs(mapStore)
+const { pins, timeWindowMs } = storeToRefs(mapStore)
 
 // Helper to check if a timestamp is within the active time window
 const isWithinTimeWindow = (timestamp: string | null | undefined): boolean => {
@@ -153,21 +153,18 @@ const isWithinTimeWindow = (timestamp: string | null | undefined): boolean => {
   return timestampMs > 0 && (now - timestampMs) <= windowMs
 }
 
-// Count visible drones (filtered by type and time window)
+// Count active drones (filtered by time window only, independent of visibility filters)
 const activeDrones = computed(() => {
   return pins.value.filter(pin => {
     // Must be a drone type
     if (pin.type !== 'drone') return false
     
-    // Must be visible according to type filter
-    if (!visibleMarkerTypes.value.has('drone')) return false
-    
-    // Must be within time window
+    // Must be within time window (ignore visibility filters)
     return isWithinTimeWindow(pin.timestamp)
   }).length
 })
 
-// Count visible RF detections (filtered by type and time window)
+// Count RF detections (filtered by time window only, independent of visibility filters)
 const rfDetections = computed(() => {
   // Get detection window (same logic as useMapPins)
   const isTestMode = import.meta.env.VITE_TEST_MODE === 'true'
@@ -189,16 +186,14 @@ const rfDetections = computed(() => {
   
   // RF detections are now attached to sensor pins, not separate target pins
   // Count detections from sensor pins that are within the time window
+  // (ignore visibility filters - only filter by time window)
   let totalDetections = 0
   
   pins.value.forEach(pin => {
     // Only count from sensor pins
     if (pin.type !== 'sensor') return
     
-    // Must be visible according to type filter
-    if (!visibleMarkerTypes.value.has('sensor')) return
-    
-    // Get detections from sensor pin data
+    // Get detections from sensor pin data (regardless of visibility)
     const detections = Array.isArray(pin.data?.detections) ? pin.data.detections : []
     
     // Count detections within time window
@@ -208,14 +203,6 @@ const rfDetections = computed(() => {
         totalDetections++
       }
     })
-  })
-  
-  // Debug logging
-  console.log(`[StatusSummaryCard] RF Detections count:`, {
-    totalDetections,
-    filterEnabled: visibleMarkerTypes.value.has('sensor'),
-    timeWindowMinutes: Math.round(windowMs / 1000 / 60),
-    cutoffTime: new Date(cutoffTime).toISOString()
   })
   
   return totalDetections

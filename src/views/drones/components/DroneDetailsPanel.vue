@@ -74,7 +74,7 @@
       </div>
     </section>
 
-    <footer class="mt-6 border-t border-white/5 pt-4">
+    <footer v-if="hasPermission('detections.manage')" class="mt-6 border-t border-white/5 pt-4">
       <button 
         type="button" 
         class="w-full btn-secondary"
@@ -88,7 +88,10 @@
 
 <script setup lang="ts">
 import StatusBadge from '@/views/detections/components/StatusBadge.vue'
+import { usePermissions } from '@/composables/usePermissions'
 import type { DroneItem } from '@/types/drones'
+
+const { hasPermission } = usePermissions()
 
 const props = defineProps<{
   drone: DroneItem | null

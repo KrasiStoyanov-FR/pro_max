@@ -10,9 +10,6 @@
         <h2 class="text-lg font-semibold leading-tight">
           {{ sensor?.name ?? 'No selection' }}
         </h2>
-        <p class="text-xs text-neutral-400" v-if="sensor">
-          Last communication {{ formatDate(sensor.lastCommunication) }}
-        </p>
       </div>
       <button
         type="button"
@@ -52,18 +49,11 @@
               </span>
             </dd>
           </div>
-          <div>
-            <dt class="text-xs uppercase tracking-widest text-neutral-500">Location</dt>
-            <dd class="font-semibold text-white">
-              <span v-if="sensor?.locationLabel">{{ sensor.locationLabel }}</span>
-              <span v-else>—</span>
-            </dd>
-          </div>
         </dl>
       </div>
 
       <div>
-        <h3 class="text-sm font-semibold uppercase tracking-wide text-neutral-400">Position</h3>
+        <h3 class="text-sm font-semibold uppercase tracking-wide text-neutral-400">Location</h3>
         <dl class="mt-3 grid grid-cols-1 gap-2 text-sm text-neutral-200">
           <div class="flex items-center justify-between rounded-lg border border-white/5 bg-white/5 px-3 py-2">
             <dt class="text-xs uppercase tracking-widest text-neutral-500">Latitude</dt>
@@ -76,7 +66,7 @@
         </dl>
       </div>
 
-      <div>
+      <div v-if="isAdmin">
         <h3 class="text-sm font-semibold uppercase tracking-wide text-neutral-400">Network</h3>
         <dl class="mt-3 grid grid-cols-2 gap-3 text-sm text-neutral-200">
           <div>
@@ -98,7 +88,7 @@
         </dl>
       </div>
 
-      <div>
+      <div v-if="isAdmin">
         <h3 class="text-sm font-semibold uppercase tracking-wide text-neutral-400">Hardware</h3>
         <dl class="mt-3 grid grid-cols-2 gap-3 text-sm text-neutral-200">
           <div>
@@ -124,7 +114,7 @@
         </dl>
       </div>
 
-      <div>
+      <div v-if="isAdmin">
         <h3 class="text-sm font-semibold uppercase tracking-wide text-neutral-400">Software</h3>
         <dl class="mt-3 grid grid-cols-2 gap-3 text-sm text-neutral-200">
           <div>
@@ -139,39 +129,60 @@
       </div>
 
       <div>
-        <h3 class="text-sm font-semibold uppercase tracking-wide text-neutral-400">Recent logs</h3>
-        <div v-if="logsLoading" class="mt-3 rounded-lg border border-white/5 bg-white/5 px-3 py-2 text-sm text-neutral-300">
-          Loading logs…
+        <h3 class="text-sm font-semibold uppercase tracking-wide text-neutral-400">Recent detections</h3>
+        <div v-if="detectionsLoading" class="mt-3 rounded-lg border border-white/5 bg-white/5 px-3 py-2 text-sm text-neutral-300">
+          Loading detections…
         </div>
         <div
-          v-else-if="logsError"
+          v-else-if="detectionsError"
           class="mt-3 rounded-lg border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-sm text-rose-100"
         >
-          {{ logsError }}
+          {{ detectionsError }}
         </div>
-        <ul v-else-if="logsToDisplay.length" class="mt-3 space-y-2">
+        <ul v-else-if="detectionsToDisplay.length" class="mt-3 space-y-2">
           <li
-            v-for="log in logsToDisplay"
-            :key="log.id"
+            v-for="detection in detectionsToDisplay"
+            :key="detection.id"
             class="rounded-lg border border-white/5 bg-white/5 px-3 py-2 text-sm text-neutral-200"
           >
             <div class="flex items-center justify-between text-xs text-neutral-400">
-              <span>{{ formatLogTime(log.time) }}</span>
-              <span class="font-semibold uppercase tracking-wide text-white">{{ log.status ?? '—' }}</span>
+              <span>{{ formatLogTime(detection.lastSeen) }}</span>
+              <div class="flex items-center gap-2">
+                <span
+                  class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold uppercase tracking-wide"
+                  :class="detectionStatusClasses(detection.status)"
+                >
+                  {{ detection.status }}
+                </span>
+                <span
+                  class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold uppercase tracking-wide"
+                  :class="detectionTypeClasses(detection.type)"
+                >
+                  {{ detection.type }}
+                </span>
+              </div>
             </div>
-            <p class="mt-1 text-sm text-white">{{ log.message ?? 'No message provided.' }}</p>
+            <div class="mt-1.5 flex items-center gap-4 text-xs text-neutral-300">
+              <span v-if="detection.signalStrength !== null && detection.signalStrength !== undefined">
+                Signal: <span class="font-semibold text-white">{{ detection.signalStrength }} dBm</span>
+              </span>
+              <span v-if="detection.distanceMeters !== null && detection.distanceMeters !== undefined">
+                Distance: <span class="font-semibold text-white">{{ formatDistance(detection.distanceMeters) }}</span>
+              </span>
+              <span v-if="detection.frequency !== null && detection.frequency !== undefined">
+                Freq: <span class="font-semibold text-white">{{ formatFrequency(detection.frequency) }}</span>
+              </span>
+            </div>
           </li>
         </ul>
-        <p v-else class="mt-3 text-sm text-neutral-400">No recent logs for this sensor.</p>
+        <p v-else class="mt-3 text-sm text-neutral-400">No recent detections for this sensor.</p>
       </div>
     </section>
 
-    <footer class="mt-6 border-t border-white/5 pt-4">
+    <footer v-if="isAdmin" class="mt-6 border-t border-white/5 pt-4">
       <div class="grid grid-cols-2 gap-3 text-sm">
         <button type="button" class="btn-secondary" disabled>Refresh status</button>
         <button type="button" class="btn-secondary" disabled>Open logs</button>
-        <button type="button" class="btn-secondary" disabled>Calibration</button>
-        <button type="button" class="btn-secondary" disabled>Reboot</button>
         <button type="button" class="col-span-2 btn-secondary" disabled>Locate / Blink LED</button>
       </div>
     </footer>
@@ -182,23 +193,26 @@
 import { computed } from 'vue'
 import MapPreview from '@/components/shared/MapPreview.vue'
 import type { SensorItem, SensorStatus } from '@/types/sensors'
-import type { ReceiverLog } from '@/types/database'
+import type { DetectionItem, DetectionStatus, DetectionType } from '@/types/detections'
+import { usePermissions } from '@/composables/usePermissions'
 
 const props = withDefaults(defineProps<{
   sensor: SensorItem | null
   visible: boolean
-  logs?: ReceiverLog[]
-  logsLoading?: boolean
-  logsError?: string | null
+  detections?: DetectionItem[]
+  detectionsLoading?: boolean
+  detectionsError?: string | null
 }>(), {
-  logs: () => [],
-  logsLoading: false,
-  logsError: null
+  detections: () => [],
+  detectionsLoading: false,
+  detectionsError: null
 })
 
 defineEmits<{
   (e: 'close'): void
 }>()
+
+const { isAdmin } = usePermissions()
 
 const coordinates = computed(() => {
   if (!props.sensor || props.sensor.latitude === null || props.sensor.longitude === null) {
@@ -210,9 +224,15 @@ const coordinates = computed(() => {
   }
 })
 
-const logsToDisplay = computed(() => props.logs ?? [])
-const logsLoading = computed(() => props.logsLoading ?? false)
-const logsError = computed(() => props.logsError ?? null)
+const detectionsToDisplay = computed(() => {
+  const detections = props.detections ?? []
+  // Sort by most recent first and limit to 10 most recent
+  return [...detections]
+    .sort((a, b) => new Date(b.lastSeen).getTime() - new Date(a.lastSeen).getTime())
+    .slice(0, 10)
+})
+const detectionsLoading = computed(() => props.detectionsLoading ?? false)
+const detectionsError = computed(() => props.detectionsError ?? null)
 
 const statusClasses = (status: SensorStatus) => {
   switch (status) {
@@ -264,6 +284,53 @@ const formatLogTime = (value?: string | null): string => {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return value
   return date.toLocaleString()
+}
+
+const detectionStatusClasses = (status: DetectionStatus) => {
+  switch (status) {
+    case 'Alarm':
+      return 'bg-rose-500/20 text-rose-200 border border-rose-500/40'
+    case 'Track':
+      return 'bg-amber-500/20 text-amber-200 border border-amber-500/40'
+    case 'Detect':
+      return 'bg-blue-500/20 text-blue-200 border border-blue-500/40'
+    case 'Whitelisted':
+      return 'bg-neutral-500/20 text-neutral-300 border border-neutral-500/40'
+    default:
+      return 'bg-neutral-500/20 text-neutral-300 border border-neutral-500/40'
+  }
+}
+
+const detectionTypeClasses = (type: DetectionType) => {
+  switch (type) {
+    case 'UAV':
+      return 'bg-primary-500/20 text-primary-200 border border-primary-500/40'
+    case 'RC':
+      return 'bg-purple-500/20 text-purple-200 border border-purple-500/40'
+    case 'Interference':
+      return 'bg-orange-500/20 text-orange-200 border border-orange-500/40'
+    case 'Unknown':
+      return 'bg-neutral-500/20 text-neutral-300 border border-neutral-500/40'
+    default:
+      return 'bg-neutral-500/20 text-neutral-300 border border-neutral-500/40'
+  }
+}
+
+const formatDistance = (meters: number): string => {
+  if (meters >= 1000) {
+    return `${(meters / 1000).toFixed(1)} km`
+  }
+  return `${Math.round(meters)} m`
+}
+
+const formatFrequency = (freq: number): string => {
+  if (freq >= 1000000) {
+    return `${(freq / 1000000).toFixed(2)} MHz`
+  }
+  if (freq >= 1000) {
+    return `${(freq / 1000).toFixed(2)} kHz`
+  }
+  return `${freq.toFixed(2)} Hz`
 }
 </script>
 

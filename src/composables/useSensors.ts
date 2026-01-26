@@ -16,62 +16,28 @@ export interface UseSensorsResult {
   refresh: () => Promise<void>
 }
 
-const SENSOR_STATUS_MAP: Record<string, SensorStatus> = {
-  online: 'online',
-  running: 'online',
-  active: 'online',
-  healthy: 'online',
-  offline: 'offline',
-  disconnected: 'offline',
-  down: 'offline',
-  degraded: 'degraded',
-  warning: 'degraded'
-}
-
-const SENSOR_TYPE_MAP: Record<string, SensorType> = {
-  rf: 'RF',
-  'rf detector': 'RF',
-  radar: 'Radar',
-  'radar sensor': 'Radar',
-  'eo/ir': 'EO/IR',
-  'eo-ir': 'EO/IR',
-  'eo_ir': 'EO/IR',
-  combined: 'Combined',
-  hybrid: 'Combined'
-}
-
 const toNumber = (value: unknown): number | null => {
   if (value === null || value === undefined) return null
   const parsed = Number(value)
   return Number.isFinite(parsed) ? parsed : null
 }
 
-const normalizeStatus = (record: GpsUnitPosition): SensorStatus => {
-  const candidates = [record.status, record.state, (record as any)?.health]
-
-  for (const candidate of candidates) {
-    if (!candidate) continue
-    const normalized = candidate.toString().toLowerCase()
-    if (SENSOR_STATUS_MAP[normalized]) {
-      return SENSOR_STATUS_MAP[normalized]
-    }
-  }
-
-  return 'offline'
+const getStatus = (record: GpsUnitPosition): string => {
+  // Use the actual "status" field from the database table
+  // No transformation - just return what's in the database
+  return record.status?.toString() ?? 
+         (record as any)?.state?.toString() ?? 
+         (record as any)?.health?.toString() ?? 
+         '—'
 }
 
-const normalizeType = (record: GpsUnitPosition): SensorType => {
-  const candidates = [record.type, (record as any)?.sensor_type, (record as any)?.category]
-
-  for (const candidate of candidates) {
-    if (!candidate) continue
-    const normalized = candidate.toString().toLowerCase()
-    if (SENSOR_TYPE_MAP[normalized]) {
-      return SENSOR_TYPE_MAP[normalized]
-    }
-  }
-
-  return 'Unknown'
+const getType = (record: GpsUnitPosition): string => {
+  // Use the actual "type" field from the database table
+  // No transformation - just return what's in the database
+  return record.type?.toString() ?? 
+         (record as any)?.sensor_type?.toString() ?? 
+         (record as any)?.category?.toString() ?? 
+         '—'
 }
 
 const resolveName = (record: GpsUnitPosition): string => {
@@ -108,10 +74,11 @@ const mapSensorRecord = (record: GpsUnitPosition): SensorItem => {
   return {
     id: fallbackId.toString(),
     name: resolveName(record),
-    type: normalizeType(record),
-    status: normalizeStatus(record),
+    type: getType(record),
+    status: getStatus(record),
+    unitGroup: (record as any)?.unit_group ?? (record as any)?.group ?? null,
     lastCommunication: record.time ?? record.last_seen ?? null,
-    firmwareVersion: (record as any)?.firmware_version ?? null,
+    firmwareVersion: (record as any)?.firmware_version ?? (record as any)?.firmware ?? null,
     softwareVersion: (record as any)?.software_version ?? null,
     locationLabel: (record as any)?.location ?? (record as any)?.site ?? null,
     latitude,

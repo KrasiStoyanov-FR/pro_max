@@ -71,9 +71,9 @@
                 class="w-full flex-shrink-0 overflow-hidden lg:absolute lg:bottom-0 lg:right-0 lg:top-0 lg:w-[28rem]"
                 :visible="panelVisible"
                 :sensor="selectedSensor"
-                :logs="selectedSensorLogs"
-                :logs-loading="receiverLogsLoading"
-                :logs-error="receiverLogsError"
+                :detections="selectedSensorDetections"
+                :detections-loading="detectionsLoading"
+                :detections-error="detectionsError"
                 @close="closeDetails"
               />
             </transition>
@@ -105,8 +105,10 @@ import type { SensorItem } from '@/types/sensors'
 import { useAuth } from '@/composables/useAuth'
 import { usePermissions } from '@/composables/usePermissions'
 import { useDataStore } from '@/store/data'
-import type { ReceiverLog, GpsUnitPosition } from '@/types/database'
+import type { GpsUnitPosition } from '@/types/database'
+import type { DetectionItem } from '@/types/detections'
 import { databaseApi } from '@/services/api'
+import { useDetections } from '@/composables/useDetections'
 
 useAuth()
 const { hasPermission } = usePermissions()
@@ -119,35 +121,16 @@ const { sensors, isLoading, error, refresh } = useSensors({
 })
 
 const dataStore = useDataStore()
-const { receiverLogsList, loading: dataLoading, errors: dataErrors } = storeToRefs(dataStore)
-const receiverLogs = computed<ReceiverLog[]>(() => receiverLogsList.value ?? [])
-const receiverLogsLoading = computed(() => Boolean(dataLoading.value?.receiverLogs))
-const receiverLogsError = computed(() => dataErrors.value?.receiverLogs ?? null)
+const { loading: dataLoading, errors: dataErrors } = storeToRefs(dataStore)
 
-const LOG_REFRESH_INTERVAL = 15000
-let logsTimer: ReturnType<typeof setInterval> | null = null
-
-const refreshLogs = async () => {
-  try {
-    await dataStore.fetchReceiverLogs(undefined, true)
-  } catch (err) {
-    console.error('[Sensors] Failed to refresh receiver logs', err)
-  }
-}
-
-onMounted(() => {
-  void refreshLogs()
-  logsTimer = setInterval(() => {
-    void refreshLogs()
-  }, LOG_REFRESH_INTERVAL)
+// Fetch detections for the sensor details panel
+const { detections, isLoading: detectionsIsLoading, error: detectionsErr } = useDetections({
+  refreshInterval: 10000, // Refresh every 10 seconds
+  enabled: true
 })
 
-onBeforeUnmount(() => {
-  if (logsTimer) {
-    clearInterval(logsTimer)
-    logsTimer = null
-  }
-})
+const detectionsLoading = computed(() => detectionsIsLoading.value)
+const detectionsError = computed(() => detectionsErr.value ?? null)
 
 const selectedSensorId = ref<string | null>(null)
 const panelVisible = ref(false)
@@ -159,17 +142,29 @@ const selectedSensor = computed(() => {
   return sensors.value.find(sensor => sensor.id === selectedSensorId.value) ?? null
 })
 
-const selectedSensorLogs = computed(() => {
+const selectedSensorDetections = computed<DetectionItem[]>(() => {
   const sensor = selectedSensor.value
   if (!sensor || !sensor.source) return []
+  
+  // Try to match by system_id first
   const systemId = (sensor.source as any)?.system_id
-  if (!systemId) return []
-  const targetId = String(systemId)
-
-  return receiverLogs.value
-    .filter(log => log.system_id && String(log.system_id) === targetId)
-    .sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime())
-    .slice(0, 20)
+  if (systemId) {
+    const targetSystemId = String(systemId)
+    return detections.value.filter(detection => 
+      detection.systemId && String(detection.systemId) === targetSystemId
+    )
+  }
+  
+  // Fallback: try to match by sensor_id or unit_id
+  const sensorId = (sensor.source as any)?.unit_id ?? (sensor.source as any)?.id
+  if (sensorId) {
+    const targetSensorId = String(sensorId)
+    return detections.value.filter(detection => 
+      detection.sensorId && String(detection.sensorId) === targetSensorId
+    )
+  }
+  
+  return []
 })
 
 const handleShowDetails = (sensor: SensorItem) => {

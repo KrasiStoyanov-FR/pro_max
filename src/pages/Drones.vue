@@ -13,7 +13,7 @@
             </div>
             <div class="flex items-center gap-3">
               <button
-                v-if="selectedDrones.length > 0"
+                v-if="selectedDrones.length > 0 && hasPermission('detections.manage')"
                 type="button"
                 class="inline-flex items-center gap-2 rounded-lg border border-primary-500/50 bg-primary-500/20 px-4 py-2 text-sm font-medium text-white transition hover:bg-primary-500/30 disabled:cursor-not-allowed disabled:opacity-60"
                 @click="openReportModal"
@@ -114,6 +114,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useAuth } from '@/composables/useAuth'
+import { usePermissions } from '@/composables/usePermissions'
 import { useDrones } from '@/composables/useDrones'
 import LayoutWrapper from '@/components/layout/LayoutWrapper.vue'
 import DronesFilters from '@/views/drones/components/DronesFilters.vue'
@@ -124,6 +125,7 @@ import { PhFileText } from '@phosphor-icons/vue'
 import type { DroneItem } from '@/types/drones'
 
 useAuth()
+const { hasPermission } = usePermissions()
 
 const {
   drones,

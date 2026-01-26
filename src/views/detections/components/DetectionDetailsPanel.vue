@@ -106,7 +106,7 @@
       </div>
 
       <div>
-        <h3 class="text-sm font-semibold uppercase tracking-wide text-neutral-400">Position</h3>
+        <h3 class="text-sm font-semibold uppercase tracking-wide text-neutral-400">Location</h3>
         <dl class="mt-3 grid grid-cols-1 gap-2 text-sm text-neutral-200">
           <div class="flex items-center justify-between rounded-lg border border-white/5 bg-white/5 px-3 py-2">
             <dt class="text-xs uppercase tracking-widest text-neutral-500">Latitude</dt>

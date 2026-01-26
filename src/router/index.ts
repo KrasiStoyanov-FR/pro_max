@@ -66,6 +66,47 @@ const router = createRouter({
         title: 'Drones - Defense Radar Dashboard'
       }
     },
+    // Protected routes - only accessible to admin and master_admin
+    {
+      path: '/incidents',
+      name: 'Incidents',
+      component: () => import('@/pages/NotFound.vue'), // Placeholder - page not implemented
+      meta: {
+        requiresAuth: true,
+        roles: ['master_admin', 'admin'],
+        title: 'Incidents - Defense Radar Dashboard'
+      }
+    },
+    {
+      path: '/history',
+      name: 'History',
+      component: () => import('@/pages/NotFound.vue'), // Placeholder - page not implemented
+      meta: {
+        requiresAuth: true,
+        roles: ['master_admin', 'admin'],
+        title: 'History - Defense Radar Dashboard'
+      }
+    },
+    {
+      path: '/reports',
+      name: 'Reports',
+      component: () => import('@/pages/NotFound.vue'), // Placeholder - page not implemented
+      meta: {
+        requiresAuth: true,
+        roles: ['master_admin', 'admin'],
+        title: 'Reports - Defense Radar Dashboard'
+      }
+    },
+    {
+      path: '/settings',
+      name: 'Settings',
+      component: () => import('@/pages/NotFound.vue'), // Placeholder - page not implemented
+      meta: {
+        requiresAuth: true,
+        roles: ['master_admin', 'admin'],
+        title: 'Settings - Defense Radar Dashboard'
+      }
+    },
     // TODO: Add these routes when page components are created
     // Dashboard, Account, Receivers, Controls routes will be added here
     {
@@ -96,12 +137,12 @@ router.beforeEach(async (to, from, next) => {
       return
     }
     
-    // TODO: Implement role-based access control
     // Check if user has required role
     if (to.meta.roles && Array.isArray(to.meta.roles)) {
       const userRole = authStore.userRole
       if (!userRole || !to.meta.roles.includes(userRole)) {
         // Redirect to map if user doesn't have required role
+        console.warn(`[Router] Access denied: User role '${userRole}' does not have access to '${to.path}'`)
         next('/map')
         return
       }

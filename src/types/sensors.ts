@@ -1,5 +1,5 @@
-export type SensorStatus = 'online' | 'offline' | 'degraded'
-export type SensorType = 'RF' | 'Radar' | 'EO/IR' | 'Combined' | 'Unknown'
+export type SensorStatus = string // Use actual database values, not a predefined enum
+export type SensorType = string // Use actual database values, not a predefined enum
 
 export interface SensorNetworkInfo {
   connectionType?: string | null
@@ -21,6 +21,7 @@ export interface SensorItem {
   name: string
   type: SensorType
   status: SensorStatus
+  unitGroup?: string | null
   lastCommunication: string | null
   firmwareVersion?: string | null
   softwareVersion?: string | null
