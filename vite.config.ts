@@ -24,7 +24,8 @@ export default defineConfig({
   },
   cacheDir: '.vite',
   optimizeDeps: {
-    exclude: ['js-big-decimal']
+    exclude: ['js-big-decimal'],
+    include: ['@vuepic/vue-datepicker']
   },
   build: {
     outDir: 'dist',

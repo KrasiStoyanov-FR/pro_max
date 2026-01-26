@@ -136,60 +136,76 @@ const route = useRoute()
 // Navigation items
 // NOTE: Routes for Dashboard, Account, Receivers, and Controls are not yet implemented
 // Uncomment routes in router/index.ts and create corresponding page components
-const navigationItems = [
+const allNavigationItems = [
   {
     name: 'Live View',
     label: 'Live View',
     href: '/map',
-    icon: PhCompass
+    icon: PhCompass,
+    roles: ['master_admin', 'admin', 'user'] // Available to all roles
   },
   {
     name: 'Detections',
     label: 'Detections',
     href: '/detections',
-    icon: PhTarget
+    icon: PhTarget,
+    roles: ['master_admin', 'admin', 'user'] // Available to all roles
   },
   {
     name: 'Sensors',
     label: 'Sensors',
     href: '/sensors',
-    icon: PhCellTower
+    icon: PhCellTower,
+    roles: ['master_admin', 'admin', 'user'] // Available to all roles
   },
   {
     name: 'Drones',
     label: 'Drones',
     href: '/drones',
-    icon: PhDrone
+    icon: PhDrone,
+    roles: ['master_admin', 'admin', 'user'] // Available to all roles
   },
   {
     name: 'Incidents',
     label: 'Incidents',
     href: '/incidents',
-    icon: PhSiren
+    icon: PhSiren,
+    roles: ['master_admin', 'admin'] // Not available to regular users
   },
   {
     name: 'History',
     label: 'History',
     href: '/history',
-    icon: PhClockCounterClockwise
+    icon: PhClockCounterClockwise,
+    roles: ['master_admin', 'admin'] // Not available to regular users
   },
   {
     name: 'Reports',
     label: 'Reports',
     href: '/reports',
-    icon: PhFileText
+    icon: PhFileText,
+    roles: ['master_admin', 'admin'] // Not available to regular users
   },
   {
     name: 'Settings',
     label: 'Settings',
     href: '/settings',
-    icon: PhGear
+    icon: PhGear,
+    roles: ['master_admin', 'admin'] // Not available to regular users
   },
 ]
 
+// Filter navigation items based on user role
+const navigationItems = computed(() => {
+  if (!user.value?.role) return []
+  return allNavigationItems.filter(item => 
+    item.roles.includes(user.value!.role)
+  )
+})
+
 const currentNavigationItemOffsetTop = computed(() => {
   let result = 0
-  navigationItems.map((item, index) => {
+  navigationItems.value.map((item, index) => {
     result = route.name === item.name ? index : result
   })
 

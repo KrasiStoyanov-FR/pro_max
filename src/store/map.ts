@@ -31,6 +31,10 @@ export const useMapStore = defineStore('map', () => {
   // null means use env/default values, otherwise use the user-selected value
   const timeWindowMs = ref<number | null>(null)
   
+  // Date range filter for historical viewing (when custom date range is selected)
+  // null means use time window, otherwise use date range
+  const dateRange = ref<{ start: string; end: string } | null>(null)
+  
   // Sensor filter mode - how to filter sensors
   // 'all' = show all sensors
   // 'with_detections' = only sensors with recent RF detections (within time window)
@@ -492,10 +496,26 @@ export const useMapStore = defineStore('map', () => {
 
   const setTimeWindow = (windowMs: number | null) => {
     timeWindowMs.value = windowMs
+    // Clear date range when setting time window (they're mutually exclusive)
+    if (windowMs !== null) {
+      dateRange.value = null
+    }
   }
 
   const getTimeWindow = (): number | null => {
     return timeWindowMs.value
+  }
+
+  const setDateRange = (range: { start: string; end: string } | null) => {
+    dateRange.value = range
+    // Clear time window when setting date range (they're mutually exclusive)
+    if (range !== null) {
+      timeWindowMs.value = null
+    }
+  }
+
+  const getDateRange = (): { start: string; end: string } | null => {
+    return dateRange.value
   }
 
   const setSensorFilterMode = (mode: 'all' | 'with_detections' | 'without_detections') => {
@@ -523,6 +543,7 @@ export const useMapStore = defineStore('map', () => {
     focusedDetectionId,
     visibleMarkerTypes,
     timeWindowMs,
+    dateRange,
     sensorFilterMode,
     
     // Getters
@@ -563,6 +584,8 @@ export const useMapStore = defineStore('map', () => {
     getFilteredPins,
     setTimeWindow,
     getTimeWindow,
+    setDateRange,
+    getDateRange,
     setSensorFilterMode,
     getSensorFilterMode
   }

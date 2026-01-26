@@ -24,14 +24,9 @@
         </option>
       </select>
       <div v-if="customTimeWindow" class="mt-1.5">
-        <input
-          v-model.number="customHours"
-          @input="updateCustomTimeWindow"
-          type="number"
-          min="0.1"
-          step="0.1"
-          placeholder="Hours"
-          class="w-full bg-neutral-800/50 border border-neutral-700/30 rounded px-2 py-1 text-xs text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+        <DateRangePicker
+          v-model="customDateRange"
+          @update:model-value="handleDateRangeChange"
         />
       </div>
       <!-- Current Active Time Window Display -->
@@ -150,9 +145,10 @@ import { computed, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useMapStore } from '@/store/map'
 import type { MapPin } from '@/types/map'
+import DateRangePicker from '@/components/shared/DateRangePicker.vue'
 
 const mapStore = useMapStore()
-const { visibleMarkerTypes, timeWindowMs, sensorFilterMode } = storeToRefs(mapStore)
+const { visibleMarkerTypes, timeWindowMs, dateRange, sensorFilterMode } = storeToRefs(mapStore)
 
 // Helper to format milliseconds to human-readable string
 const formatTimeWindow = (ms: number | null): string => {
@@ -168,6 +164,24 @@ const formatTimeWindow = (ms: number | null): string => {
 
 // Determine current active time window and source
 const currentTimeWindowDisplay = computed(() => {
+  // Check if date range is active
+  const dateRange = mapStore.getDateRange()
+  if (dateRange) {
+    const start = new Date(dateRange.start)
+    const end = new Date(dateRange.end)
+    const daysDiff = Math.round((end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000))
+    const hoursDiff = Math.round((end.getTime() - start.getTime()) / (60 * 60 * 1000))
+    
+    if (daysDiff > 0) {
+      return `${daysDiff} ${daysDiff === 1 ? 'day' : 'days'}`
+    } else if (hoursDiff > 0) {
+      return `${hoursDiff} ${hoursDiff === 1 ? 'hour' : 'hours'}`
+    } else {
+      const minutesDiff = Math.round((end.getTime() - start.getTime()) / (60 * 1000))
+      return `${minutesDiff} ${minutesDiff === 1 ? 'minute' : 'minutes'}`
+    }
+  }
+  
   const userWindow = timeWindowMs.value
   if (userWindow !== null && userWindow > 0) {
     return formatTimeWindow(userWindow)
@@ -190,6 +204,12 @@ const currentTimeWindowDisplay = computed(() => {
 })
 
 const timeWindowSource = computed(() => {
+  // Check if date range is active
+  const dateRange = mapStore.getDateRange()
+  if (dateRange) {
+    return 'Custom Date Range'
+  }
+  
   const userWindow = timeWindowMs.value
   if (userWindow !== null && userWindow > 0) {
     return 'User Selection'
@@ -228,7 +248,7 @@ const timeWindowOptions = [
 
 const selectedTimeWindow = ref<number | string | null>(timeWindowMs.value)
 const customTimeWindow = ref(false)
-const customHours = ref<number>(1)
+const customDateRange = ref<{ start: string; end: string } | null>(null)
 
 // Sensor filter mode
 const selectedSensorFilterMode = ref<'all' | 'with_detections' | 'without_detections'>(sensorFilterMode.value)
@@ -253,46 +273,103 @@ const sensorFilterModeDescription = computed(() => {
   }
 })
 
-// Watch for external changes to timeWindowMs
-watch(timeWindowMs, (newValue) => {
-  if (newValue !== null && !timeWindowOptions.some(opt => opt.value === newValue)) {
-    // It's a custom value
+// Watch for external changes to timeWindowMs and dateRange
+watch([timeWindowMs, dateRange], ([newWindow, newRange]) => {
+  // Only update if we're not currently in the middle of selecting a custom date range
+  if (customTimeWindow.value && selectedTimeWindow.value === 'custom') {
+    // Don't interfere with custom date range selection
+    if (newRange) {
+      customDateRange.value = newRange
+    }
+    return
+  }
+  
+  if (newRange) {
+    // Date range is active
     customTimeWindow.value = true
     selectedTimeWindow.value = 'custom'
-    customHours.value = newValue / (60 * 60 * 1000) as any
+    customDateRange.value = newRange
+  } else if (newWindow !== null && !timeWindowOptions.some(opt => opt.value === newWindow)) {
+    // It's a custom value - try to infer dates from the time window
+    customTimeWindow.value = true
+    selectedTimeWindow.value = 'custom'
+    // Set default dates if not already set
+    if (!customDateRange.value) {
+      const now = new Date()
+      const endDate = now.toISOString()
+      const startDate = new Date(now.getTime() - newWindow).toISOString()
+      customDateRange.value = { start: startDate, end: endDate }
+    }
   } else {
-    selectedTimeWindow.value = newValue
+    selectedTimeWindow.value = newWindow
     customTimeWindow.value = false
+    customDateRange.value = null
   }
-})
+}, { immediate: false })
 
 const onTimeWindowChange = () => {
   if (selectedTimeWindow.value === 'custom') {
     customTimeWindow.value = true
-    if (customHours.value) {
-      updateCustomTimeWindow()
+    // Set default dates if not already set
+    if (!customDateRange.value) {
+      const now = new Date()
+      const endDate = now.toISOString()
+      // Default to 24 hours back
+      const startDate = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString()
+      customDateRange.value = { start: startDate, end: endDate }
     }
+    updateCustomTimeWindow()
   } else {
     customTimeWindow.value = false
+    customDateRange.value = null
     mapStore.setTimeWindow(selectedTimeWindow.value as number | null)
   }
 }
 
+const handleDateRangeChange = (range: { start: string; end: string } | null) => {
+  // Only update if we have a complete range (both start and end)
+  if (range && range.start && range.end) {
+    customDateRange.value = range
+    updateCustomTimeWindow()
+  } else if (range === null) {
+    // Clear was explicitly triggered
+    customDateRange.value = null
+    updateCustomTimeWindow()
+  }
+  // Don't update if range is incomplete (user is still selecting)
+}
+
 const updateCustomTimeWindow = () => {
-  if (customHours.value && customHours.value > 0) {
-    const windowMs = customHours.value * 60 * 60 * 1000
-    mapStore.setTimeWindow(windowMs)
+  if (customDateRange.value?.start && customDateRange.value?.end) {
+    const start = new Date(customDateRange.value.start)
+    const end = new Date(customDateRange.value.end)
+    
+    // Allow end date to be equal to or after start date
+    // Same day selection is valid - it will show data from 00:00 to 23:59 of that day
+    if (end >= start) {
+      // Set the date range in the store (this will clear time window)
+      mapStore.setDateRange({
+        start: customDateRange.value.start,
+        end: customDateRange.value.end
+      })
+    } else {
+      // Invalid range (end before start) - don't apply
+      console.warn('[MapFilters] Invalid date range: end date must be on or after start date')
+      mapStore.setDateRange(null)
+    }
+  } else {
+    mapStore.setDateRange(null)
   }
 }
 
 const markerTypes: Array<{ value: MapPin['type']; label: string; color: string; description?: string }> = [
-  { value: 'drone', label: 'Drones', color: '#22c55e' },
+  { value: 'drone', label: 'Targets', color: '#22c55e' },
   { value: 'sensor', label: 'Sensors', color: '#22d3ee' },
-  { value: 'target', label: 'RF Detections', color: '#f59e0b', description: 'Shown at sensor locations' },
-  { value: 'friendly', label: 'Operators', color: '#3b82f6' }
-  // Note: 'radar', 'threat', and 'unknown' types are defined but not currently used
+  { value: 'target', label: 'RF Detections', color: '#f59e0b', description: 'Shown at sensor locations' }
+  // Note: 'radar', 'threat', 'friendly', and 'unknown' types are defined but not currently used
   // { value: 'radar', label: 'Radar', color: '#8b5cf6' },
   // { value: 'threat', label: 'Threats', color: '#ef4444' },
+  // { value: 'friendly', label: 'Operators', color: '#3b82f6' },
   // { value: 'unknown', label: 'Unknown', color: '#6b7280' }
 ]
 

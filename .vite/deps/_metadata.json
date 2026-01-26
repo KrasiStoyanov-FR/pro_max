@@ -1,55 +1,64 @@
 {
-  "hash": "48c3839c",
-  "configHash": "81d02dab",
-  "lockfileHash": "da7c3c52",
-  "browserHash": "7c136c4a",
+  "hash": "dee2e40c",
+  "configHash": "ed7b2bc2",
+  "lockfileHash": "7f415438",
+  "browserHash": "5b902cde",
   "optimized": {
+    "@vuepic/vue-datepicker": {
+      "src": "../../node_modules/@vuepic/vue-datepicker/dist/vue-datepicker.js",
+      "file": "@vuepic_vue-datepicker.js",
+      "fileHash": "93326c4e",
+      "needsInterop": false
+    },
     "@phosphor-icons/vue": {
       "src": "../../node_modules/@phosphor-icons/vue/dist/index.mjs",
       "file": "@phosphor-icons_vue.js",
-      "fileHash": "628a53c9",
+      "fileHash": "b0270fdd",
       "needsInterop": false
     },
     "axios": {
       "src": "../../node_modules/axios/index.js",
       "file": "axios.js",
-      "fileHash": "0ba7f6ec",
+      "fileHash": "90dfe03d",
       "needsInterop": false
     },
     "leaflet": {
       "src": "../../node_modules/leaflet/dist/leaflet-src.js",
       "file": "leaflet.js",
-      "fileHash": "e9c7fc35",
+      "fileHash": "4168284b",
       "needsInterop": true
     },
     "pinia": {
       "src": "../../node_modules/pinia/dist/pinia.mjs",
       "file": "pinia.js",
-      "fileHash": "9ed547c1",
+      "fileHash": "c6062e61",
       "needsInterop": false
     },
     "vue": {
       "src": "../../node_modules/vue/dist/vue.runtime.esm-bundler.js",
       "file": "vue.js",
-      "fileHash": "2f833159",
+      "fileHash": "120d3cbe",
       "needsInterop": false
     },
     "vue-router": {
       "src": "../../node_modules/vue-router/dist/vue-router.mjs",
       "file": "vue-router.js",
-      "fileHash": "843497c3",
+      "fileHash": "f09fd22a",
       "needsInterop": false
     }
   },
   "chunks": {
+    "chunk-RNWUNH7L": {
+      "file": "chunk-RNWUNH7L.js"
+    },
     "chunk-AYVSL3LM": {
       "file": "chunk-AYVSL3LM.js"
     },
     "chunk-ZS4T33C3": {
       "file": "chunk-ZS4T33C3.js"
     },
-    "chunk-HKJ2B2AA": {
-      "file": "chunk-HKJ2B2AA.js"
+    "chunk-L6OFPWCY": {
+      "file": "chunk-L6OFPWCY.js"
     }
   }
 }

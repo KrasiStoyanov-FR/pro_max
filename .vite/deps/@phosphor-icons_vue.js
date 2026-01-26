@@ -9,7 +9,7 @@ import {
   openBlock,
   renderSlot
 } from "./chunk-ZS4T33C3.js";
-import "./chunk-HKJ2B2AA.js";
+import "./chunk-L6OFPWCY.js";
 
 // node_modules/@phosphor-icons/vue/dist/icons/PhAcorn.vue.mjs
 var Z = ["width", "height", "fill", "transform"];

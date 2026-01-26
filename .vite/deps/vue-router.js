@@ -20,7 +20,7 @@ import {
   watch,
   watchEffect
 } from "./chunk-ZS4T33C3.js";
-import "./chunk-HKJ2B2AA.js";
+import "./chunk-L6OFPWCY.js";
 
 // node_modules/vue-router/dist/vue-router.mjs
 var isBrowser = typeof document !== "undefined";

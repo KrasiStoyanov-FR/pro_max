@@ -444,11 +444,21 @@ app.delete('/api/db/table/:tableName/:recordId', async (req, res) => {
 app.put('/api/db/table/:tableName/:recordId', async (req, res) => {
   let connection = null
   try {
+    console.log('[API] ========== UPDATE REQUEST RECEIVED ==========')
+    console.log('[API] Request URL:', req.url)
+    console.log('[API] Request method:', req.method)
+    console.log('[API] Request params:', req.params)
+    console.log('[API] Request query:', req.query)
+    console.log('[API] Request body:', req.body)
+    
     const { tableName, recordId } = req.params
     const { database, pkColumn } = req.query
     const { data } = req.body
 
+    console.log('[API] Parsed values:', { tableName, recordId, database, pkColumn, hasData: !!data })
+
     if (!recordId) {
+      console.log('[API] ERROR: No recordId in params')
       return res.status(400).json({
         success: false,
         error: 'Record ID is required in the URL path'
@@ -456,6 +466,7 @@ app.put('/api/db/table/:tableName/:recordId', async (req, res) => {
     }
 
     if (!data || typeof data !== 'object') {
+      console.log('[API] ERROR: No data object in body')
       return res.status(400).json({
         success: false,
         error: 'Request body must contain a "data" object with the fields to update'
@@ -550,15 +561,36 @@ app.put('/api/db/table/:tableName/:recordId', async (req, res) => {
       updateQuery = `UPDATE \`${tableName}\` SET ${setClause} WHERE \`${primaryKeyColumn}\` = ?`
     }
 
+    // Log the UPDATE query for debugging
+    console.log(`[API] UPDATE query: ${updateQuery}`)
+    console.log(`[API] UPDATE values:`, values)
+    console.log(`[API] UPDATE recordId:`, { recordId, type: typeof recordId, length: String(recordId).length })
+    console.log(`[API] UPDATE primaryKeyColumn:`, primaryKeyColumn)
+
     const [result] = await connection.execute(updateQuery, values)
 
     const affected = (result && (result.affectedRows ?? result.changes)) || 0
+    console.log(`[API] UPDATE affected rows:`, affected)
 
     if (affected === 0) {
+      // Before returning 404, try to verify the record exists with a SELECT
+      let verifyQuery = ''
+      if (USE_SQLITE) {
+        verifyQuery = `SELECT * FROM ${tableName} WHERE ${primaryKeyColumn} = ? LIMIT 1`
+      } else if (database) {
+        verifyQuery = `SELECT * FROM \`${database}\`.\`${tableName}\` WHERE \`${primaryKeyColumn}\` = ? LIMIT 1`
+      } else {
+        verifyQuery = `SELECT * FROM \`${tableName}\` WHERE \`${primaryKeyColumn}\` = ? LIMIT 1`
+      }
+      const [verifyRows] = await connection.execute(verifyQuery, [recordId])
+      console.log(`[API] UPDATE verification query: ${verifyQuery}`)
+      console.log(`[API] UPDATE verification result:`, verifyRows)
+      console.log(`[API] UPDATE verification found ${verifyRows.length} rows`)
+      
       connection.release()
       return res.status(404).json({
         success: false,
-        error: `No record found with ${primaryKeyColumn}="${recordId}"`
+        error: `No record found with ${primaryKeyColumn}="${recordId}". Verification query found ${verifyRows.length} matching rows.`
       })
     }
 

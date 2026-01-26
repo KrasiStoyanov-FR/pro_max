@@ -21,6 +21,18 @@ const formatTimeWindow = (ms: number): string => {
   return `${Math.round(ms / 1000)} seconds`
 }
 
+// Helper to check if a timestamp is within the date range (if set)
+const isWithinDateRange = (timestamp: string | null | undefined, mapStore: ReturnType<typeof useMapStore>): boolean => {
+  const dateRange = mapStore.getDateRange()
+  if (!dateRange || !timestamp) return true // If no date range set, don't filter
+  
+  const timestampMs = new Date(timestamp).getTime()
+  const startMs = new Date(dateRange.start).getTime()
+  const endMs = new Date(dateRange.end).getTime()
+  
+  return timestampMs >= startMs && timestampMs <= endMs
+}
+
 // Get time window with priority: user selection > test mode > env variable > default
 const getTimeWindow = (mapStore: ReturnType<typeof useMapStore>, defaultMs: number, windowType: 'position' | 'detection' | 'maxAge' = 'position'): { value: number; source: string } => {
   // Priority 1: User-selected time window from UI
@@ -703,18 +715,31 @@ const toTimeValue = (value: string | undefined | null) => value ? new Date(value
       })
       
       if (rfDetectionsResponse.success && rfDetectionsResponse.data) {
-        // Use the same detection window logic as the summary card
-        const DETECTION_WINDOW_MS = getDetectionWindow(mapStore)
-        const cutoffTime = Date.now() - DETECTION_WINDOW_MS
-        const now = Date.now()
+        // Check if date range filtering is active
+        const dateRange = mapStore.getDateRange()
+        let cutoffTime: number
+        let now: number
+        let DETECTION_WINDOW_MS: number | null = null
+        
+        if (dateRange) {
+          // Historical mode: use date range
+          cutoffTime = new Date(dateRange.start).getTime()
+          now = new Date(dateRange.end).getTime()
+        } else {
+          // Real-time mode: use detection window
+          DETECTION_WINDOW_MS = getDetectionWindow(mapStore)
+          cutoffTime = Date.now() - DETECTION_WINDOW_MS
+          now = Date.now()
+        }
         
         console.log('[MapPins] RF Detections filter:', {
+          dateRange: dateRange ? { start: dateRange.start, end: dateRange.end } : null,
           windowMs: DETECTION_WINDOW_MS,
-          windowHours: (DETECTION_WINDOW_MS / (60 * 60 * 1000)).toFixed(2),
+          windowHours: DETECTION_WINDOW_MS ? (DETECTION_WINDOW_MS / (60 * 60 * 1000)).toFixed(2) : null,
           cutoffTime: new Date(cutoffTime).toISOString(),
           cutoffTimeMs: cutoffTime,
           now: now,
-          nowISO: new Date().toISOString(),
+          nowISO: new Date(now).toISOString(),
           totalDetections: rfDetectionsResponse.data.length
         })
         
@@ -829,10 +854,19 @@ const toTimeValue = (value: string | undefined | null) => value ? new Date(value
         rfDetectionsResponse.data.forEach((detection: RFDetection) => {
           const detectionTimeMs = detection.time ? new Date(detection.time).getTime() : NaN
           
-          // Filter out detections OLDER than the cutoff (detectionTime < cutoffTime means it's too old)
-          if (Number.isFinite(detectionTimeMs) && detectionTimeMs < cutoffTime) {
-            filteredCount++
-            return
+          // Filter detections based on date range or time window
+          if (dateRange) {
+            // Historical mode: check if within date range
+            if (Number.isFinite(detectionTimeMs) && (detectionTimeMs < cutoffTime || detectionTimeMs > now)) {
+              filteredCount++
+              return
+            }
+          } else {
+            // Real-time mode: filter out detections OLDER than the cutoff
+            if (Number.isFinite(detectionTimeMs) && detectionTimeMs < cutoffTime) {
+              filteredCount++
+              return
+            }
           }
           if (!registerDetection(detection)) {
             skippedCount++
@@ -1120,31 +1154,39 @@ const toTimeValue = (value: string | undefined | null) => value ? new Date(value
           
           // Log sensor detection details for debugging
           if (sensorDetections.length > 0) {
-            const DETECTION_WINDOW_MS = getDetectionWindow(mapStore)
-            const cutoffTime = Date.now() - DETECTION_WINDOW_MS
+            const dateRange = mapStore.getDateRange()
+            const DETECTION_WINDOW_MS = dateRange ? null : getDetectionWindow(mapStore)
+            const cutoffTime = dateRange ? new Date(dateRange.start).getTime() : (DETECTION_WINDOW_MS ? Date.now() - DETECTION_WINDOW_MS : null)
+            const now = dateRange ? new Date(dateRange.end).getTime() : Date.now()
+            
             console.log(`[MapPins] Sensor ${unit.system_id} detections:`, {
               systemId: unit.system_id,
               totalDetections: sensorDetections.length,
+              dateRange: dateRange ? { start: dateRange.start, end: dateRange.end } : null,
               detections: sensorDetections.map(d => ({
                 id: d.id,
                 timestamp: d.timestamp,
                 timestampISO: d.timestamp ? new Date(d.timestamp).toISOString() : null,
                 timestampMs: d.timestamp ? new Date(d.timestamp).getTime() : null,
-                ageMs: d.timestamp ? (Date.now() - new Date(d.timestamp).getTime()) : null,
-                ageHours: d.timestamp ? ((Date.now() - new Date(d.timestamp).getTime()) / (60 * 60 * 1000)).toFixed(2) : null,
+                ageMs: d.timestamp ? (now - new Date(d.timestamp).getTime()) : null,
+                ageHours: d.timestamp ? ((now - new Date(d.timestamp).getTime()) / (60 * 60 * 1000)).toFixed(2) : null,
                 status: d.status,
                 statusType: typeof d.status,
-                cutoffTime: new Date(cutoffTime).toISOString(),
-                isRecent: d.timestamp ? new Date(d.timestamp).getTime() >= cutoffTime : false,
+                cutoffTime: cutoffTime ? new Date(cutoffTime).toISOString() : null,
+                isRecent: d.timestamp && cutoffTime ? new Date(d.timestamp).getTime() >= cutoffTime : false,
                 passesFilter: (() => {
                   const statusValue = d.status as boolean | number
                   const isActive = statusValue === true || statusValue === 1
-                  return d.timestamp && isActive ? new Date(d.timestamp).getTime() >= cutoffTime && isActive : false
+                  if (dateRange) {
+                    return d.timestamp && isActive ? isWithinDateRange(d.timestamp, mapStore) && isActive : false
+                  } else {
+                    return d.timestamp && isActive && cutoffTime ? new Date(d.timestamp).getTime() >= cutoffTime && isActive : false
+                  }
                 })()
               })),
               hasActiveDetections,
               windowMs: DETECTION_WINDOW_MS,
-              windowHours: (DETECTION_WINDOW_MS / (60 * 60 * 1000)).toFixed(2)
+              windowHours: DETECTION_WINDOW_MS ? (DETECTION_WINDOW_MS / (60 * 60 * 1000)).toFixed(2) : null
             })
           }
 
@@ -1476,12 +1518,12 @@ const toTimeValue = (value: string | undefined | null) => value ? new Date(value
     }
   )
 
-  // Watch for time window changes and reload pins with new filter
+  // Watch for time window and date range changes and reload pins with new filter
   watch(
-    () => mapStore.timeWindowMs,
+    () => [mapStore.timeWindowMs, mapStore.dateRange],
     () => {
       if (isMapReady.value) {
-        // Reload pins with new time window - this will re-filter based on the new window
+        // Reload pins with new time window or date range - this will re-filter based on the new settings
         void loadPins()
       }
     }

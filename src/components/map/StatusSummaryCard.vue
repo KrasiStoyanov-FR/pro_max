@@ -40,20 +40,20 @@
           </button>
         </Tooltip>
 
-        <!-- Active Drones -->
+        <!-- Targets -->
         <Tooltip
-          :content="`Active drones currently tracked: ${activeDrones}`"
+          :content="`Targets currently tracked: ${activeDrones}`"
           position="left"
         >
           <button
             @click="handleDronesClick"
             class="w-full flex items-center space-x-3 p-2 rounded-lg hover:bg-neutral-800/50 transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1"
-            :aria-label="`${activeDrones} active drones`"
+            :aria-label="`${activeDrones} targets`"
             :disabled="isLoading"
           >
             <div class="w-3 h-3 bg-blue-500 rounded-full flex-shrink-0"></div>
             <span class="text-white text-sm flex-1 text-left">
-              {{ activeDrones }} Active {{ activeDrones === 1 ? 'Drone' : 'Drones' }}
+              {{ activeDrones }} {{ activeDrones === 1 ? 'Target' : 'Targets' }}
             </span>
             <span v-if="isLoading" class="text-xs text-neutral-400 animate-pulse">⟳</span>
           </button>
@@ -78,24 +78,6 @@
           </button>
         </Tooltip>
 
-        <!-- Operators Online -->
-        <Tooltip
-          :content="`Operators currently online: ${operatorsOnline}`"
-          position="left"
-        >
-          <button
-            @click="handleOperatorsClick"
-            class="w-full flex items-center space-x-3 p-2 rounded-lg hover:bg-neutral-800/50 transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1"
-            :aria-label="`${operatorsOnline} operators online`"
-            :disabled="isLoading"
-          >
-            <div class="w-3 h-3 bg-purple-500 rounded-full flex-shrink-0"></div>
-            <span class="text-white text-sm flex-1 text-left">
-              {{ operatorsOnline }} {{ operatorsOnline === 1 ? 'Operator' : 'Operators' }} Online
-            </span>
-            <span v-if="isLoading" class="text-xs text-neutral-400 animate-pulse">⟳</span>
-          </button>
-        </Tooltip>
       </div>
 
       <!-- Error State -->
@@ -130,7 +112,6 @@ const props = withDefaults(defineProps<Props>(), {
 const emit = defineEmits<{
   openDronesPanel: []
   openDetectionsPanel: []
-  openOperatorsPanel: []
   openDatabaseStatus: []
 }>()
 
@@ -240,24 +221,6 @@ const rfDetections = computed(() => {
   return totalDetections
 })
 
-// Count visible operators (filtered by type and time window)
-const operatorsOnline = computed(() => {
-  // Operators use 5 minute window (from api.ts)
-  const OPERATOR_WINDOW_MS = 5 * 60 * 1000
-  const cutoffTime = Date.now() - OPERATOR_WINDOW_MS
-  
-  return pins.value.filter(pin => {
-    // Must be a friendly (operator) type
-    if (pin.type !== 'friendly') return false
-    
-    // Must be visible according to type filter
-    if (!visibleMarkerTypes.value.has('friendly')) return false
-    
-    // Must be within time window
-    const timestampMs = pin.timestamp ? new Date(pin.timestamp).getTime() : 0
-    return timestampMs > 0 && timestampMs >= cutoffTime
-  }).length
-})
 
 const widgetRef = ref<HTMLElement | null>(null)
 
@@ -315,11 +278,6 @@ const handleDronesClick = () => {
 const handleDetectionsClick = () => {
   emit('openDetectionsPanel')
   // TODO: Open RF detections list panel
-}
-
-const handleOperatorsClick = () => {
-  emit('openOperatorsPanel')
-  // TODO: Open operators list panel
 }
 
 // Focus management for keyboard navigation

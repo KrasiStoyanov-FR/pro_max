@@ -334,7 +334,14 @@ const handleSubmit = async () => {
 
     if (isEditMode.value && props.device) {
       // Update existing device
-      const response = await databaseApi.updateDevice(props.device, deviceData)
+      // Ensure the device object has unit_id - use form value as fallback if missing
+      const deviceToUpdate = { ...props.device }
+      if (!deviceToUpdate.unit_id && form.unitId.trim()) {
+        const unitIdNum = Number(form.unitId.trim())
+        deviceToUpdate.unit_id = !isNaN(unitIdNum) ? unitIdNum : form.unitId.trim()
+      }
+      console.log('[DeviceModal] Updating device:', { originalDevice: props.device, deviceToUpdate, formUnitId: form.unitId })
+      const response = await databaseApi.updateDevice(deviceToUpdate, deviceData)
       
       if (!response.success || !response.data) {
         throw new Error(response.error || 'Failed to update device')
