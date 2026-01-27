@@ -93,6 +93,24 @@
           </option>
         </select>
       </div>
+
+      <div v-if="hasSensors" class="flex flex-col">
+        <label class="text-xs font-semibold uppercase tracking-wide text-neutral-400" for="filter-sensor">
+          Sensor
+        </label>
+        <select
+          id="filter-sensor"
+          class="mt-1 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white focus:border-primary-400 focus:outline-none"
+          :disabled="isLoading"
+          :value="sensorValue"
+          @change="handleSensorChange(($event.target as HTMLSelectElement).value)"
+        >
+          <option class="text-neutral-900" value="all">All sensors</option>
+          <option class="text-neutral-900" v-for="sensor in sensorsList" :key="sensor.id" :value="sensor.id">
+            {{ sensor.name }} ({{ sensor.systemId || sensor.sensorId || 'N/A' }})
+          </option>
+        </select>
+      </div>
     </div>
   </form>
 </template>
@@ -130,6 +148,18 @@ const props = defineProps({
     type: Array as PropType<string[]>,
     default: () => []
   },
+  sensorId: {
+    type: [String, Number, Object] as PropType<string | number | null | Ref<string | number | null>>,
+    default: null
+  },
+  systemId: {
+    type: [String, Number, Object] as PropType<string | number | null | Ref<string | number | null>>,
+    default: null
+  },
+  sensors: {
+    type: Array as PropType<Array<{ id: string; name: string; systemId?: string | null; sensorId?: string | number | null }>>,
+    default: () => []
+  },
   isLoading: {
     type: Boolean,
     default: false
@@ -142,6 +172,8 @@ const emit = defineEmits<{
   (e: 'update:status', value: DetectionStatus | 'all'): void
   (e: 'update:timeWindow', value: number | null): void
   (e: 'update:zone', value: string | 'all'): void
+  (e: 'update:sensorId', value: string | number | null): void
+  (e: 'update:systemId', value: string | number | null): void
 }>()
 
 const localSearch = ref(toValue(props.search) ?? '')
@@ -165,6 +197,30 @@ const timeWindowValue = computed<number | null>(() => {
 const zoneValue = computed<string>(() => (toValue(props.zone) ?? 'all') as string)
 const zonesList = computed(() => props.zones)
 const hasZones = computed(() => zonesList.value.length > 0)
+
+const sensorValue = computed<string>(() => {
+  const sensorId = toValue(props.sensorId)
+  const systemId = toValue(props.systemId)
+  if (sensorId !== null && sensorId !== undefined) return String(sensorId)
+  if (systemId !== null && systemId !== undefined) return `system:${systemId}`
+  return 'all'
+})
+const sensorsList = computed(() => props.sensors)
+const hasSensors = computed(() => sensorsList.value.length > 0)
+
+const handleSensorChange = (value: string) => {
+  if (value === 'all') {
+    emit('update:sensorId', null)
+    emit('update:systemId', null)
+  } else if (value.startsWith('system:')) {
+    const systemId = value.replace('system:', '')
+    emit('update:systemId', systemId)
+    emit('update:sensorId', null)
+  } else {
+    emit('update:sensorId', value)
+    emit('update:systemId', null)
+  }
+}
 
 const parseTimeWindow = (value: string): number | null => {
   if (!value) return null

@@ -19,7 +19,7 @@
         @change="onTimeWindowChange"
         class="w-full bg-neutral-800/50 border border-neutral-700/30 rounded px-2 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
       >
-        <option v-for="option in timeWindowOptions" :key="option.value" :value="option.value">
+        <option class="text-neutral-900" v-for="option in timeWindowOptions" :key="option.value" :value="option.value">
           {{ option.label }}
         </option>
       </select>
@@ -126,9 +126,9 @@
               @change="onSensorFilterModeChange"
               class="w-full bg-neutral-800/50 border border-neutral-700/30 rounded px-2 py-1.5 text-xs text-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
             >
-              <option value="all">All Sensors</option>
-              <option value="with_detections">With Recent RF Detections</option>
-              <option value="without_detections">Without RF Detections</option>
+              <option class="text-neutral-900" value="all">All Sensors</option>
+              <option class="text-neutral-900" value="with_detections">With Recent RF Detections</option>
+              <option class="text-neutral-900" value="without_detections">Without RF Detections</option>
             </select>
             <p class="text-[10px] text-neutral-500 mt-0.5">
               {{ sensorFilterModeDescription }}

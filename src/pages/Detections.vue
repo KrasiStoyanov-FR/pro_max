@@ -41,8 +41,11 @@
         v-model:status="filterStatus"
         v-model:timeWindow="filterTimeWindow"
         v-model:zone="filterZone"
+        v-model:sensorId="filterSensorId"
+        v-model:systemId="filterSystemId"
         :is-loading="isLoading"
         :zones="availableZones"
+        :sensors="availableSensors"
       />
         </div>
 
@@ -95,9 +98,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, onMounted, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
 import { useDetections } from '@/composables/useDetections'
+import { useSensors } from '@/composables/useSensors'
 import LayoutWrapper from '@/components/layout/LayoutWrapper.vue'
 import DetectionsFilters from '@/views/detections/components/DetectionsFilters.vue'
 import DetectionsTable from '@/views/detections/components/DetectionsTable.vue'
@@ -105,6 +110,8 @@ import DetectionDetailsPanel from '@/views/detections/components/DetectionDetail
 import type { DetectionItem } from '@/types/detections'
 
 useAuth()
+const route = useRoute()
+const router = useRouter()
 
 const {
   detections,
@@ -130,6 +137,22 @@ const filterType = filters.type
 const filterStatus = filters.status
 const filterTimeWindow = filters.timeWindow
 const filterZone = filters.zone
+const filterSensorId = filters.sensorId
+const filterSystemId = filters.systemId
+
+// Load sensors for filter dropdown
+const { sensors } = useSensors({ enabled: true })
+const availableSensors = computed(() => {
+  return sensors.value.map(sensor => {
+    const source = sensor.source as any
+    return {
+      id: sensor.id,
+      name: sensor.name,
+      systemId: source?.system_id ?? null,
+      sensorId: source?.unit_id ?? source?.id ?? null
+    }
+  })
+})
 
 const totalCount = computed(() => detections.value.length)
 const filteredCount = computed(() => filteredDetections.value.length)
@@ -154,6 +177,10 @@ const selectedDetectionId = ref<number | null>(null)
 const panelVisible = ref(false)
 
 const selectedDetection = computed(() => {
+  // First try to find in filtered detections (current view)
+  const inFiltered = filteredDetections.value.find(detection => detection.id === selectedDetectionId.value)
+  if (inFiltered) return inFiltered
+  // Fallback to all detections
   return detections.value.find(detection => detection.id === selectedDetectionId.value) ?? null
 })
 
@@ -169,5 +196,106 @@ const closeDetails = () => {
 const tableContainerClass = computed(() => {
   return panelVisible.value ? 'lg:pr-6 lg:mr-[30rem]' : ''
 })
+
+// Function to apply query params to filters
+const applyQueryParams = async () => {
+  const sensorId = route.query.sensorId as string | undefined
+  const systemId = route.query.systemId as string | undefined
+  const detectionId = route.query.detectionId as string | undefined
+  const timeWindow = route.query.timeWindow as string | undefined
+  
+  let filtersChanged = false
+  
+  // Apply sensor filter - prioritize systemId over sensorId
+  if (systemId) {
+    if (filterSystemId.value !== systemId) {
+      filterSystemId.value = systemId
+      filterSensorId.value = null
+      filtersChanged = true
+    }
+  } else if (sensorId) {
+    if (filterSensorId.value !== sensorId) {
+      filterSensorId.value = sensorId
+      filterSystemId.value = null
+      filtersChanged = true
+    }
+  }
+  
+  // Apply time window filter (convert from minutes to the format used by filters)
+  if (timeWindow) {
+    const timeWindowMinutes = Number(timeWindow)
+    if (!Number.isNaN(timeWindowMinutes) && timeWindowMinutes > 0) {
+      if (filterTimeWindow.value !== timeWindowMinutes) {
+        filterTimeWindow.value = timeWindowMinutes
+        filtersChanged = true
+      }
+    }
+  }
+  
+  // Force refresh if filters changed
+  if (filtersChanged) {
+    await refresh()
+  }
+  
+  // Show detection details panel if detectionId is provided
+  if (detectionId) {
+    const id = Number(detectionId)
+    if (!Number.isNaN(id)) {
+      selectedDetectionId.value = id
+      
+      // Function to check and show the panel
+      const showPanel = () => {
+        // Check in all possible locations
+        const detection = paginatedDetections.value.find(d => d.id === id) ||
+                         filteredDetections.value.find(d => d.id === id) ||
+                         detections.value.find(d => d.id === id)
+        
+        if (detection) {
+          panelVisible.value = true
+          return true
+        }
+        return false
+      }
+      
+      // Try immediately (in case data is already loaded)
+      if (showPanel()) {
+        return // Panel is shown, we're done
+      }
+      
+      // If not found immediately, wait for data to load
+      // Watch for when loading completes
+      const checkAfterLoad = () => {
+        if (!isLoading.value) {
+          // Data has finished loading, try to show panel
+          if (!showPanel()) {
+            // Still not found, wait a bit more for filters to apply
+            setTimeout(() => {
+              if (!showPanel()) {
+                console.warn(`[Detections] Detection ${id} not found after applying filters`)
+              }
+            }, 500)
+          }
+        } else {
+          // Still loading, check again
+          setTimeout(checkAfterLoad, 200)
+        }
+      }
+      
+      // Start checking after a short delay
+      setTimeout(checkAfterLoad, 100)
+    }
+  }
+}
+
+// Apply query params on mount
+onMounted(() => {
+  applyQueryParams()
+})
+
+// Watch for route query changes (e.g., when navigating with query params)
+// Use immediate: false to avoid double execution on mount
+watch(() => route.query, () => {
+  applyQueryParams()
+}, { deep: true, immediate: false })
 </script>
 

@@ -1251,6 +1251,165 @@ app.get('/api/detections', (req, res) => {
   res.json(allDetections)
 })
 
+// Server-Sent Events endpoint for real-time updates
+app.get('/api/realtime/events', async (req, res) => {
+  console.log('[SSE] Client connected to real-time events stream')
+  
+  // Set headers for SSE
+  res.setHeader('Content-Type', 'text/event-stream')
+  res.setHeader('Cache-Control', 'no-cache')
+  res.setHeader('Connection', 'keep-alive')
+  res.setHeader('Access-Control-Allow-Origin', '*')
+  res.setHeader('Access-Control-Allow-Headers', 'Cache-Control')
+
+  // Send initial connection message
+  res.write(`data: ${JSON.stringify({ type: 'connected', message: 'Real-time updates enabled', timestamp: new Date().toISOString() })}\n\n`)
+
+  // Track last seen IDs to detect new records
+  const lastSeenIds = {
+    rf_detections: new Set(),
+    drone_positions: new Set(),
+    gps_unit_position: new Set(),
+    drones: new Set(),
+    operator_positions: new Set()
+  }
+
+  // Poll interval (1-2 seconds as requested)
+  const POLL_INTERVAL = 1500 // 1.5 seconds
+  let pollInterval = null
+  let isActive = true
+
+  const pollForUpdates = async () => {
+    if (!isActive) return
+
+    try {
+      const pool = await createConnectionPool()
+      const connection = await pool.getConnection()
+      const DATABASE_NAME = process.env.DB_NAME || 'drone_monitoring'
+
+      // Check for new RF detections
+      try {
+        let query = `SELECT * FROM rf_detections ORDER BY id DESC LIMIT 50`
+        if (USE_SQLITE) {
+          query = `SELECT * FROM rf_detections ORDER BY id DESC LIMIT 50`
+        } else {
+          query = `SELECT * FROM \`${DATABASE_NAME}\`.\`rf_detections\` ORDER BY id DESC LIMIT 50`
+        }
+        const [detections] = await connection.execute(query)
+        
+        detections.forEach(detection => {
+          if (!lastSeenIds.rf_detections.has(detection.id)) {
+            // New detection
+            lastSeenIds.rf_detections.add(detection.id)
+            const update = {
+              type: 'rf_detection',
+              action: 'insert',
+              data: detection,
+              timestamp: new Date().toISOString()
+            }
+            res.write(`event: rf_detection\ndata: ${JSON.stringify(update)}\n\n`)
+            console.log('[SSE] New RF detection:', detection.id)
+          }
+        })
+      } catch (err) {
+        console.error('[SSE] Error checking RF detections:', err.message)
+      }
+
+      // Check for new drone positions
+      try {
+        let query = `SELECT * FROM drone_positions ORDER BY id DESC LIMIT 100`
+        if (USE_SQLITE) {
+          query = `SELECT * FROM drone_positions ORDER BY id DESC LIMIT 100`
+        } else {
+          query = `SELECT * FROM \`${DATABASE_NAME}\`.\`drone_positions\` ORDER BY id DESC LIMIT 100`
+        }
+        const [positions] = await connection.execute(query)
+        
+        positions.forEach(position => {
+          if (!lastSeenIds.drone_positions.has(position.id)) {
+            // New position
+            lastSeenIds.drone_positions.add(position.id)
+            const update = {
+              type: 'drone_position',
+              action: 'insert',
+              data: position,
+              timestamp: new Date().toISOString()
+            }
+            res.write(`event: drone_position\ndata: ${JSON.stringify(update)}\n\n`)
+            console.log('[SSE] New drone position:', position.id)
+          }
+        })
+      } catch (err) {
+        console.error('[SSE] Error checking drone positions:', err.message)
+      }
+
+      // Check for GPS unit position changes (less frequent - these are mostly static)
+      try {
+        let query = `SELECT * FROM gps_unit_position ORDER BY id DESC LIMIT 50`
+        if (USE_SQLITE) {
+          query = `SELECT * FROM gps_unit_position ORDER BY id DESC LIMIT 50`
+        } else {
+          query = `SELECT * FROM \`${DATABASE_NAME}\`.\`gps_unit_position\` ORDER BY id DESC LIMIT 50`
+        }
+        const [units] = await connection.execute(query)
+        
+        units.forEach(unit => {
+          const unitKey = unit.id ?? unit.unit_id ?? unit.system_id
+          if (unitKey && !lastSeenIds.gps_unit_position.has(String(unitKey))) {
+            // New unit
+            lastSeenIds.gps_unit_position.add(String(unitKey))
+            const update = {
+              type: 'gps_unit_position',
+              action: 'insert',
+              data: unit,
+              timestamp: new Date().toISOString()
+            }
+            res.write(`event: gps_unit_position\ndata: ${JSON.stringify(update)}\n\n`)
+            console.log('[SSE] New GPS unit position:', unitKey)
+          }
+        })
+      } catch (err) {
+        console.error('[SSE] Error checking GPS unit positions:', err.message)
+      }
+
+      connection.release()
+    } catch (error) {
+      console.error('[SSE] Error polling for updates:', error)
+      // Send error event
+      res.write(`data: ${JSON.stringify({ type: 'error', message: error.message, timestamp: new Date().toISOString() })}\n\n`)
+    }
+  }
+
+  // Start polling
+  pollInterval = setInterval(pollForUpdates, POLL_INTERVAL)
+  
+  // Initial poll
+  pollForUpdates()
+
+  // Cleanup on client disconnect
+  req.on('close', () => {
+    console.log('[SSE] Client disconnected from real-time events stream')
+    isActive = false
+    if (pollInterval) {
+      clearInterval(pollInterval)
+    }
+    res.end()
+  })
+
+  // Keep connection alive with heartbeat
+  const heartbeat = setInterval(() => {
+    if (isActive) {
+      res.write(`: heartbeat\n\n`)
+    }
+  }, 30000) // Every 30 seconds
+
+  req.on('close', () => {
+    if (heartbeat) {
+      clearInterval(heartbeat)
+    }
+  })
+})
+
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({

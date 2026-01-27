@@ -123,10 +123,10 @@
             @change="handlePageSizeChange"
             class="ml-2 rounded border border-white/10 bg-white/5 px-2 py-1 text-sm text-white focus:border-primary-400 focus:outline-none"
           >
-            <option value="25">25</option>
-            <option value="50">50</option>
-            <option value="100">100</option>
-            <option value="200">200</option>
+            <option class="text-neutral-900" value="25">25</option>
+            <option class="text-neutral-900" value="50">50</option>
+            <option class="text-neutral-900" value="100">100</option>
+            <option class="text-neutral-900" value="200">200</option>
           </select>
         </label>
       </div>

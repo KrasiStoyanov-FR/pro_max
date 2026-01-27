@@ -195,6 +195,8 @@ export const databaseApi = {
       timeWindow?: number | null
       zone?: string
       search?: string
+      sensorId?: string | number | null
+      systemId?: string | number | null
     }
   ): Promise<RFDetectionsResponse> {
     const filterKey = filters
@@ -250,6 +252,8 @@ export const databaseApi = {
     timeWindow?: number | null
     zone?: string
     search?: string
+    sensorId?: string | number | null
+    systemId?: string | number | null
   }): Promise<{ success: boolean; count?: number; error?: string }> {
     const filterKey = filters
       ? `${filters.type || 'all'}_${filters.status || 'all'}_${filters.timeWindow || 'all'}_${filters.zone || 'all'}_${filters.search || ''}`
@@ -275,6 +279,12 @@ export const databaseApi = {
           }
           if (filters.search && filters.search.trim()) {
             params.append('search', filters.search.trim())
+          }
+          if (filters.sensorId !== null && filters.sensorId !== undefined) {
+            params.append('sensorId', String(filters.sensorId))
+          }
+          if (filters.systemId !== null && filters.systemId !== undefined) {
+            params.append('systemId', String(filters.systemId))
           }
         }
         const response = await api.get(`/table/rf_detections?${params.toString()}`)

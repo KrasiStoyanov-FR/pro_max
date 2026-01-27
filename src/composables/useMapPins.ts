@@ -2,6 +2,8 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useMapStore } from '@/store/map'
 import { mapService } from '@/services/mapService'
 import { databaseApi } from '@/services/api'
+import { useRealtime } from '@/services/realtimeService'
+import { useDataStore } from '@/store/data'
 import type { MapPin, MapViewport, DroneTrajectory, DroneTrajectoryPoint, DetectionCheckpoint } from '@/types/map'
 import type { DronePosition, RFDetection, OperatorPosition, GpsUnitPosition, Drone } from '@/types/database'
 
@@ -21,6 +23,9 @@ const formatTimeWindow = (ms: number): string => {
   return `${Math.round(ms / 1000)} seconds`
 }
 
+// Helper to convert timestamp to milliseconds
+const toTimeValue = (value: string | undefined | null) => value ? new Date(value).getTime() : 0
+
 // Helper to check if a timestamp is within the date range (if set)
 const isWithinDateRange = (timestamp: string | null | undefined, mapStore: ReturnType<typeof useMapStore>): boolean => {
   const dateRange = mapStore.getDateRange()
@@ -33,19 +38,31 @@ const isWithinDateRange = (timestamp: string | null | undefined, mapStore: Retur
   return timestampMs >= startMs && timestampMs <= endMs
 }
 
+// Cache for time window values to avoid excessive logging
+const timeWindowCache = new Map<string, { value: number; source: string }>()
+
 // Get time window with priority: user selection > test mode > env variable > default
 const getTimeWindow = (mapStore: ReturnType<typeof useMapStore>, defaultMs: number, windowType: 'position' | 'detection' | 'maxAge' = 'position'): { value: number; source: string } => {
+  // Check cache first
+  const cacheKey = `${windowType}_${mapStore.getTimeWindow() ?? 'null'}_${isTestMode}`
+  const cached = timeWindowCache.get(cacheKey)
+  if (cached) {
+    return cached
+  }
+
   // Priority 1: User-selected time window from UI
   const userWindow = mapStore.getTimeWindow()
   if (userWindow !== null && userWindow > 0) {
-    console.log(`[TimeWindow] ${windowType} window: ${formatTimeWindow(userWindow)} (source: user selection)`)
-    return { value: userWindow, source: 'user' }
+    const result = { value: userWindow, source: 'user' }
+    timeWindowCache.set(cacheKey, result)
+    return result
   }
   
   // Priority 2: Test mode (1 year)
   if (isTestMode) {
-    console.log(`[TimeWindow] ${windowType} window: ${formatTimeWindow(ONE_YEAR_MS)} (source: test mode)`)
-    return { value: ONE_YEAR_MS, source: 'test' }
+    const result = { value: ONE_YEAR_MS, source: 'test' }
+    timeWindowCache.set(cacheKey, result)
+    return result
   }
   
   // Priority 3: Environment variable
@@ -58,14 +75,16 @@ const getTimeWindow = (mapStore: ReturnType<typeof useMapStore>, defaultMs: numb
   if (envValue) {
     const parsed = parseInt(envValue, 10)
     if (parsed > 0) {
-      console.log(`[TimeWindow] ${windowType} window: ${formatTimeWindow(parsed)} (source: env variable ${envKey})`)
-      return { value: parsed, source: 'env' }
+      const result = { value: parsed, source: 'env' }
+      timeWindowCache.set(cacheKey, result)
+      return result
     }
   }
   
   // Priority 4: Default
-  console.log(`[TimeWindow] ${windowType} window: ${formatTimeWindow(defaultMs)} (source: default)`)
-  return { value: defaultMs, source: 'default' }
+  const result = { value: defaultMs, source: 'default' }
+  timeWindowCache.set(cacheKey, result)
+  return result
 }
 
 const getActivePositionWindow = (mapStore: ReturnType<typeof useMapStore>): number => {
@@ -81,6 +100,84 @@ const getDetectionWindow = (mapStore: ReturnType<typeof useMapStore>): number =>
 const getMaxPositionAge = (mapStore: ReturnType<typeof useMapStore>): number => {
   const result = getTimeWindow(mapStore, 60 * 60 * 1000, 'maxAge') // Default: 1 hour
   return result.value
+}
+
+// Helper functions for coordinate and trajectory processing
+const isValidCoordinate = (lat: number, lng: number) => {
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return false
+  if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return false
+  const nearZeroThreshold = 0.0001
+  if (Math.abs(lat) < nearZeroThreshold && Math.abs(lng) < nearZeroThreshold) return false
+  return true
+}
+
+const parseCoordinate = (value: unknown): number | null => {
+  if (value === null || value === undefined) return null
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null
+  }
+  if (typeof value === 'string') {
+    const parsed = parseFloat(value)
+    return Number.isFinite(parsed) ? parsed : null
+  }
+  return null
+}
+
+const haversineDistanceKm = (pointA: DroneTrajectoryPoint, pointB: DroneTrajectoryPoint) => {
+  const toRadians = (deg: number) => deg * (Math.PI / 180)
+  const R = 6371 // Earth radius in km
+  const dLat = toRadians(pointB.lat - pointA.lat)
+  const dLng = toRadians(pointB.lng - pointA.lng)
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRadians(pointA.lat)) * Math.cos(toRadians(pointB.lat)) *
+    Math.sin(dLng / 2) * Math.sin(dLng / 2)
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+  return R * c
+}
+
+const filterTrajectoryPoints = (points: DroneTrajectoryPoint[]): DroneTrajectoryPoint[] => {
+  if (points.length < 2) {
+    return points
+  }
+
+  const MAX_POINTS_PER_TRAJECTORY = 75
+  const MAX_DISTANCE_KM = 400
+  const MAX_SPEED_KMH = 900
+  const MAX_TIME_GAP_HOURS = 72
+
+  const cleaned: DroneTrajectoryPoint[] = [points[0]]
+
+  for (let i = 1; i < points.length; i++) {
+    const point = points[i]
+    const lastPoint = cleaned[cleaned.length - 1]
+
+    const distanceKm = haversineDistanceKm(lastPoint, point)
+    const timeDeltaMs = toTimeValue(point.timestamp) - toTimeValue(lastPoint.timestamp)
+    const hours = timeDeltaMs > 0 ? timeDeltaMs / (1000 * 60 * 60) : 0
+    const speedKmh = hours > 0 ? distanceKm / hours : distanceKm > 0 ? Infinity : 0
+
+    const isDuplicate =
+      Math.abs(lastPoint.lat - point.lat) <= 1e-6 &&
+      Math.abs(lastPoint.lng - point.lng) <= 1e-6
+
+    const isUnrealistic =
+      distanceKm > MAX_DISTANCE_KM ||
+      (hours > 0 && speedKmh > MAX_SPEED_KMH) ||
+      hours > MAX_TIME_GAP_HOURS
+
+    if (isDuplicate || isUnrealistic) {
+      continue
+    }
+
+    cleaned.push(point)
+  }
+
+  if (cleaned.length < 2) {
+    return cleaned
+  }
+
+  return cleaned.slice(-MAX_POINTS_PER_TRAJECTORY)
 }
 
 export function useMapPins() {
@@ -109,7 +206,6 @@ export function useMapPins() {
   }
 
   // Initialize map
-const toTimeValue = (value: string | undefined | null) => value ? new Date(value).getTime() : 0
 
   const focusTrajectoryPoint = (point: DroneTrajectoryPoint) => {
     console.log('[MapPins] focusTrajectoryPoint called:', { timestamp: point.timestamp, lat: point.lat, lng: point.lng })
@@ -348,62 +444,6 @@ const toTimeValue = (value: string | undefined | null) => value ? new Date(value
   const loadPins = async () => {
     try {
       mapStore.setLoading(true)
-      const haversineDistanceKm = (pointA: DroneTrajectoryPoint, pointB: DroneTrajectoryPoint) => {
-        const toRadians = (deg: number) => deg * (Math.PI / 180)
-        const R = 6371 // Earth radius in km
-        const dLat = toRadians(pointB.lat - pointA.lat)
-        const dLng = toRadians(pointB.lng - pointA.lng)
-        const a =
-          Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-          Math.cos(toRadians(pointA.lat)) * Math.cos(toRadians(pointB.lat)) *
-          Math.sin(dLng / 2) * Math.sin(dLng / 2)
-        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
-        return R * c
-      }
-
-      const filterTrajectoryPoints = (points: DroneTrajectoryPoint[]): DroneTrajectoryPoint[] => {
-        if (points.length < 2) {
-          return points
-        }
-
-        const MAX_POINTS_PER_TRAJECTORY = 75
-        const MAX_DISTANCE_KM = 400
-        const MAX_SPEED_KMH = 900
-        const MAX_TIME_GAP_HOURS = 72
-
-        const cleaned: DroneTrajectoryPoint[] = [points[0]]
-
-        for (let i = 1; i < points.length; i++) {
-          const point = points[i]
-          const lastPoint = cleaned[cleaned.length - 1]
-
-          const distanceKm = haversineDistanceKm(lastPoint, point)
-          const timeDeltaMs = toTimeValue(point.timestamp) - toTimeValue(lastPoint.timestamp)
-          const hours = timeDeltaMs > 0 ? timeDeltaMs / (1000 * 60 * 60) : 0
-          const speedKmh = hours > 0 ? distanceKm / hours : distanceKm > 0 ? Infinity : 0
-
-          const isDuplicate =
-            Math.abs(lastPoint.lat - point.lat) <= 1e-6 &&
-            Math.abs(lastPoint.lng - point.lng) <= 1e-6
-
-          const isUnrealistic =
-            distanceKm > MAX_DISTANCE_KM ||
-            (hours > 0 && speedKmh > MAX_SPEED_KMH) ||
-            hours > MAX_TIME_GAP_HOURS
-
-          if (isDuplicate || isUnrealistic) {
-            continue
-          }
-
-          cleaned.push(point)
-        }
-
-        if (cleaned.length < 2) {
-          return cleaned
-        }
-
-        return cleaned.slice(-MAX_POINTS_PER_TRAJECTORY)
-      }
 
     const getTrajectoryKey = (
       droneId: number | null | undefined,
@@ -417,6 +457,7 @@ const toTimeValue = (value: string | undefined | null) => value ? new Date(value
     }
       
       // Fetch real data from database
+      // Use cached sensors if available to avoid unnecessary API calls
       const [
         dronesResponse,
         dronePositionsResponse,
@@ -428,7 +469,20 @@ const toTimeValue = (value: string | undefined | null) => value ? new Date(value
         databaseApi.getDronePositions(),
         databaseApi.getRFDetections(),
         databaseApi.getOperatorPositions(),
-        databaseApi.getGpsUnitPositions()
+        // Only fetch sensors if not cached
+        sensorsLoaded.value 
+          ? Promise.resolve({ success: true, data: Array.from(sensorsCache.value.values()) })
+          : databaseApi.getGpsUnitPositions().then(response => {
+              if (response.success && response.data) {
+                // Update cache
+                response.data.forEach((unit: GpsUnitPosition) => {
+                  const key = unit.id ?? unit.unit_id ?? unit.system_id ?? `unit-${Math.random()}`
+                  sensorsCache.value.set(String(key), unit)
+                })
+                sensorsLoaded.value = true
+              }
+              return response
+            })
       ])
 
       const droneMetadata = new Map<string, Drone>()
@@ -448,27 +502,6 @@ const toTimeValue = (value: string | undefined | null) => value ? new Date(value
       const droneTrajectoryMap = new Map<string, { points: DroneTrajectoryPoint[], positions: DronePosition[], latestPosition: DronePosition | null }>()
       const droneTrajectoryPoints = new Map<string, DroneTrajectoryPoint[]>()
       const droneDetectionsMap = new Map<string, DetectionCheckpoint[]>()
-
-      const isValidCoordinate = (lat: number, lng: number) => {
-        if (!Number.isFinite(lat) || !Number.isFinite(lng)) return false
-        if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return false
-        // Filter out zero coordinates that typically indicate missing data
-        const nearZeroThreshold = 0.0001
-        if (Math.abs(lat) < nearZeroThreshold && Math.abs(lng) < nearZeroThreshold) return false
-        return true
-      }
-
-      const parseCoordinate = (value: unknown): number | null => {
-        if (value === null || value === undefined) return null
-        if (typeof value === 'number') {
-          return Number.isFinite(value) ? value : null
-        }
-        if (typeof value === 'string') {
-          const parsed = parseFloat(value)
-          return Number.isFinite(parsed) ? parsed : null
-        }
-        return null
-      }
 
       const extractCoordinate = (source: Record<string, any>, keys: string[]): number | null => {
         for (const key of keys) {
@@ -800,18 +833,6 @@ const toTimeValue = (value: string | undefined | null) => value ? new Date(value
         const systemIdToSensorCoordinates = new Map<string, { lat: number; lng: number; name?: string | null }>()
         if (gpsUnitPositionsResponse.success && gpsUnitPositionsResponse.data) {
           gpsUnitPositionsResponse.data.forEach((unit: GpsUnitPosition) => {
-            const parseCoordinate = (value: unknown): number | null => {
-              if (value === null || value === undefined) return null
-              if (typeof value === 'number') {
-                return Number.isFinite(value) ? value : null
-              }
-              if (typeof value === 'string') {
-                const parsed = parseFloat(value)
-                return Number.isFinite(parsed) ? parsed : null
-              }
-              return null
-            }
-
             const lat = parseCoordinate((unit as any)?.gps_lat) ??
                        parseCoordinate(unit.latitude) ?? 
                        parseCoordinate((unit as any)?.lat) ?? 
@@ -1559,32 +1580,313 @@ const toTimeValue = (value: string | undefined | null) => value ? new Date(value
     }
   }
 
+  // Real-time updates integration
+  const dataStore = useDataStore()
+  const sensorsCache = ref<Map<string, GpsUnitPosition>>(new Map())
+  const sensorsLoaded = ref(false)
+
+  // Load sensors once and cache them (they're static)
+  const loadSensorsOnce = async () => {
+    if (sensorsLoaded.value) return
+    
+    try {
+      const response = await databaseApi.getGpsUnitPositions()
+      if (response.success && response.data) {
+        response.data.forEach((unit: GpsUnitPosition) => {
+          const key = unit.id ?? unit.unit_id ?? unit.system_id ?? `unit-${Math.random()}`
+          sensorsCache.value.set(String(key), unit)
+        })
+        sensorsLoaded.value = true
+        console.log('[MapPins] Loaded and cached sensors:', sensorsCache.value.size)
+      }
+    } catch (error) {
+      console.error('[MapPins] Failed to load sensors:', error)
+    }
+  }
+
+  // Debounce mechanism for incremental updates
+  let refreshDebounceTimer: ReturnType<typeof setTimeout> | null = null
+  const REFRESH_DEBOUNCE_MS = 2000 // 2 seconds - batch updates together
+
+  // Incremental update handlers
+  const handleRFDetectionUpdate = (detection: RFDetection, action: 'insert' | 'update' | 'delete') => {
+    if (!isMapReady.value) return
+
+    console.log(`[MapPins] RF Detection ${action}:`, detection.id)
+    
+    // Update data store incrementally
+    if (action === 'delete') {
+      dataStore.removeRFDetection(detection.id)
+    } else {
+      dataStore.upsertRFDetection(detection)
+    }
+
+    // Debounce refresh to batch multiple updates
+    scheduleIncrementalRefresh()
+  }
+
+  const handleDronePositionUpdate = (position: DronePosition, action: 'insert' | 'update' | 'delete') => {
+    if (!isMapReady.value) return
+
+    console.log(`[MapPins] Drone Position ${action}:`, position.id)
+    
+    // Update data store incrementally
+    if (action === 'delete') {
+      dataStore.removeDronePosition(position.id)
+    } else {
+      dataStore.upsertDronePosition(position)
+    }
+
+    // Debounce refresh to batch multiple updates
+    scheduleIncrementalRefresh()
+  }
+
+  const handleGpsUnitPositionUpdate = (unit: GpsUnitPosition, action: 'insert' | 'update' | 'delete') => {
+    if (!isMapReady.value) return
+
+    console.log(`[MapPins] GPS Unit Position ${action}:`, unit.id ?? unit.unit_id)
+    
+    // Update cache if it's a sensor
+    if (action === 'delete') {
+      const key = String(unit.id ?? unit.unit_id ?? unit.system_id ?? '')
+      sensorsCache.value.delete(key)
+      dataStore.removeGpsUnitPositionById(unit.id ?? unit.unit_id ?? unit.system_id ?? '')
+    } else {
+      const key = String(unit.id ?? unit.unit_id ?? unit.system_id ?? '')
+      sensorsCache.value.set(key, unit)
+      dataStore.upsertGpsUnitPosition(unit)
+    }
+
+    // Debounce refresh to batch multiple updates
+    scheduleIncrementalRefresh()
+  }
+
+  // Schedule a debounced incremental refresh
+  const scheduleIncrementalRefresh = () => {
+    if (refreshDebounceTimer) {
+      clearTimeout(refreshDebounceTimer)
+    }
+
+    refreshDebounceTimer = setTimeout(() => {
+      void refreshPinsIncremental()
+      refreshDebounceTimer = null
+    }, REFRESH_DEBOUNCE_MS)
+  }
+
+  // Incremental refresh - only updates changed pins without full reload
+  const refreshPinsIncremental = async () => {
+    if (!isMapReady.value) return
+
+    try {
+      // Use data from store (already updated by realtime handlers)
+      // Only fetch minimal data needed to rebuild affected pins
+      const storeData = {
+        dronePositions: dataStore.dronePositionsList.value,
+        rfDetections: dataStore.rfDetectionsList.value,
+        drones: dataStore.dronesList.value,
+        gpsUnits: Array.from(sensorsCache.value.values())
+      }
+
+      // Rebuild pins from current store data (much faster than full API call)
+      // This approach minimizes blinking by using already-updated store data
+      const pins: MapPin[] = []
+      
+      // Process drone positions from store
+      const droneTrajectoryMap = new Map<string, { points: DroneTrajectoryPoint[], positions: DronePosition[], latestPosition: DronePosition | null }>()
+      
+      storeData.dronePositions.forEach((position: DronePosition) => {
+        const droneKey = position.drone_id !== null && position.drone_id !== undefined 
+          ? `drone:${position.drone_id}` 
+          : `system:${position.system_id ?? 'unknown'}`
+        
+        const lat = parseFloat(position.latitude.toString())
+        const lng = parseFloat(position.longitude.toString())
+        const timestamp = position.time
+
+        if (!isValidCoordinate(lat, lng)) return
+
+        const point: DroneTrajectoryPoint = { lat, lng, timestamp }
+        const entry = droneTrajectoryMap.get(droneKey) || { points: [], positions: [], latestPosition: null }
+        entry.points.push(point)
+        entry.positions.push(position)
+
+        if (!entry.latestPosition || toTimeValue(timestamp) > toTimeValue(entry.latestPosition.time)) {
+          entry.latestPosition = position
+        }
+
+        droneTrajectoryMap.set(droneKey, entry)
+      })
+
+      // Build drone pins from trajectories
+      Array.from(droneTrajectoryMap.entries()).forEach(([droneKey, entry]) => {
+        if (!entry.latestPosition) return
+
+        const latestLat = parseFloat(entry.latestPosition.latitude.toString())
+        const latestLng = parseFloat(entry.latestPosition.longitude.toString())
+
+        if (!isValidCoordinate(latestLat, latestLng)) return
+
+        // Sort and filter trajectory points
+        entry.points.sort((a, b) => toTimeValue(a.timestamp) - toTimeValue(b.timestamp))
+        const filteredPoints = filterTrajectoryPoints(entry.points)
+
+        const droneId = entry.latestPosition.drone_id ?? droneKey.replace('drone:', '')
+        const metadata = storeData.drones.find(d => d.id === droneId)
+
+        pins.push({
+          id: `drone-${droneId}`,
+          lat: latestLat,
+          lng: latestLng,
+          title: metadata?.uas_id ? `Drone ${metadata.uas_id}` : `Drone ${droneId}`,
+          type: 'drone',
+          status: 'active',
+          priority: 'medium',
+          data: {
+            drone_id: entry.latestPosition.drone_id,
+            altitude: entry.latestPosition.altitude,
+            speed: entry.latestPosition.speed,
+            receiver_type: entry.latestPosition.receiver_type,
+            system_id: entry.latestPosition.system_id ? String(entry.latestPosition.system_id) : null,
+            timestamp: entry.latestPosition.time,
+            trajectory: filteredPoints
+          },
+          timestamp: entry.latestPosition.time
+        })
+      })
+
+      // Process GPS units (sensors) from cache
+      storeData.gpsUnits.forEach((unit: GpsUnitPosition) => {
+        const lat = parseCoordinate((unit as any)?.gps_lat) ?? parseCoordinate(unit.latitude)
+        const lng = parseCoordinate((unit as any)?.gps_lon) ?? parseCoordinate(unit.longitude)
+
+        if (!isValidCoordinate(lat, lng)) return
+
+        const systemId = unit.system_id ?? unit.unit_id
+        const unitKey = String(systemId ?? unit.id ?? 'unknown')
+        
+        // Get detections for this sensor from store
+        const sensorDetections = storeData.rfDetections
+          .filter((d: RFDetection) => String(d.system_id ?? '') === String(systemId ?? ''))
+          .map((d: RFDetection) => ({
+            id: d.id,
+            timestamp: d.time,
+            frequency: d.frequency,
+            signalStrength: d.signal_strength,
+            status: d.detection_status,
+            systemId: d.system_id ?? null,
+            droneId: d.drone_id ?? null
+          }))
+
+        pins.push({
+          id: `gps-unit-${unitKey}`,
+          lat: lat!,
+          lng: lng!,
+          title: (unit as any)?.unit_name || unit.name || `RF Receiver ${unitKey}`,
+          type: 'sensor',
+          status: sensorDetections.length > 0 ? 'warning' : 'active',
+          priority: sensorDetections.length > 0 ? 'high' : 'medium',
+          data: {
+            unit_id: unit.unit_id ?? null,
+            system_id: systemId ? String(systemId) : null,
+            status: unit.status,
+            timestamp: unit.time ?? null,
+            detections: sensorDetections.length > 0 ? sensorDetections : undefined,
+            hasRFDetections: sensorDetections.length > 0
+          },
+          timestamp: unit.time ?? new Date().toISOString()
+        })
+      })
+
+      // Update pins in store and map (this will cause minimal blinking since we're replacing with similar data)
+      if (pins.length > 0) {
+        const dedupedPins = Array.from(
+          pins.reduce((acc, pin) => {
+            acc.set(pin.id, pin)
+            return acc
+          }, new Map<string, MapPin>())
+        ).map(([, pin]) => pin)
+
+        mapStore.setPins(dedupedPins)
+        
+        if (isMapReady.value) {
+          const filtered = dedupedPins.filter(pin => mapStore.isMarkerTypeVisible(pin.type))
+          mapService.addPins(filtered, mapStore.visibleMarkerTypes)
+          
+          // Update trajectories
+          const visibleTrajectories: DroneTrajectory[] = filtered
+            .filter(pin => pin.type === 'drone' && Array.isArray(pin.data?.trajectory) && pin.data.trajectory.length > 1)
+            .map(pin => ({
+              droneId: pin.id.replace('drone-', ''),
+              points: pin.data.trajectory as DroneTrajectoryPoint[]
+            }))
+          
+          mapService.updateDroneTrajectories(visibleTrajectories)
+          syncFocusModeVisuals()
+        }
+      }
+    } catch (error) {
+      console.error('[MapPins] Error in incremental refresh:', error)
+      // Fallback to full refresh on error
+      await loadPins()
+    }
+  }
+
+  // Set up real-time updates
+  let realtimeCleanup: (() => void) | null = null
+  let refreshInterval: ReturnType<typeof setInterval> | null = null
+
   // Lifecycle hooks
-  onMounted(() => {
-    if (mapContainer.value) {
-      initializeMap(mapContainer.value)
+  onMounted(async () => {
+    // Set up real-time updates (synchronously, before any await)
+    try {
+      const { disconnect } = useRealtime({
+        onRFDetection: handleRFDetectionUpdate,
+        onDronePosition: handleDronePositionUpdate,
+        onGpsUnitPosition: handleGpsUnitPositionUpdate,
+        onError: (error) => {
+          console.error('[MapPins] Realtime error:', error)
+        },
+        onReconnect: () => {
+          console.log('[MapPins] Realtime reconnected')
+        }
+      })
+      realtimeCleanup = disconnect
+    } catch (error) {
+      console.warn('[MapPins] Failed to set up realtime service:', error)
     }
     
-    // Set up 1-minute refresh interval for fresh data
-    const refreshInterval = setInterval(async () => {
+    if (mapContainer.value) {
+      await initializeMap(mapContainer.value)
+    }
+    
+    // Load sensors once and cache them
+    await loadSensorsOnce()
+    
+    // Fallback: Set up a longer refresh interval (5 minutes) as backup
+    // This is much less frequent since we have real-time updates
+    refreshInterval = setInterval(async () => {
       if (isMapReady.value) {
         try {
-          // Clear cache to get fresh data
-          databaseApi.clearCache()
-          await loadPins()
+          // Only refresh if realtime is not connected
+          // For now, always do a lightweight refresh
+          await refreshPinsIncremental()
         } catch (error) {
           console.error('[MapPins] Error refreshing data:', error)
         }
       }
-    }, 60000) // 1 minute
-    
-    // Cleanup interval on unmount
-    onUnmounted(() => {
-      clearInterval(refreshInterval)
-    })
+    }, 5 * 60000) // 5 minutes (backup only)
   })
 
+  // Cleanup on unmount (must be registered synchronously, outside async function)
   onUnmounted(() => {
+    if (refreshInterval) {
+      clearInterval(refreshInterval)
+      refreshInterval = null
+    }
+    if (realtimeCleanup) {
+      realtimeCleanup()
+      realtimeCleanup = null
+    }
     cleanup()
   })
 

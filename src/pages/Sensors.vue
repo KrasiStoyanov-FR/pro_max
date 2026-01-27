@@ -75,6 +75,7 @@
                 :detections-loading="detectionsLoading"
                 :detections-error="detectionsError"
                 @close="closeDetails"
+                @show-detection="handleShowDetection"
               />
             </transition>
           </div>
@@ -95,6 +96,7 @@
 
 <script setup lang="ts">
 import { computed, ref, onMounted, onBeforeUnmount } from 'vue'
+import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import LayoutWrapper from '@/components/layout/LayoutWrapper.vue'
 import SensorsTable from '@/views/sensors/components/SensorsTable.vue'
@@ -108,6 +110,8 @@ import { useDataStore } from '@/store/data'
 import type { GpsUnitPosition } from '@/types/database'
 import type { DetectionItem } from '@/types/detections'
 import { databaseApi } from '@/services/api'
+
+const router = useRouter()
 import { useDetections } from '@/composables/useDetections'
 
 useAuth()
@@ -291,6 +295,32 @@ const handleDeleteSensor = async (sensor: SensorItem) => {
 
 const closeDetails = () => {
   panelVisible.value = false
+}
+
+const handleShowDetection = (detection: DetectionItem, timeWindowMinutes?: number) => {
+  // Navigate to detections page with the detection ID, sensor filter, and time window
+  const source = selectedSensor.value?.source as any
+  const systemId = source?.system_id
+  const sensorId = source?.unit_id ?? source?.id
+  
+  const query: Record<string, string> = {
+    detectionId: String(detection.id)
+  }
+  if (systemId) {
+    query.systemId = String(systemId)
+  } else if (sensorId) {
+    query.sensorId = String(sensorId)
+  }
+  
+  // Add time window if provided
+  if (timeWindowMinutes !== undefined && timeWindowMinutes > 0) {
+    query.timeWindow = String(timeWindowMinutes)
+  }
+  
+  router.push({
+    path: '/detections',
+    query
+  })
 }
 
 const tableContainerClass = computed(() => {

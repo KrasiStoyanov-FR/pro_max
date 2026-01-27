@@ -256,6 +256,8 @@ export const useDataStore = defineStore('data', () => {
       timeWindow?: number | null
       zone?: string
       search?: string
+      sensorId?: string | number | null
+      systemId?: string | number | null
     }
   ): Promise<RFDetection[]> => {
     const filterKey = filters
@@ -315,6 +317,8 @@ export const useDataStore = defineStore('data', () => {
       timeWindow?: number | null
       zone?: string
       search?: string
+      sensorId?: string | number | null
+      systemId?: string | number | null
     }
   ): Promise<number> => {
     const filterKey = filters
@@ -572,6 +576,97 @@ export const useDataStore = defineStore('data', () => {
     return flightSessions.value.get(id)
   }
 
+  // ========== INCREMENTAL UPDATE METHODS ==========
+  // These methods allow updating individual items without full refresh
+  
+  const upsertRFDetection = (detection: RFDetection): void => {
+    rfDetections.value.set(detection.id, detection)
+    updateIndexes()
+  }
+
+  const removeRFDetection = (id: number): void => {
+    rfDetections.value.delete(id)
+    updateIndexes()
+  }
+
+  const upsertDronePosition = (position: DronePosition): void => {
+    dronePositions.value.set(position.id, position)
+    updateIndexes()
+  }
+
+  const removeDronePosition = (id: number): void => {
+    dronePositions.value.delete(id)
+    updateIndexes()
+  }
+
+  const upsertGpsUnitPosition = (unit: GpsUnitPosition): void => {
+    // Build a unique key to avoid overwriting devices that share unit_id/system_id
+    const latVal = (unit as any)?.gps_lat ?? unit.latitude ?? (unit as any)?.lat ?? null
+    const lonVal = (unit as any)?.gps_lon ?? unit.longitude ?? (unit as any)?.lng ?? null
+    const timeVal = unit.time ?? (unit as any)?.timestamp ?? null
+
+    const key =
+      unit.id ??
+      unit.unit_id ??
+      (unit.system_id ? String(unit.system_id) : null) ??
+      // Fallback: include coordinates and time to differentiate rows
+      `row:${latVal ?? 'na'}:${lonVal ?? 'na'}:${timeVal ?? 'na'}:${Math.random().toString(36).slice(2)}`
+
+    gpsUnitPositions.value.set(key, unit)
+    updateIndexes()
+  }
+
+  const removeGpsUnitPositionById = (pk: string | number): void => {
+    // This is a wrapper that calls the existing removeGpsUnitPosition method
+    // The existing method handles complex key matching
+    const targetKey = String(pk)
+    const targetNum = Number(pk)
+    let removed = false
+
+    // Try to delete by map key directly if present
+    if (gpsUnitPositions.value.has(pk as any)) {
+      gpsUnitPositions.value.delete(pk as any)
+      removed = true
+    } else {
+      // Fallback: find by id/unit_id/system_id match
+      for (const [key, unit] of gpsUnitPositions.value.entries()) {
+        const matches =
+          (unit.id !== null && unit.id !== undefined && (String(unit.id) === targetKey || Number(unit.id) === targetNum)) ||
+          (unit.unit_id !== null && unit.unit_id !== undefined && (String(unit.unit_id) === targetKey || Number(unit.unit_id) === targetNum)) ||
+          (unit.system_id !== null && unit.system_id !== undefined && String(unit.system_id) === targetKey)
+        if (matches) {
+          gpsUnitPositions.value.delete(key)
+          removed = true
+          break
+        }
+      }
+    }
+
+    if (removed) {
+      updateIndexes()
+    }
+  }
+
+  const upsertDrone = (drone: Drone): void => {
+    drones.value.set(drone.id, drone)
+    updateIndexes()
+  }
+
+  const removeDrone = (id: number | string): void => {
+    drones.value.delete(id)
+    updateIndexes()
+  }
+
+  const upsertOperatorPosition = (position: OperatorPosition): void => {
+    operatorPositions.value.set(position.id, position)
+    updateIndexes()
+  }
+
+  const removeOperatorPosition = (id: number): void => {
+    operatorPositions.value.delete(id)
+    updateIndexes()
+  }
+
   // ========== UTILITY METHODS ==========
   const clearCache = () => {
     lastFetched.value.clear()
@@ -648,6 +743,19 @@ export const useDataStore = defineStore('data', () => {
     // Flight Sessions
     fetchFlightSessions,
     getFlightSession,
+
+    // Incremental Updates
+    upsertRFDetection,
+    removeRFDetection,
+    upsertDronePosition,
+    removeDronePosition,
+    upsertGpsUnitPosition,
+    removeGpsUnitPosition, // Keep existing method for backward compatibility
+    removeGpsUnitPositionById, // New incremental update method
+    upsertDrone,
+    removeDrone,
+    upsertOperatorPosition,
+    removeOperatorPosition,
 
     // Utilities
     clearCache,

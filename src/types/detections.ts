@@ -46,5 +46,7 @@ export interface DetectionFiltersState {
   status: DetectionStatus | 'all'
   timeWindow: number | null
   zone: string | 'all'
+  sensorId?: string | number | null
+  systemId?: string | number | null
 }
 

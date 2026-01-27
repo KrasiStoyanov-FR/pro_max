@@ -441,7 +441,9 @@ export function useDetections(options: UseDetectionsOptions = {}): UseDetections
     type: ref<DetectionFiltersState['type']>('all'),
     status: ref<DetectionFiltersState['status']>('all'),
     timeWindow: ref<DetectionFiltersState['timeWindow']>(24 * 60),
-    zone: ref<DetectionFiltersState['zone']>('all')
+    zone: ref<DetectionFiltersState['zone']>('all'),
+    sensorId: ref<DetectionFiltersState['sensorId']>(null),
+    systemId: ref<DetectionFiltersState['systemId']>(null)
   }
 
   const sortField = ref<DetectionSortField | null>('lastSeen')
@@ -591,7 +593,9 @@ export function useDetections(options: UseDetectionsOptions = {}): UseDetections
         status: filters.status.value !== 'all' ? filters.status.value : undefined,
         timeWindow: filters.timeWindow.value,
         zone: filters.zone.value !== 'all' ? filters.zone.value : undefined,
-        search: filters.search.value.trim() || undefined
+        search: filters.search.value.trim() || undefined,
+        sensorId: filters.sensorId.value ?? undefined,
+        systemId: filters.systemId.value ?? undefined
       }
       const count = await dataStore.fetchRFDetectionsCount(true, filterParams)
       totalCount.value = count
@@ -612,7 +616,9 @@ export function useDetections(options: UseDetectionsOptions = {}): UseDetections
           status: filters.status.value !== 'all' ? filters.status.value : undefined,
           timeWindow: filters.timeWindow.value,
           zone: filters.zone.value !== 'all' ? filters.zone.value : undefined,
-          search: filters.search.value.trim() || undefined
+          search: filters.search.value.trim() || undefined,
+          sensorId: filters.sensorId.value ?? undefined,
+          systemId: filters.systemId.value ?? undefined
         }
 
         // Fetch total count with filters
@@ -648,7 +654,9 @@ export function useDetections(options: UseDetectionsOptions = {}): UseDetections
       () => filters.type.value,
       () => filters.status.value,
       () => filters.timeWindow.value,
-      () => filters.zone.value
+      () => filters.zone.value,
+      () => filters.sensorId.value,
+      () => filters.systemId.value
     ],
     () => {
       currentPage.value = 1 // Reset to first page when filters change
