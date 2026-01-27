@@ -369,9 +369,10 @@ export function useMapPins() {
       const map = await mapService.init(container, mapOptions)
       mapStore.setMapInstance(map)
 
-      // Enable clustering behavior (panel remains hidden)
+      // Clustering is disabled - users have full control with pan/zoom
+      // Only overlap handling (spiderfy) remains for markers on top of each other
       const serviceWithClusterToggle = mapService as unknown as { setClusteringEnabled?: (enabled: boolean) => void }
-      serviceWithClusterToggle.setClusteringEnabled?.(true)
+      serviceWithClusterToggle.setClusteringEnabled?.(false)
 
       mapService.onTrajectoryPointClick((point) => {
         focusTrajectoryPoint(point)
@@ -420,12 +421,8 @@ export function useMapPins() {
         }
       })
 
-      // Set up cluster click handler
-      mapService.onClusterClick((cluster) => {
-        mapStore.selectCluster(cluster)
-        // Expand cluster to show individual pins immediately
-        mapService.expandCluster(cluster)
-      })
+      // Cluster click handler removed - clustering is disabled
+      // Users control zoom/pan manually
 
       isMapReady.value = true
       

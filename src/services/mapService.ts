@@ -103,7 +103,7 @@ class MapService {
   private selectedClusterId: string | null = null // Track selected cluster to hide its marker
   private selectedPin: MapPin | null = null // Track selected pin to maintain selection state during zoom/pan
   private detectionRangeCircles: Map<string, L.Circle> = new Map() // Detection range visualization
-  private clusteringEnabled: boolean = false
+  private clusteringEnabled: boolean = false // Clustering disabled by default - users have full control
   public visibleMarkerTypes: Set<MapPin['type']> | null = null
 
   private getClusterRadiusForZoom(): number {
@@ -1262,12 +1262,8 @@ class MapService {
       zIndexOffset: 1000 // Ensure clusters appear above individual pins
     })
 
-    // Add click handler for cluster
-    marker.on('click', () => {
-      if (this.onClusterClickCallback) {
-        this.onClusterClickCallback(cluster)
-      }
-    })
+    // Cluster click handler removed - clustering is disabled
+    // Users control zoom/pan manually instead of auto-zooming on cluster click
 
     return marker
   }
@@ -1486,66 +1482,11 @@ class MapService {
   }
 
   // Method to expand a cluster and show individual pins
+  // DISABLED: Clustering is disabled, this method is kept for compatibility but does nothing
   expandCluster(cluster: PinCluster): void {
-    if (!this.map) return
-
-    // Mark this cluster as selected to hide its marker
-    const previousSelectedId = this.selectedClusterId
-    this.selectedClusterId = cluster.id
-
-    // Mark this cluster as expanded to prevent re-clustering
-    expandedClusters.add(cluster.id)
-    
-    // Track which pins belong to this expanded cluster
-    const pinIds = new Set(cluster.pins.map(pin => pin.id))
-    expandedClusterPins.set(cluster.id, pinIds)
-    
-    // If there was a previous selected cluster, remove it from expanded set
-    // (only keep current one expanded)
-    if (previousSelectedId && previousSelectedId !== cluster.id) {
-      expandedClusters.delete(previousSelectedId)
-      expandedClusterPins.delete(previousSelectedId)
-    }
-
-    // Remove the cluster marker immediately and completely
-    if (cluster.marker) {
-      this.map.removeLayer(cluster.marker)
-      this.clusters.delete(cluster.id)
-      // Clear the marker reference to prevent re-adding
-      cluster.marker = null
-    }
-
-    // Add individual pins for this cluster
-    cluster.pins.forEach(pin => {
-      // Check if marker already exists to prevent duplication
-      if (!this.markers.has(pin.id)) {
-        const marker = this.createMarker(pin)
-        this.markers.set(pin.id, marker)
-        marker.addTo(this.map!)
-      }
-    })
-
-    // Calculate bounds for ONLY this cluster's pins
-    const clusterBounds = this.calculateClusterBounds(cluster.pins)
-
-    // Add padding to the bounds to ensure pins aren't at the edge
-    const paddedBounds = clusterBounds.pad(0.1) // 10% padding
-
-    // Fit the map to show only this cluster's pins
-    this.map.fitBounds(paddedBounds, {
-      padding: [20, 20], // Additional padding in pixels
-      maxZoom: 16 // Don't zoom too close
-    })
-
-    // Clear selected cluster to allow other clusters to remain interactive
-    this.selectedClusterId = null
-    expandedClusters.delete(cluster.id)
-    expandedClusterPins.delete(cluster.id)
-
-    // Force immediate re-clustering so other clusters remain clickable
-    setTimeout(() => {
-      this.applyClustering()
-    }, 50)
+    // Clustering is disabled - users control zoom/pan manually
+    // This method is kept for API compatibility but does nothing
+    console.warn('[MapService] expandCluster called but clustering is disabled')
   }
   
   // Method to clear selected cluster (when cluster panel is closed)
