@@ -1434,6 +1434,7 @@ app.listen(PORT, () => {
   console.log(`[API] Database server running on port ${PORT}`)
   console.log(`[API] Health check: http://${DB_CONFIG.host}:${PORT}/api/health`)
   console.log(`[API] Database health check: http://${DB_CONFIG.host}:${PORT}/api/db/health`)
+  console.log(`[API] SSE endpoint: http://${DB_CONFIG.host}:${PORT}/api/realtime/events`)
 })
 
 // Graceful shutdown

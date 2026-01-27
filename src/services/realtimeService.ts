@@ -29,20 +29,25 @@ class RealtimeService {
   private baseURL: string
 
   constructor() {
-    // Get base URL - VITE_API_BASE_URL typically includes /api/db
-    // Example: "http://dds.pm99.site:3001/api/db"
-    const envURL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001/api/db'
+    // Get SSE endpoint URL - can be different from main API URL
+    // Priority: VITE_SSE_BASE_URL > VITE_API_BASE_URL > default
+    // This allows testing SSE on localhost while using remote server for data
+    const sseEnvURL = import.meta.env.VITE_SSE_BASE_URL || import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001/api/db'
+    
     // Remove /api/db suffix if present, we'll add /api/realtime/events instead
-    // Result: "http://dds.pm99.site:3001"
-    if (envURL.endsWith('/api/db')) {
-      this.baseURL = envURL.replace(/\/api\/db$/, '')
-    } else if (envURL.includes('/api/db')) {
+    let baseURL: string
+    if (sseEnvURL.endsWith('/api/db')) {
+      baseURL = sseEnvURL.replace(/\/api\/db$/, '')
+    } else if (sseEnvURL.includes('/api/db')) {
       // Handle case where /api/db appears but not at the end
-      this.baseURL = envURL.replace(/\/api\/db/, '')
+      baseURL = sseEnvURL.replace(/\/api\/db/, '')
     } else {
-      this.baseURL = envURL
+      baseURL = sseEnvURL
     }
-    console.log('[RealtimeService] Base URL set to:', this.baseURL, '(from env:', envURL + ')')
+    
+    this.baseURL = baseURL
+    const source = import.meta.env.VITE_SSE_BASE_URL ? 'VITE_SSE_BASE_URL' : (import.meta.env.VITE_API_BASE_URL ? 'VITE_API_BASE_URL' : 'default')
+    console.log('[RealtimeService] SSE Base URL set to:', this.baseURL, `(from ${source}: ${sseEnvURL})`)
   }
 
   connect(callbacks: RealtimeServiceCallbacks): void {
@@ -68,6 +73,7 @@ class RealtimeService {
       console.log('[RealtimeService] Connecting to:', url)
       
       this.eventSource = new EventSource(url)
+      const eventSourceUrl = url // Store for error handler
 
       this.eventSource.onopen = () => {
         console.log('[RealtimeService] Connected')
@@ -92,7 +98,11 @@ class RealtimeService {
         // 404 errors are expected if the endpoint isn't available yet
         if (this.eventSource?.readyState === EventSource.CLOSED) {
           // Connection failed - this is normal if endpoint doesn't exist
-          // Don't spam console with errors, just schedule reconnect
+          // Only log on first attempt to avoid spam
+          if (this.reconnectAttempts === 0) {
+            console.warn(`[RealtimeService] Connection failed (404). Is the server running? Endpoint: ${eventSourceUrl}`)
+            console.warn('[RealtimeService] Real-time updates will be disabled. The app will continue to work with periodic polling.')
+          }
           this.isConnecting = false
           this.scheduleReconnect()
         } else {
@@ -156,6 +166,17 @@ class RealtimeService {
   }
 
   private handleUpdate(update: RealtimeUpdate): void {
+    // Log all updates in development to help debug
+    if (import.meta.env.DEV) {
+      console.log(`[RealtimeService] Received ${update.type} ${update.action}:`, {
+        type: update.type,
+        action: update.action,
+        dataId: update.data?.id,
+        droneId: (update.data as any)?.drone_id,
+        timestamp: update.timestamp
+      })
+    }
+    
     switch (update.type) {
       case 'rf_detection':
         this.callbacks.onRFDetection?.(update.data as RFDetection, update.action)
@@ -200,7 +221,12 @@ class RealtimeService {
     }
     
     this.reconnectTimer = setTimeout(() => {
-      this.disconnect()
+      // Don't call disconnect() here - it will log unnecessarily
+      // Just close the existing connection silently if it exists
+      if (this.eventSource) {
+        this.eventSource.close()
+        this.eventSource = null
+      }
       this.connect(this.callbacks)
     }, delay)
   }
@@ -212,12 +238,16 @@ class RealtimeService {
     }
 
     if (this.eventSource) {
+      const wasOpen = this.eventSource.readyState === EventSource.OPEN
       this.eventSource.close()
       this.eventSource = null
+      // Only log if we were actually connected (not just failed connection attempts)
+      if (wasOpen) {
+        console.log('[RealtimeService] Disconnected')
+      }
     }
 
     this.isConnecting = false
-    console.log('[RealtimeService] Disconnected')
   }
 
   isConnected(): boolean {

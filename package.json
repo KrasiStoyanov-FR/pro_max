@@ -8,6 +8,8 @@
     "dev:original": "cross-env VITE_APP_BRAND=original vite",
     "dev:pakistan": "cross-env VITE_APP_BRAND=pakistan vite",
     "server": "node server.js",
+    "sim:drone-flight": "node scripts/simulate-drone-flight.js",
+    "verify:test-drone": "node scripts/verify-test-drone.js",
     "start": "concurrently \"npm run server\" \"npm run dev\"",
     "start:original": "concurrently \"npm run server\" \"npm run dev:original\"",
     "start:pakistan": "concurrently \"npm run server\" \"npm run dev:pakistan\"",

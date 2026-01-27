@@ -4,7 +4,7 @@ import { mapService } from '@/services/mapService'
 import { databaseApi } from '@/services/api'
 import { useRealtime } from '@/services/realtimeService'
 import { useDataStore } from '@/store/data'
-import { IS_LIVE_VIEW_PERF_MODE } from '@/config/perf'
+import { IS_LIVE_VIEW_PERF_MODE, PERF_TEST_DRONE_ID } from '@/config/perf'
 import type { MapPin, MapViewport, DroneTrajectory, DroneTrajectoryPoint, DetectionCheckpoint } from '@/types/map'
 import type { DronePosition, RFDetection, OperatorPosition, GpsUnitPosition, Drone } from '@/types/database'
 
@@ -489,7 +489,20 @@ export function useMapPins() {
         dronesResponse.data.forEach((drone) => {
           const key = String(drone.id)
           droneMetadata.set(key, drone)
+          
+          // Log test drone metadata in perf mode
+          if (IS_LIVE_VIEW_PERF_MODE && (drone.id === PERF_TEST_DRONE_ID || String(drone.id) === String(PERF_TEST_DRONE_ID))) {
+            console.log('[MapPins] 🚀 TEST DRONE metadata loaded:', drone)
+          }
         })
+        
+        if (IS_LIVE_VIEW_PERF_MODE) {
+          const testDrone = droneMetadata.get(String(PERF_TEST_DRONE_ID))
+          if (!testDrone) {
+            console.warn(`[MapPins] ⚠️ TEST DRONE metadata (id=${PERF_TEST_DRONE_ID}) not found in drones response`)
+            console.log('[MapPins] Available drone IDs:', Array.from(droneMetadata.keys()).slice(0, 10))
+          }
+        }
       } else {
         console.warn('[MapPins] Unable to load drones metadata', {
           success: dronesResponse.success,
@@ -516,6 +529,25 @@ export function useMapPins() {
       
       // Convert drone positions to map pins
       if (dronePositionsResponse.success && dronePositionsResponse.data) {
+        // Log test drone positions in perf mode
+        if (IS_LIVE_VIEW_PERF_MODE) {
+          const testDronePositions = dronePositionsResponse.data.filter((p: DronePosition) => 
+            p.drone_id === PERF_TEST_DRONE_ID || String(p.drone_id) === String(PERF_TEST_DRONE_ID)
+          )
+          if (testDronePositions.length > 0) {
+            console.log(`[MapPins] 🚀 Found ${testDronePositions.length} TEST DRONE positions in API response:`, {
+              firstPosition: testDronePositions[0],
+              lastPosition: testDronePositions[testDronePositions.length - 1],
+              totalPositions: dronePositionsResponse.data.length
+            })
+          } else {
+            console.log(`[MapPins] ⚠️ No TEST DRONE positions found in API response (drone_id=${PERF_TEST_DRONE_ID})`)
+            console.log('[MapPins] Sample drone_ids from response:', 
+              dronePositionsResponse.data.slice(0, 10).map((p: DronePosition) => p.drone_id)
+            )
+          }
+        }
+        
         const processedPositionKeys = new Set<string>()
         dronePositionsResponse.data.forEach((position: DronePosition) => {
           const droneKey = getTrajectoryKey(position.drone_id, position.system_id, position.id)
@@ -660,6 +692,18 @@ export function useMapPins() {
           const displayName = metadata?.uas_id
             ? `Drone ${metadata.uas_id}`
             : `Drone ${droneId}`
+          
+          // Log test drone detection in performance mode
+          if (IS_LIVE_VIEW_PERF_MODE && (metadata?.uas_id?.includes('TEST') || String(droneId) === String(PERF_TEST_DRONE_ID))) {
+            console.log(`[MapPins] 🚀 TEST DRONE DETECTED:`, {
+              droneId,
+              displayName,
+              systemId: resolvedSystemId,
+              position: { lat: pinLat, lng: pinLng },
+              trajectoryPoints: filteredPoints.length,
+              timestamp: markerPosition.time
+            })
+          }
           const descriptor: string[] = []
           if (markerPosition.altitude !== undefined && markerPosition.altitude !== null) {
             descriptor.push(`Altitude: ${Number(markerPosition.altitude).toFixed(1)}m`)
@@ -702,7 +746,34 @@ export function useMapPins() {
           
           // Only add active drones to the map - skip inactive ones
           if (!shouldShow) {
+            // Log why test drone is being filtered out
+            if (IS_LIVE_VIEW_PERF_MODE && (String(droneId) === String(PERF_TEST_DRONE_ID) || metadata?.uas_id?.includes('TEST'))) {
+              console.warn(`[MapPins] 🚀 TEST DRONE filtered out (not active):`, {
+                droneId,
+                displayName,
+                hasRecentPosition,
+                hasRecentDetections,
+                positionAge,
+                positionTime,
+                now: Date.now(),
+                ACTIVE_POSITION_WINDOW_MS,
+                DETECTION_WINDOW_MS,
+                MAX_POSITION_AGE_MS
+              })
+            }
             return
+          }
+          
+          // Log when test drone IS being added
+          if (IS_LIVE_VIEW_PERF_MODE && (String(droneId) === String(PERF_TEST_DRONE_ID) || metadata?.uas_id?.includes('TEST'))) {
+            console.log(`[MapPins] ✅ TEST DRONE will be added to map:`, {
+              droneId,
+              displayName,
+              position: { lat: pinLat, lng: pinLng },
+              trajectoryPoints: filteredPoints.length,
+              hasRecentPosition,
+              hasRecentDetections
+            })
           }
 
           pins.push({
@@ -1284,12 +1355,37 @@ export function useMapPins() {
           }, new Map<string, MapPin>())
         ).map(([, pin]) => pin)
 
-        mapStore.setPins(dedupedPins)
-        
-        // Add pins and trajectories to map (filtered by visible types)
-        if (isMapReady.value) {
-          const filtered = dedupedPins.filter(pin => mapStore.isMarkerTypeVisible(pin.type))
-          mapService.addPins(filtered, mapStore.visibleMarkerTypes)
+          mapStore.setPins(dedupedPins)
+          
+          // Log test drone in final pins array for incremental refresh
+          if (IS_LIVE_VIEW_PERF_MODE) {
+            const testDronePin = dedupedPins.find(p => 
+              p.id === `drone-${PERF_TEST_DRONE_ID}` || 
+              (p.type === 'drone' && p.data?.drone_id === PERF_TEST_DRONE_ID) ||
+              (typeof p.title === 'string' && p.title.includes('TEST'))
+            )
+            if (testDronePin) {
+              console.log(`[MapPins] ✅ Incremental refresh: TEST DRONE pin ready for map:`, {
+                id: testDronePin.id,
+                title: testDronePin.title,
+                position: { lat: testDronePin.lat, lng: testDronePin.lng },
+                trajectoryPoints: Array.isArray(testDronePin.data?.trajectory) ? testDronePin.data.trajectory.length : 0,
+                totalPins: dedupedPins.length
+              })
+            } else {
+              console.warn(`[MapPins] ⚠️ Incremental refresh: TEST DRONE pin NOT found! Looking for drone_id=${PERF_TEST_DRONE_ID}`)
+              console.log('[MapPins] Available drone pins:', dedupedPins.filter(p => p.type === 'drone').slice(0, 5).map(p => ({
+                id: p.id,
+                droneId: p.data?.drone_id,
+                title: p.title
+              })))
+            }
+          }
+          
+          // Add pins and trajectories to map (filtered by visible types)
+          if (isMapReady.value) {
+            const filtered = dedupedPins.filter(pin => mapStore.isMarkerTypeVisible(pin.type))
+            mapService.addPins(filtered, mapStore.visibleMarkerTypes)
           
           // Only show trajectories for visible drone pins
           // Extract trajectories directly from visible drone pins
@@ -1611,6 +1707,18 @@ export function useMapPins() {
   const handleRFDetectionUpdate = (detection: RFDetection, action: 'insert' | 'update' | 'delete') => {
     if (!isMapReady.value) return
 
+    // Log test drone detections prominently in perf mode
+    const isTestDrone = detection.drone_id === PERF_TEST_DRONE_ID || String(detection.drone_id) === String(PERF_TEST_DRONE_ID)
+    if (IS_LIVE_VIEW_PERF_MODE && isTestDrone && action === 'insert') {
+      console.log(`[MapPins] 🚀 TEST DRONE RF Detection received via SSE:`, {
+        detectionId: detection.id,
+        droneId: detection.drone_id,
+        systemId: detection.system_id,
+        timestamp: detection.time,
+        signalStrength: detection.signal_strength
+      })
+    }
+    
     console.log(`[MapPins] RF Detection ${action}:`, detection.id)
     
     // Update data store incrementally
@@ -1625,15 +1733,42 @@ export function useMapPins() {
   }
 
   const handleDronePositionUpdate = (position: DronePosition, action: 'insert' | 'update' | 'delete') => {
-    if (!isMapReady.value) return
+    if (!isMapReady.value) {
+      console.warn(`[MapPins] Drone Position ${action} received but map not ready yet`)
+      return
+    }
 
-    console.log(`[MapPins] Drone Position ${action}:`, position.id)
+    // Log test drone positions prominently in perf mode
+    const isTestDrone = position.drone_id === PERF_TEST_DRONE_ID || String(position.drone_id) === String(PERF_TEST_DRONE_ID)
+    if (IS_LIVE_VIEW_PERF_MODE && isTestDrone) {
+      console.log(`[MapPins] 🚀 TEST DRONE Position ${action} received via SSE:`, {
+        positionId: position.id,
+        droneId: position.drone_id,
+        expectedDroneId: PERF_TEST_DRONE_ID,
+        systemId: position.system_id,
+        lat: position.latitude,
+        lng: position.longitude,
+        timestamp: position.time,
+        altitude: position.altitude,
+        speed: position.speed
+      })
+    }
+
+    console.log(`[MapPins] Drone Position ${action}:`, position.id, `(drone_id: ${position.drone_id})`)
     
     // Update data store incrementally
     if (action === 'delete') {
       dataStore.removeDronePosition(position.id)
     } else {
       dataStore.upsertDronePosition(position)
+      
+      // Log store state after update for test drone
+      if (IS_LIVE_VIEW_PERF_MODE && isTestDrone) {
+        const storePositions = dataStore.dronePositionsList.value.filter(p => 
+          p.drone_id === PERF_TEST_DRONE_ID || String(p.drone_id) === String(PERF_TEST_DRONE_ID)
+        )
+        console.log(`[MapPins] Store now has ${storePositions.length} TEST DRONE positions`)
+      }
     }
 
     // Debounce refresh to batch multiple updates
@@ -1685,6 +1820,19 @@ export function useMapPins() {
         drones: dataStore.dronesList.value,
         gpsUnits: Array.from(sensorsCache.value.values())
       }
+      
+      // Log test drone data in store for debugging
+      if (IS_LIVE_VIEW_PERF_MODE) {
+        const testDronePositions = storeData.dronePositions.filter(p => 
+          p.drone_id === PERF_TEST_DRONE_ID || String(p.drone_id) === String(PERF_TEST_DRONE_ID)
+        )
+        const testDroneMetadata = storeData.drones.find(d => 
+          d.id === PERF_TEST_DRONE_ID || String(d.id) === String(PERF_TEST_DRONE_ID)
+        )
+        if (testDronePositions.length > 0 || testDroneMetadata) {
+          console.log(`[MapPins] 🔄 Incremental refresh: Store has ${testDronePositions.length} TEST DRONE positions, metadata:`, testDroneMetadata ? 'found' : 'NOT FOUND')
+        }
+      }
 
       // Rebuild pins from current store data (much faster than full API call)
       // This approach minimizes blinking by using already-updated store data
@@ -1731,6 +1879,19 @@ export function useMapPins() {
 
         const droneId = entry.latestPosition.drone_id ?? droneKey.replace('drone:', '')
         const metadata = storeData.drones.find(d => d.id === droneId)
+        
+        // Log test drone in incremental refresh
+        const isTestDrone = String(droneId) === String(PERF_TEST_DRONE_ID) || metadata?.uas_id?.includes('TEST')
+        if (IS_LIVE_VIEW_PERF_MODE && isTestDrone) {
+          console.log(`[MapPins] 🔄 Incremental refresh: Building TEST DRONE pin:`, {
+            droneId,
+            droneKey,
+            title: metadata?.uas_id ? `Drone ${metadata.uas_id}` : `Drone ${droneId}`,
+            position: { lat: latestLat, lng: latestLng },
+            trajectoryPoints: filteredPoints.length,
+            totalPositions: entry.positions.length
+          })
+        }
 
         pins.push({
           id: `drone-${droneId}`,

@@ -590,6 +590,28 @@ export const useDataStore = defineStore('data', () => {
   }
 
   const upsertDronePosition = (position: DronePosition): void => {
+    // Get test drone ID from env (same logic as perf.ts)
+    const PERF_TEST_DRONE_ID = parseInt(
+      import.meta.env.VITE_PERF_DRONE_ID || 
+      import.meta.env.PERF_DRONE_ID || 
+      '9999',
+      10
+    )
+    
+    // Log test drone positions being added to store
+    const isTestDrone = position.drone_id === PERF_TEST_DRONE_ID || String(position.drone_id) === String(PERF_TEST_DRONE_ID)
+    if (isTestDrone && import.meta.env.DEV) {
+      console.log(`[DataStore] ✅ Upserting TEST DRONE position to store:`, {
+        positionId: position.id,
+        droneId: position.drone_id,
+        lat: position.latitude,
+        lng: position.longitude,
+        timestamp: position.time,
+        storeSize: dronePositions.value.size,
+        expectedDroneId: PERF_TEST_DRONE_ID
+      })
+    }
+    
     dronePositions.value.set(position.id, position)
     updateIndexes()
   }

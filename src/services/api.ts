@@ -18,6 +18,7 @@ import type {
   DatabaseResponse
 } from '@/types/database'
 import type { SystemStatusResponse } from '@/types/system'
+import { PERF_TEST_DRONE_ID } from '@/config/perf'
 
 // Database name configuration
 const DATABASE_NAME = import.meta.env.VITE_DB_NAME || 'drone_monitoring'
@@ -171,9 +172,26 @@ export const databaseApi = {
       try {
         const limitParam = typeof limit === 'number' ? `&limit=${limit}` : ''
         const response = await api.get(`/table/drone_positions?database=${DATABASE_NAME}${limitParam}`)
+        const positions = response.data.data as DronePosition[]
+        
+        // Log test drone positions (check for configured test drone ID)
+        const testDronePositions = positions.filter(p => p.drone_id === PERF_TEST_DRONE_ID || String(p.drone_id) === String(PERF_TEST_DRONE_ID))
+        if (testDronePositions.length > 0) {
+          console.log(`[API] 🚀 Found ${testDronePositions.length} TEST DRONE positions in API response (id=${PERF_TEST_DRONE_ID})`, {
+            first: testDronePositions[0],
+            last: testDronePositions[testDronePositions.length - 1],
+            totalPositions: positions.length
+          })
+        } else if (positions.length > 0) {
+          // Only log if we have positions but no test drone (to help debug)
+          console.log(`[API] No test drone (id=${PERF_TEST_DRONE_ID}) found. Sample drone_ids:`, 
+            positions.slice(0, 5).map(p => p.drone_id)
+          )
+        }
+        
         return {
           success: true,
-          data: response.data.data as DronePosition[]
+          data: positions
         }
       } catch (error) {
         console.error('[API] Failed to fetch drone positions from database:', error)
