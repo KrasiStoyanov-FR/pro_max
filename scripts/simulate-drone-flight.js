@@ -8,7 +8,7 @@
 // Optional env overrides:
 //   PERF_SENSOR_SYSTEM_ID   - system_id of sensor to fly around (default: 'DDS93')
 //   PERF_DRONE_ID           - numeric drone_id to use (default: 9999)
-//   PERF_FLIGHT_POINTS      - number of waypoints (default: 30)
+//   PERF_FLIGHT_POINTS      - number of waypoints (default: 10)
 //   PERF_FLIGHT_RADIUS_KM   - radius in km around sensor (default: 0.8)
 
 import dotenv from 'dotenv'
@@ -59,7 +59,7 @@ if (USE_API) {
 
 const SENSOR_SYSTEM_ID = process.env.PERF_SENSOR_SYSTEM_ID || 'DDS93'
 const DRONE_ID = parseInt(process.env.PERF_DRONE_ID || '9999', 10)
-const FLIGHT_POINTS = parseInt(process.env.PERF_FLIGHT_POINTS || '30', 10)
+const FLIGHT_POINTS = parseInt(process.env.PERF_FLIGHT_POINTS || '10', 10)
 const FLIGHT_RADIUS_KM = parseFloat(process.env.PERF_FLIGHT_RADIUS_KM || '0.8')
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -664,9 +664,37 @@ const main = async () => {
     }
     
     // Delete all positions and detections for all found drone IDs
+    let totalPositionsDeleted = 0
+    let totalDetectionsDeleted = 0
+    let totalDronesDeleted = 0
+    
     for (const droneId of dronesToDelete) {
-      // Delete drone_positions
-      {
+      // Delete drone_positions (works for both API and direct DB)
+      if (USE_API) {
+        // For API, fetch all positions first, then delete one by one
+        let findQuery = `SELECT * FROM drone_positions WHERE drone_id = ?`
+        if (DB_CONFIG.database) {
+          findQuery = `SELECT * FROM \`${DB_CONFIG.database}\`.\`drone_positions\` WHERE drone_id = ?`
+        }
+        try {
+          const [positions] = await conn.execute(findQuery, [droneId])
+          for (const pos of positions || []) {
+            if (pos.id) {
+              try {
+                const deleteUrl = `${API_URL}/api/db/table/drone_positions/${pos.id}?database=${DB_CONFIG.database}`
+                await axios.delete(deleteUrl, { timeout: 10000 })
+                totalPositionsDeleted++
+              } catch (err) {
+                if (err.response?.status !== 404) {
+                  console.warn(`[Sim] Failed to delete position ${pos.id}:`, err.message)
+                }
+              }
+            }
+          }
+        } catch (error) {
+          console.warn(`[Sim] Error fetching positions for drone_id=${droneId}:`, error.message)
+        }
+      } else {
         let deleteQuery = 'DELETE FROM drone_positions WHERE drone_id = ?'
         if (!USE_SQLITE && DB_CONFIG.database) {
           deleteQuery = `DELETE FROM \`${DB_CONFIG.database}\`.\`drone_positions\` WHERE drone_id = ?`
@@ -674,16 +702,37 @@ const main = async () => {
         try {
           const [result] = await conn.execute(deleteQuery, [droneId])
           const deleted = result?.changes || result?.affectedRows || 0
-          if (deleted > 0) {
-            console.log(`[Sim] Deleted ${deleted} drone_positions for drone_id=${droneId}`)
-          }
+          totalPositionsDeleted += deleted
         } catch (error) {
           console.warn(`[Sim] Error deleting drone_positions for drone_id=${droneId}:`, error.message)
         }
       }
       
-      // Delete rf_detections
-      {
+      // Delete rf_detections (works for both API and direct DB)
+      if (USE_API) {
+        let findQuery = `SELECT * FROM rf_detections WHERE drone_id = ?`
+        if (DB_CONFIG.database) {
+          findQuery = `SELECT * FROM \`${DB_CONFIG.database}\`.\`rf_detections\` WHERE drone_id = ?`
+        }
+        try {
+          const [detections] = await conn.execute(findQuery, [droneId])
+          for (const det of detections || []) {
+            if (det.id) {
+              try {
+                const deleteUrl = `${API_URL}/api/db/table/rf_detections/${det.id}?database=${DB_CONFIG.database}`
+                await axios.delete(deleteUrl, { timeout: 10000 })
+                totalDetectionsDeleted++
+              } catch (err) {
+                if (err.response?.status !== 404) {
+                  console.warn(`[Sim] Failed to delete detection ${det.id}:`, err.message)
+                }
+              }
+            }
+          }
+        } catch (error) {
+          console.warn(`[Sim] Error fetching detections for drone_id=${droneId}:`, error.message)
+        }
+      } else {
         let deleteQuery = 'DELETE FROM rf_detections WHERE drone_id = ?'
         if (!USE_SQLITE && DB_CONFIG.database) {
           deleteQuery = `DELETE FROM \`${DB_CONFIG.database}\`.\`rf_detections\` WHERE drone_id = ?`
@@ -691,16 +740,24 @@ const main = async () => {
         try {
           const [result] = await conn.execute(deleteQuery, [droneId])
           const deleted = result?.changes || result?.affectedRows || 0
-          if (deleted > 0) {
-            console.log(`[Sim] Deleted ${deleted} rf_detections for drone_id=${droneId}`)
-          }
+          totalDetectionsDeleted += deleted
         } catch (error) {
           console.warn(`[Sim] Error deleting rf_detections for drone_id=${droneId}:`, error.message)
         }
       }
       
       // Delete the drone metadata row
-      {
+      if (USE_API) {
+        try {
+          const deleteUrl = `${API_URL}/api/db/table/drones/${droneId}?database=${DB_CONFIG.database}`
+          await axios.delete(deleteUrl, { timeout: 10000 })
+          totalDronesDeleted++
+        } catch (err) {
+          if (err.response?.status !== 404) {
+            console.warn(`[Sim] Failed to delete drone ${droneId}:`, err.message)
+          }
+        }
+      } else {
         let deleteQuery = 'DELETE FROM drones WHERE id = ?'
         if (!USE_SQLITE && DB_CONFIG.database) {
           deleteQuery = `DELETE FROM \`${DB_CONFIG.database}\`.\`drones\` WHERE id = ?`
@@ -708,34 +765,19 @@ const main = async () => {
         try {
           const [result] = await conn.execute(deleteQuery, [droneId])
           const deleted = result?.changes || result?.affectedRows || 0
-          if (deleted > 0) {
-            console.log(`[Sim] Deleted drone metadata row with id=${droneId}`)
-          }
+          totalDronesDeleted += deleted
         } catch (error) {
           console.warn(`[Sim] Error deleting drone metadata for id=${droneId}:`, error.message)
         }
       }
     }
     
-    // Also try to delete by MAC address directly (in case the ID-based delete missed it)
-    {
-      let deleteByMacQuery = 'DELETE FROM drones WHERE mac_address = ?'
-      if (!USE_SQLITE && DB_CONFIG.database) {
-        deleteByMacQuery = `DELETE FROM \`${DB_CONFIG.database}\`.\`drones\` WHERE mac_address = ?`
-      }
-      try {
-        const [result] = await conn.execute(deleteByMacQuery, [macAddress])
-        const deleted = result?.changes || result?.affectedRows || 0
-        if (deleted > 0) {
-          console.log(`[Sim] Deleted ${deleted} additional drone(s) by MAC address`)
-        }
-      } catch (error) {
-        // Ignore errors - might not support WHERE with mac_address
-        console.warn(`[Sim] Could not delete by MAC address (may not be supported):`, error.message)
-      }
+    if (totalPositionsDeleted > 0 || totalDetectionsDeleted > 0 || totalDronesDeleted > 0) {
+      console.log(`[Sim] Cleanup summary: ${totalPositionsDeleted} positions, ${totalDetectionsDeleted} detections, ${totalDronesDeleted} drones deleted`)
+    } else {
+      console.log('[Sim] No existing test data found.')
     }
-    
-    console.log(`[Sim] Cleanup complete. Starting fresh simulation...\n`)
+    console.log('[Sim] Starting fresh simulation...\n')
 
     // 1. Find sensor coordinates
     let sensorQuery = 'SELECT * FROM gps_unit_position WHERE system_id = ? LIMIT 1'
@@ -912,14 +954,18 @@ const main = async () => {
 
     console.log('[Sim] Generated trajectory points:', points.length)
 
-    // 4. Insert positions + detections over time
-    console.log('[Sim] Writing positions + RF detections to DB...')
+    // 4. Insert positions + detections over time with delays for real-time visualization
+    console.log('[Sim] Writing positions + RF detections to DB (with delays for real-time updates)...')
     const startTime = Date.now()
+    // Interval between points: 2 seconds to allow real-time visualization
+    const POINT_INTERVAL_MS = 2000
 
     for (let i = 0; i < points.length; i++) {
-      const now = new Date(startTime + i * 1000)
+      const now = new Date(startTime + i * POINT_INTERVAL_MS)
       const ts = toDbTimestamp(now)
       const { lat, lng } = points[i]
+
+      console.log(`[Sim] Inserting waypoint ${i + 1}/${points.length} at (${lat.toFixed(6)}, ${lng.toFixed(6)})...`)
 
       // drone_positions
       {
@@ -942,6 +988,7 @@ const main = async () => {
           speed,
           'SIM',
         ])
+        console.log(`[Sim]   ✓ Position ${i + 1} inserted`)
       }
 
       // rf_detections
@@ -963,16 +1010,14 @@ const main = async () => {
           DRONE_ID,
           SENSOR_SYSTEM_ID,
         ])
+        console.log(`[Sim]   ✓ Detection ${i + 1} inserted`)
       }
 
-      process.stdout.write(
-        `\r[Sim] Inserted waypoint ${i + 1}/${points.length} at ${ts} (lat=${lat.toFixed(
-          5,
-        )}, lng=${lng.toFixed(5)})`,
-      )
-
-      // Small delay so the SSE poller and frontend see a "moving" drone in near real time
-      await sleep(500)
+      // Wait before inserting next point (except for the last one)
+      if (i < points.length - 1) {
+        console.log(`[Sim]   Waiting ${POINT_INTERVAL_MS}ms before next waypoint...`)
+        await sleep(POINT_INTERVAL_MS)
+      }
     }
 
     console.log('\n[Sim] Flight simulation complete.')

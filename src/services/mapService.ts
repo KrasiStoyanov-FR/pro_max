@@ -1669,8 +1669,9 @@ class MapService {
     const activeIds = new Set<string>()
 
     trajectories.forEach(trajectory => {
-      // Only draw polylines when we have at least two points
-      if (!trajectory.points || trajectory.points.length < 2) {
+      // Draw polylines even with a single point (will show as soon as second point arrives)
+      // But only remove if we have no points at all
+      if (!trajectory.points || trajectory.points.length === 0) {
         this.removeDroneTrajectory(trajectory.droneId)
         return
       }
@@ -1680,7 +1681,8 @@ class MapService {
 
       let polyline = this.droneTrajectories.get(trajectory.droneId)
       if (!polyline) {
-        polyline = L.polyline(latLngs, {
+        // Create new polyline - even with 1 point, it will be ready for the second
+        polyline = L.polyline(latLngs.length >= 2 ? latLngs : [latLngs[0], latLngs[0]], {
           color: '#22c55e',
           weight: 3,
           opacity: 1,
@@ -1688,11 +1690,19 @@ class MapService {
         })
         polyline.addTo(this.map)
         this.droneTrajectories.set(trajectory.droneId, polyline)
-      } else {
+      }
+      
+      // Always update the polyline with latest points (even if just 1 point)
+      // This ensures real-time updates as new points arrive
+      if (latLngs.length >= 2) {
         polyline.setLatLngs(latLngs)
-        if (!this.map.hasLayer(polyline)) {
-          polyline.addTo(this.map)
-        }
+      } else if (latLngs.length === 1) {
+        // For single point, create a tiny segment so polyline is visible
+        polyline.setLatLngs([latLngs[0], latLngs[0]])
+      }
+      
+      if (!this.map.hasLayer(polyline)) {
+        polyline.addTo(this.map)
       }
     })
 

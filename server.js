@@ -1253,7 +1253,9 @@ app.get('/api/detections', (req, res) => {
 
 // Server-Sent Events endpoint for real-time updates
 app.get('/api/realtime/events', async (req, res) => {
-  console.log('[SSE] Client connected to real-time events stream')
+  console.log('[SSE] ✅ Client connected to real-time events stream')
+  console.log('[SSE] Client IP:', req.ip || req.connection.remoteAddress)
+  console.log('[SSE] Starting polling for database updates every 200ms...')
   
   // Set headers for SSE
   res.setHeader('Content-Type', 'text/event-stream')
@@ -1274,8 +1276,9 @@ app.get('/api/realtime/events', async (req, res) => {
     operator_positions: new Set()
   }
 
-  // Poll interval (1-2 seconds as requested)
-  const POLL_INTERVAL = 1500 // 1.5 seconds
+  // Poll interval - reduced for real-time performance
+  // In production, this could be optimized further with database triggers or change streams
+  const POLL_INTERVAL = 200 // 200ms for near-instant real-time updates
   let pollInterval = null
   let isActive = true
 
@@ -1286,6 +1289,11 @@ app.get('/api/realtime/events', async (req, res) => {
       const pool = await createConnectionPool()
       const connection = await pool.getConnection()
       const DATABASE_NAME = process.env.DB_NAME || 'drone_monitoring'
+      
+      // Log polling activity (only occasionally to avoid spam)
+      if (Math.random() < 0.01) { // Log ~1% of polls
+        console.log('[SSE] Polling for updates... (active clients:', isActive ? '1' : '0', ')')
+      }
 
       // Check for new RF detections
       try {
@@ -1308,7 +1316,11 @@ app.get('/api/realtime/events', async (req, res) => {
               timestamp: new Date().toISOString()
             }
             res.write(`event: rf_detection\ndata: ${JSON.stringify(update)}\n\n`)
-            console.log('[SSE] New RF detection:', detection.id)
+            console.log('[SSE] 📡 Sending new RF detection to client:', {
+              detectionId: detection.id,
+              droneId: detection.drone_id,
+              systemId: detection.system_id
+            })
           }
         })
       } catch (err) {
@@ -1336,7 +1348,13 @@ app.get('/api/realtime/events', async (req, res) => {
               timestamp: new Date().toISOString()
             }
             res.write(`event: drone_position\ndata: ${JSON.stringify(update)}\n\n`)
-            console.log('[SSE] New drone position:', position.id)
+            console.log('[SSE] 📡 Sending new drone position to client:', {
+              positionId: position.id,
+              droneId: position.drone_id,
+              lat: position.latitude,
+              lng: position.longitude,
+              time: position.time
+            })
           }
         })
       } catch (err) {

@@ -2,7 +2,7 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useMapStore } from '@/store/map'
 import { mapService } from '@/services/mapService'
 import { databaseApi } from '@/services/api'
-import { useRealtime } from '@/services/realtimeService'
+import { useRealtime, realtimeService } from '@/services/realtimeService'
 import { useDataStore } from '@/store/data'
 import { IS_LIVE_VIEW_PERF_MODE, PERF_TEST_DRONE_ID } from '@/config/perf'
 import type { MapPin, MapViewport, DroneTrajectory, DroneTrajectoryPoint, DetectionCheckpoint } from '@/types/map'
@@ -427,6 +427,24 @@ export function useMapPins() {
       // Users control zoom/pan manually
 
       isMapReady.value = true
+      
+      // Process any SSE events that arrived before map was ready
+      if (pendingSSEEvents.length > 0) {
+        console.log(`[MapPins] 🔄 Processing ${pendingSSEEvents.length} queued SSE events now that map is ready`)
+        const events = [...pendingSSEEvents]
+        pendingSSEEvents.length = 0 // Clear queue
+        
+        // Process each queued event
+        for (const event of events) {
+          if (event.type === 'position') {
+            handleDronePositionUpdate(event.data, event.action as 'insert' | 'update' | 'delete')
+          } else if (event.type === 'detection') {
+            handleRFDetectionUpdate(event.data, event.action as 'insert' | 'update' | 'delete')
+          } else if (event.type === 'gps') {
+            handleGpsUnitPositionUpdate(event.data, event.action as 'insert' | 'update' | 'delete')
+          }
+        }
+      }
       
       // Load initial pins after map is ready
       await loadPins()
@@ -1701,11 +1719,24 @@ export function useMapPins() {
 
   // Debounce mechanism for incremental updates
   let refreshDebounceTimer: ReturnType<typeof setTimeout> | null = null
-  const REFRESH_DEBOUNCE_MS = 2000 // 2 seconds - batch updates together
+  // In performance mode, use NO debounce for test drone to show real-time updates
+  // In production, batch updates to reduce map redraws
+  const REFRESH_DEBOUNCE_MS = IS_LIVE_VIEW_PERF_MODE ? 100 : 2000 // 100ms in perf mode (minimal), 2s in production
 
   // Incremental update handlers
   const handleRFDetectionUpdate = (detection: RFDetection, action: 'insert' | 'update' | 'delete') => {
-    if (!isMapReady.value) return
+    // Queue events if map isn't ready yet - they'll be processed when map initializes
+    if (!isMapReady.value) {
+      console.log(`[MapPins] 📥 Queuing RF Detection ${action} (map not ready yet):`, detection.id)
+      pendingSSEEvents.push({ type: 'detection', data: detection, action })
+      // Still update the store so data is available when map is ready
+      if (action === 'delete') {
+        dataStore.removeRFDetection(detection.id)
+      } else {
+        dataStore.upsertRFDetection(detection)
+      }
+      return
+    }
 
     // Log test drone detections prominently in perf mode
     const isTestDrone = detection.drone_id === PERF_TEST_DRONE_ID || String(detection.drone_id) === String(PERF_TEST_DRONE_ID)
@@ -1732,9 +1763,20 @@ export function useMapPins() {
     scheduleIncrementalRefresh()
   }
 
+  // Queue for SSE events received before map is ready
+  const pendingSSEEvents: Array<{ type: 'position' | 'detection' | 'gps', data: any, action: string }> = []
+  
   const handleDronePositionUpdate = (position: DronePosition, action: 'insert' | 'update' | 'delete') => {
+    // Queue events if map isn't ready yet - they'll be processed when map initializes
     if (!isMapReady.value) {
-      console.warn(`[MapPins] Drone Position ${action} received but map not ready yet`)
+      console.log(`[MapPins] 📥 Queuing Drone Position ${action} (map not ready yet):`, position.id)
+      pendingSSEEvents.push({ type: 'position', data: position, action })
+      // Still update the store so data is available when map is ready
+      if (action === 'delete') {
+        dataStore.removeDronePosition(position.id)
+      } else {
+        dataStore.upsertDronePosition(position)
+      }
       return
     }
 
@@ -1754,7 +1796,7 @@ export function useMapPins() {
       })
     }
 
-    console.log(`[MapPins] Drone Position ${action}:`, position.id, `(drone_id: ${position.drone_id})`)
+    console.log(`[MapPins] 📍 Drone Position ${action}:`, position.id, `(drone_id: ${position.drone_id})`)
     
     // Update data store incrementally
     if (action === 'delete') {
@@ -1767,16 +1809,48 @@ export function useMapPins() {
         const storePositions = dataStore.dronePositionsList.value.filter(p => 
           p.drone_id === PERF_TEST_DRONE_ID || String(p.drone_id) === String(PERF_TEST_DRONE_ID)
         )
-        console.log(`[MapPins] Store now has ${storePositions.length} TEST DRONE positions`)
+        console.log(`[MapPins] 💾 Store now has ${storePositions.length} TEST DRONE positions`)
       }
     }
 
-    // Debounce refresh to batch multiple updates
-    scheduleIncrementalRefresh()
+    // In performance mode, refresh IMMEDIATELY for test drone to show real-time trajectory
+    // No debounce - we want instant updates as data arrives
+    if (IS_LIVE_VIEW_PERF_MODE && isTestDrone && action === 'insert') {
+      // Cancel any pending refresh
+      if (refreshDebounceTimer) {
+        clearTimeout(refreshDebounceTimer)
+        refreshDebounceTimer = null
+      }
+      console.log(`[MapPins] 🔄 Triggering IMMEDIATE map refresh for test drone position...`)
+      // Immediate refresh - no delay, we want real-time updates
+      // Use nextTick to ensure store update has propagated
+      Promise.resolve().then(() => {
+        console.log(`[MapPins] 🔄 Executing incremental refresh now...`)
+        void refreshPinsIncremental()
+      })
+    } else {
+      // Debounce refresh to batch multiple updates
+      scheduleIncrementalRefresh()
+    }
   }
 
   const handleGpsUnitPositionUpdate = (unit: GpsUnitPosition, action: 'insert' | 'update' | 'delete') => {
-    if (!isMapReady.value) return
+    // Queue events if map isn't ready yet - they'll be processed when map initializes
+    if (!isMapReady.value) {
+      console.log(`[MapPins] 📥 Queuing GPS Unit Position ${action} (map not ready yet):`, unit.id ?? unit.unit_id)
+      pendingSSEEvents.push({ type: 'gps', data: unit, action })
+      // Still update the store so data is available when map is ready
+      if (action === 'delete') {
+        const key = String(unit.id ?? unit.unit_id ?? unit.system_id ?? '')
+        sensorsCache.value.delete(key)
+        dataStore.removeGpsUnitPositionById(key)
+      } else {
+        const key = String(unit.id ?? unit.unit_id ?? unit.system_id ?? '')
+        sensorsCache.value.set(key, unit)
+        dataStore.upsertGpsUnitPosition(unit)
+      }
+      return
+    }
 
     console.log(`[MapPins] GPS Unit Position ${action}:`, unit.id ?? unit.unit_id)
     
@@ -1801,10 +1875,20 @@ export function useMapPins() {
       clearTimeout(refreshDebounceTimer)
     }
 
-    refreshDebounceTimer = setTimeout(() => {
-      void refreshPinsIncremental()
-      refreshDebounceTimer = null
-    }, REFRESH_DEBOUNCE_MS)
+    // In performance mode, immediately refresh for test drone to show real-time updates
+    // Otherwise, debounce to batch updates
+    if (IS_LIVE_VIEW_PERF_MODE) {
+      // For test drone, refresh immediately; for others, use short debounce
+      refreshDebounceTimer = setTimeout(() => {
+        void refreshPinsIncremental()
+        refreshDebounceTimer = null
+      }, REFRESH_DEBOUNCE_MS)
+    } else {
+      refreshDebounceTimer = setTimeout(() => {
+        void refreshPinsIncremental()
+        refreshDebounceTimer = null
+      }, REFRESH_DEBOUNCE_MS)
+    }
   }
 
   // Incremental refresh - only updates changed pins without full reload
@@ -1880,6 +1964,68 @@ export function useMapPins() {
         const droneId = entry.latestPosition.drone_id ?? droneKey.replace('drone:', '')
         const metadata = storeData.drones.find(d => d.id === droneId)
         
+        // Apply time window filtering (same as initial load)
+        const ACTIVE_POSITION_WINDOW_MS = getActivePositionWindow(mapStore)
+        const DETECTION_WINDOW_MS = getDetectionWindow(mapStore)
+        const MAX_POSITION_AGE_MS = getMaxPositionAge(mapStore)
+        
+        const positionTime = toTimeValue(entry.latestPosition.time)
+        const now = Date.now()
+        const positionAge = positionTime > 0 ? now - positionTime : Infinity
+        
+        // Check if position is recent (within configured window)
+        const hasRecentPosition = positionTime > 0 && positionAge <= ACTIVE_POSITION_WINDOW_MS
+        
+        // Check if drone has RF detections within the configured window
+        const detections = storeData.rfDetections
+          .filter((d: RFDetection) => {
+            const dDroneId = d.drone_id ?? null
+            const dSystemId = d.system_id ?? null
+            const posDroneId = entry.latestPosition.drone_id ?? null
+            const posSystemId = entry.latestPosition.system_id ?? null
+            return (dDroneId !== null && dDroneId === posDroneId) || 
+                   (dSystemId !== null && dSystemId === posSystemId)
+          })
+          .map((d: RFDetection) => ({
+            id: d.id,
+            timestamp: d.time,
+            frequency: d.frequency,
+            signalStrength: d.signal_strength,
+            status: d.detection_status,
+            systemId: d.system_id ?? null,
+            droneId: d.drone_id ?? null
+          }))
+        
+        const hasRecentDetections = detections.some(detection => {
+          const detectionTime = toTimeValue(detection.timestamp)
+          const detectionAge = detectionTime > 0 ? now - detectionTime : Infinity
+          return detectionTime > 0 && detectionAge <= DETECTION_WINDOW_MS
+        })
+        
+        // Show drone if:
+        // - Has recent position (within window), OR
+        // - Has recent detections (within window) AND position is not too old (within max age)
+        const shouldShow = hasRecentPosition || (hasRecentDetections && positionAge <= MAX_POSITION_AGE_MS)
+        
+        // Only add active drones to the map - skip inactive ones (same filtering as initial load)
+        if (!shouldShow) {
+          // Log why test drone is being filtered out
+          if (IS_LIVE_VIEW_PERF_MODE && (String(droneId) === String(PERF_TEST_DRONE_ID) || metadata?.uas_id?.includes('TEST'))) {
+            console.warn(`[MapPins] 🚀 TEST DRONE filtered out in incremental refresh (not active):`, {
+              droneId,
+              hasRecentPosition,
+              hasRecentDetections,
+              positionAge,
+              positionTime,
+              now: Date.now(),
+              ACTIVE_POSITION_WINDOW_MS,
+              DETECTION_WINDOW_MS,
+              MAX_POSITION_AGE_MS
+            })
+          }
+          return
+        }
+        
         // Log test drone in incremental refresh
         const isTestDrone = String(droneId) === String(PERF_TEST_DRONE_ID) || metadata?.uas_id?.includes('TEST')
         if (IS_LIVE_VIEW_PERF_MODE && isTestDrone) {
@@ -1889,7 +2035,9 @@ export function useMapPins() {
             title: metadata?.uas_id ? `Drone ${metadata.uas_id}` : `Drone ${droneId}`,
             position: { lat: latestLat, lng: latestLng },
             trajectoryPoints: filteredPoints.length,
-            totalPositions: entry.positions.length
+            totalPositions: entry.positions.length,
+            hasRecentPosition,
+            hasRecentDetections
           })
         }
 
@@ -1908,7 +2056,8 @@ export function useMapPins() {
             receiver_type: entry.latestPosition.receiver_type,
             system_id: entry.latestPosition.system_id ? String(entry.latestPosition.system_id) : null,
             timestamp: entry.latestPosition.time,
-            trajectory: filteredPoints
+            trajectory: filteredPoints,
+            detections: detections.length > 0 ? detections : undefined
           },
           timestamp: entry.latestPosition.time
         })
@@ -1970,6 +2119,22 @@ export function useMapPins() {
         
         if (isMapReady.value) {
           const filtered = dedupedPins.filter(pin => mapStore.isMarkerTypeVisible(pin.type))
+          
+          // Log test drone in incremental refresh
+          if (IS_LIVE_VIEW_PERF_MODE) {
+            const testDronePin = filtered.find(p =>
+              p.id === `drone-${PERF_TEST_DRONE_ID}` ||
+              (p.type === 'drone' && p.data?.drone_id === PERF_TEST_DRONE_ID)
+            )
+            if (testDronePin) {
+              console.log(`[MapPins] 🗺️ Updating map with TEST DRONE pin:`, {
+                id: testDronePin.id,
+                position: { lat: testDronePin.lat, lng: testDronePin.lng },
+                trajectoryPoints: Array.isArray(testDronePin.data?.trajectory) ? testDronePin.data.trajectory.length : 0
+              })
+            }
+          }
+          
           mapService.addPins(filtered, mapStore.visibleMarkerTypes)
           
           // Update trajectories
@@ -1980,8 +2145,19 @@ export function useMapPins() {
               points: pin.data.trajectory as DroneTrajectoryPoint[]
             }))
           
+          if (IS_LIVE_VIEW_PERF_MODE && visibleTrajectories.length > 0) {
+            const testTrajectory = visibleTrajectories.find(t => t.droneId === String(PERF_TEST_DRONE_ID))
+            if (testTrajectory) {
+              console.log(`[MapPins] 📈 Updating TEST DRONE trajectory with ${testTrajectory.points.length} points`)
+            }
+          }
+          
           mapService.updateDroneTrajectories(visibleTrajectories)
           syncFocusModeVisuals()
+          
+          if (IS_LIVE_VIEW_PERF_MODE) {
+            console.log(`[MapPins] ✅ Map update complete!`)
+          }
         }
       }
     } catch (error) {
@@ -2004,12 +2180,24 @@ export function useMapPins() {
         onDronePosition: handleDronePositionUpdate,
         onGpsUnitPosition: handleGpsUnitPositionUpdate,
         onError: (error) => {
-          console.error('[MapPins] Realtime error:', error)
+          console.error('[MapPins] ❌ Realtime error:', error)
         },
         onReconnect: () => {
-          console.log('[MapPins] Realtime reconnected')
+          console.log('[MapPins] 🔌 Realtime reconnected - SSE is active!')
         }
       })
+      
+      // Log connection status after a brief delay
+      setTimeout(() => {
+        const isConnected = realtimeService.isConnected()
+        if (isConnected) {
+          console.log('[MapPins] ✅ SSE connection verified - real-time updates are active!')
+        } else {
+          console.warn('[MapPins] ⚠️ SSE connection not established - updates may be delayed')
+          console.warn('[MapPins] Check browser console for SSE connection errors')
+          console.warn('[MapPins] Make sure your backend server is running and SSE endpoint is accessible')
+        }
+      }, 1000)
       realtimeCleanup = disconnect
     } catch (error) {
       console.warn('[MapPins] Failed to set up realtime service:', error)

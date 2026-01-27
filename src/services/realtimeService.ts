@@ -70,13 +70,15 @@ class RealtimeService {
       // Construct URL - baseURL should already be cleaned (e.g., "http://dds.pm99.site:3001")
       // Just append /api/realtime/events
       const url = `${this.baseURL}/api/realtime/events`
-      console.log('[RealtimeService] Connecting to:', url)
+      console.log('[RealtimeService] 🔌 Attempting SSE connection to:', url)
+      console.log('[RealtimeService] This should connect within 1-2 seconds if the server is running...')
       
       this.eventSource = new EventSource(url)
       const eventSourceUrl = url // Store for error handler
 
       this.eventSource.onopen = () => {
-        console.log('[RealtimeService] Connected')
+        console.log('[RealtimeService] ✅ SSE CONNECTED - Real-time updates are now active!')
+        console.log('[RealtimeService] Listening for: rf_detection, drone_position, gps_unit_position, drone, operator_position')
         this.isConnecting = false
         this.reconnectAttempts = 0
         this.reconnectDelay = 1000
@@ -85,29 +87,54 @@ class RealtimeService {
 
       this.eventSource.onmessage = (event) => {
         try {
-          const update: RealtimeUpdate = JSON.parse(event.data)
+          const data = JSON.parse(event.data)
+          // Handle initial connection message
+          if (data.type === 'connected') {
+            console.log('[RealtimeService] ✅ SSE connection confirmed by server:', data.message)
+            return
+          }
+          // Handle error messages from server
+          if (data.type === 'error') {
+            console.error('[RealtimeService] Server error:', data.message)
+            this.callbacks.onError?.(new Error(data.message))
+            return
+          }
+          // Handle regular updates
+          const update: RealtimeUpdate = data
           this.handleUpdate(update)
         } catch (error) {
-          console.error('[RealtimeService] Failed to parse message:', error)
+          console.error('[RealtimeService] Failed to parse message:', error, 'Raw data:', event.data)
           this.callbacks.onError?.(error instanceof Error ? error : new Error('Failed to parse message'))
         }
       }
 
       this.eventSource.onerror = (error) => {
+        // Log all errors prominently - this is critical for debugging
+        const readyState = this.eventSource?.readyState
+        console.error('[RealtimeService] ❌ SSE ERROR:', {
+          readyState: readyState === EventSource.CONNECTING ? 'CONNECTING' : 
+                      readyState === EventSource.OPEN ? 'OPEN' : 
+                      readyState === EventSource.CLOSED ? 'CLOSED' : 'UNKNOWN',
+          url: eventSourceUrl,
+          error: error
+        })
+        
         // Only log error if we're actually trying to connect
         // 404 errors are expected if the endpoint isn't available yet
-        if (this.eventSource?.readyState === EventSource.CLOSED) {
+        if (readyState === EventSource.CLOSED) {
           // Connection failed - this is normal if endpoint doesn't exist
           // Only log on first attempt to avoid spam
           if (this.reconnectAttempts === 0) {
-            console.warn(`[RealtimeService] Connection failed (404). Is the server running? Endpoint: ${eventSourceUrl}`)
-            console.warn('[RealtimeService] Real-time updates will be disabled. The app will continue to work with periodic polling.')
+            console.error(`[RealtimeService] ❌ Connection failed (404). Is the server running?`)
+            console.error(`[RealtimeService] ❌ Endpoint: ${eventSourceUrl}`)
+            console.error('[RealtimeService] ❌ Real-time updates will be disabled. The app will continue to work with periodic polling.')
+            console.error('[RealtimeService] ❌ TO FIX: Make sure your backend server is running (`npm run server`)')
           }
           this.isConnecting = false
           this.scheduleReconnect()
         } else {
           // Other errors
-          console.warn('[RealtimeService] EventSource error (will retry):', error)
+          console.error('[RealtimeService] ❌ EventSource error (will retry):', error)
           this.isConnecting = false
         }
       }
@@ -125,6 +152,13 @@ class RealtimeService {
       this.eventSource.addEventListener('drone_position', (event: MessageEvent) => {
         try {
           const update: RealtimeUpdate = JSON.parse(event.data)
+          console.log('[RealtimeService] 📡 Received drone_position SSE event:', {
+            action: update.action,
+            positionId: update.data?.id,
+            droneId: (update.data as any)?.drone_id,
+            lat: (update.data as any)?.latitude,
+            lng: (update.data as any)?.longitude
+          })
           this.handleUpdate(update)
         } catch (error) {
           console.error('[RealtimeService] Failed to parse drone_position event:', error)
