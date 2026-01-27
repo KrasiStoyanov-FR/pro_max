@@ -4,12 +4,14 @@ import { mapService } from '@/services/mapService'
 import { databaseApi } from '@/services/api'
 import { useRealtime } from '@/services/realtimeService'
 import { useDataStore } from '@/store/data'
+import { IS_LIVE_VIEW_PERF_MODE } from '@/config/perf'
 import type { MapPin, MapViewport, DroneTrajectory, DroneTrajectoryPoint, DetectionCheckpoint } from '@/types/map'
 import type { DronePosition, RFDetection, OperatorPosition, GpsUnitPosition, Drone } from '@/types/database'
 
-// Time window configuration from environment variables
-// In test mode, all windows are set to 1 year to show all data
-const isTestMode = import.meta.env.VITE_TEST_MODE === 'true'
+// Time window configuration
+// In performance mode we want very long windows so the map can show all data,
+// and we also respect the legacy VITE_TEST_MODE flag if it is set.
+const isTestMode = IS_LIVE_VIEW_PERF_MODE || import.meta.env.VITE_TEST_MODE === 'true'
 const ONE_YEAR_MS = 365 * 24 * 60 * 60 * 1000
 
 // Helper to format milliseconds to human-readable string
