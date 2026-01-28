@@ -43,6 +43,10 @@ const isWithinDateRange = (timestamp: string | null | undefined, mapStore: Retur
 // Cache for time window values to avoid excessive logging
 const timeWindowCache = new Map<string, { value: number; source: string }>()
 
+const clearTimeWindowCache = (): void => {
+  timeWindowCache.clear()
+}
+
 // Get time window with priority: user selection > test mode > env variable > default
 const getTimeWindow = (mapStore: ReturnType<typeof useMapStore>, defaultMs: number, windowType: 'position' | 'detection' | 'maxAge' = 'position'): { value: number; source: string } => {
   // Check cache first
@@ -95,12 +99,12 @@ const getActivePositionWindow = (mapStore: ReturnType<typeof useMapStore>): numb
 }
 
 const getDetectionWindow = (mapStore: ReturnType<typeof useMapStore>): number => {
-  const result = getTimeWindow(mapStore, 60 * 60 * 1000, 'detection') // Default: 1 hour
+  const result = getTimeWindow(mapStore, 15 * 60 * 1000, 'detection') // Default: 15 minutes (match position default)
   return result.value
 }
 
 const getMaxPositionAge = (mapStore: ReturnType<typeof useMapStore>): number => {
-  const result = getTimeWindow(mapStore, 60 * 60 * 1000, 'maxAge') // Default: 1 hour
+  const result = getTimeWindow(mapStore, 15 * 60 * 1000, 'maxAge') // Default: 15 minutes (match position default)
   return result.value
 }
 
@@ -1656,6 +1660,7 @@ export function useMapPins() {
   watch(
     () => [mapStore.timeWindowMs, mapStore.dateRange],
     () => {
+      clearTimeWindowCache()
       if (isMapReady.value) {
         // Reload pins with new time window or date range - this will re-filter based on the new settings
         void loadPins()
