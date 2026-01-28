@@ -1,7 +1,7 @@
 import { ref, computed, onBeforeUnmount, watch, isRef, type Ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useDataStore } from '@/store/data'
-import type { Drone } from '@/types/database'
+import type { Drone, RFDetection } from '@/types/database'
 import type { DroneItem, DroneFiltersState, DroneSortField } from '@/types/drones'
 
 export interface UseDronesOptions {
@@ -27,10 +27,14 @@ export interface UseDronesResult {
 }
 
 const mapDroneRecord = (record: Drone): DroneItem => {
-  const displayName = 
-    record.serial_number || 
-    record.uas_id || 
-    record.mac_address || 
+  const manufacturer = (record as any).manufacturer ?? null
+  const modelName = (record as any).model_name ?? null
+
+  const displayName =
+    modelName ||
+    record.serial_number ||
+    record.uas_id ||
+    record.mac_address ||
     `Drone #${record.id}`
 
   return {
@@ -42,6 +46,8 @@ const mapDroneRecord = (record: Drone): DroneItem => {
     firstSeen: record.first_seen,
     lastSeen: record.last_seen,
     isActive: record.is_active,
+    manufacturer,
+    modelName,
     displayName
   }
 }
@@ -65,7 +71,63 @@ export function useDrones(options: UseDronesOptions = {}): UseDronesResult {
   })
 
   const drones = computed<DroneItem[]>(() => {
-    return dronesSource.value.map(mapDroneRecord)
+    const baseItems = dronesSource.value.map(mapDroneRecord)
+
+    // Enhance lastSeen with latest detection time when appropriate
+    return baseItems.map((drone) => {
+      if (drone.lastSeen) {
+        return drone
+      }
+
+      const firstSeenTime = new Date(drone.firstSeen).getTime()
+      if (!Number.isFinite(firstSeenTime)) {
+        return drone
+      }
+
+      const candidateTimes: number[] = []
+
+      // By drone ID
+      const detectionsByDrone: RFDetection[] = dataStore.getRFDetectionsByDroneId(drone.id) || []
+      detectionsByDrone.forEach((detection) => {
+        const ts =
+          detection.time ??
+          detection.last_seen ??
+          detection.updated_at ??
+          null
+        if (!ts) return
+        const time = new Date(ts).getTime()
+        if (Number.isFinite(time) && time > firstSeenTime) {
+          candidateTimes.push(time)
+        }
+      })
+
+      // By system ID (if available)
+      if (drone.systemId) {
+        const detectionsBySystem: RFDetection[] = dataStore.getRFDetectionsBySystemId(String(drone.systemId)) || []
+        detectionsBySystem.forEach((detection) => {
+          const ts =
+            detection.time ??
+            detection.last_seen ??
+            detection.updated_at ??
+            null
+          if (!ts) return
+          const time = new Date(ts).getTime()
+          if (Number.isFinite(time) && time > firstSeenTime) {
+            candidateTimes.push(time)
+          }
+        })
+      }
+
+      if (!candidateTimes.length) {
+        return drone
+      }
+
+      const latest = Math.max(...candidateTimes)
+      return {
+        ...drone,
+        lastSeen: new Date(latest).toISOString()
+      }
+    })
   })
 
   const filters = {
@@ -84,6 +146,8 @@ export function useDrones(options: UseDronesOptions = {}): UseDronesResult {
       const searchLower = filters.search.value.toLowerCase().trim()
       result = result.filter(drone => {
         return (
+          drone.manufacturer?.toLowerCase().includes(searchLower) ||
+          drone.modelName?.toLowerCase().includes(searchLower) ||
           drone.macAddress.toLowerCase().includes(searchLower) ||
           drone.serialNumber?.toLowerCase().includes(searchLower) ||
           drone.uasId?.toLowerCase().includes(searchLower) ||
@@ -112,8 +176,11 @@ export function useDrones(options: UseDronesOptions = {}): UseDronesResult {
           case 'id':
             comparison = a.id - b.id
             break
-          case 'macAddress':
-            comparison = (a.macAddress || '').localeCompare(b.macAddress || '')
+          case 'manufacturer':
+            comparison = (a.manufacturer || '').localeCompare(b.manufacturer || '')
+            break
+          case 'modelName':
+            comparison = (a.modelName || '').localeCompare(b.modelName || '')
             break
           case 'serialNumber':
             comparison = (a.serialNumber || '').localeCompare(b.serialNumber || '')
@@ -130,8 +197,10 @@ export function useDrones(options: UseDronesOptions = {}): UseDronesResult {
             comparison = timeA - timeB
             break
           }
-          case 'isActive':
-            comparison = (a.isActive ? 1 : 0) - (b.isActive ? 1 : 0)
+          case 'systemId':
+            comparison = (a.systemId ? String(a.systemId) : '').localeCompare(
+              b.systemId ? String(b.systemId) : ''
+            )
             break
           default:
             return 0

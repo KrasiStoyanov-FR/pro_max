@@ -10,6 +10,9 @@ export interface Drone {
   first_seen: string // TIMESTAMP
   last_seen: string | null // TIMESTAMP
   is_active: boolean
+  // Optional metadata fields for richer drone identification
+  manufacturer?: string | null
+  model_name?: string | null
 }
 
 // Drone positions table

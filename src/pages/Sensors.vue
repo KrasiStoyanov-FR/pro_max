@@ -95,8 +95,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onMounted, onBeforeUnmount } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, ref, onMounted, onBeforeUnmount, watch } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import LayoutWrapper from '@/components/layout/LayoutWrapper.vue'
 import SensorsTable from '@/views/sensors/components/SensorsTable.vue'
@@ -112,6 +112,7 @@ import type { DetectionItem } from '@/types/detections'
 import { databaseApi } from '@/services/api'
 
 const router = useRouter()
+const route = useRoute()
 import { useDetections } from '@/composables/useDetections'
 
 useAuth()
@@ -170,6 +171,21 @@ const selectedSensorDetections = computed<DetectionItem[]>(() => {
   
   return []
 })
+
+const preselectSensorFromRoute = () => {
+  const systemId = route.query.systemId as string | undefined
+  if (!systemId) return
+
+  const target = sensors.value.find(sensor => {
+    const source = sensor.source as any
+    return source?.system_id && String(source.system_id) === String(systemId)
+  })
+
+  if (target) {
+    selectedSensorId.value = target.id
+    panelVisible.value = true
+  }
+}
 
 const handleShowDetails = (sensor: SensorItem) => {
   selectedSensorId.value = sensor.id
@@ -326,6 +342,17 @@ const handleShowDetection = (detection: DetectionItem, timeWindowMinutes?: numbe
 const tableContainerClass = computed(() => {
   return panelVisible.value ? 'lg:pr-6 lg:mr-[30rem]' : ''
 })
+
+onMounted(() => {
+  preselectSensorFromRoute()
+})
+
+watch(
+  () => route.query.systemId,
+  () => {
+    preselectSensorFromRoute()
+  }
+)
 </script>
 
 

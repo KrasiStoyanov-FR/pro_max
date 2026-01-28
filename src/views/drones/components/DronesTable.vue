@@ -29,15 +29,39 @@
                 <SortIcon :active="sortField === 'id'" :direction="sortDirection" />
               </button>
             </th>
-            <th scope="col" class="px-4 py-3">Name</th>
             <th scope="col" class="px-4 py-3">
-              <button type="button" class="flex items-center gap-1" @click="emitSort('macAddress')" :aria-label="`Sort by MAC address (${sortDirectionLabel})`">
-                MAC Address
-                <SortIcon :active="sortField === 'macAddress'" :direction="sortDirection" />
+              <button
+                type="button"
+                class="flex items-center gap-1"
+                @click="emitSort('manufacturer')"
+                :aria-label="`Sort by manufacturer (${sortDirectionLabel})`"
+              >
+                Manufacturer
+                <SortIcon :active="sortField === 'manufacturer'" :direction="sortDirection" />
               </button>
             </th>
-            <th scope="col" class="px-4 py-3">Serial Number</th>
-            <th scope="col" class="px-4 py-3">UAS ID</th>
+            <th scope="col" class="px-4 py-3">
+              <button
+                type="button"
+                class="flex items-center gap-1"
+                @click="emitSort('modelName')"
+                :aria-label="`Sort by model (${sortDirectionLabel})`"
+              >
+                Model
+                <SortIcon :active="sortField === 'modelName'" :direction="sortDirection" />
+              </button>
+            </th>
+            <th scope="col" class="px-4 py-3">
+              <button
+                type="button"
+                class="flex items-center gap-1"
+                @click="emitSort('serialNumber')"
+                :aria-label="`Sort by serial number (${sortDirectionLabel})`"
+              >
+                Serial Number
+                <SortIcon :active="sortField === 'serialNumber'" :direction="sortDirection" />
+              </button>
+            </th>
             <th scope="col" class="px-4 py-3">
               <button type="button" class="flex items-center gap-1" @click="emitSort('firstSeen')" :aria-label="`Sort by first seen (${sortDirectionLabel})`">
                 First Seen
@@ -51,9 +75,14 @@
               </button>
             </th>
             <th scope="col" class="px-4 py-3">
-              <button type="button" class="flex items-center gap-1" @click="emitSort('isActive')" :aria-label="`Sort by status (${sortDirectionLabel})`">
-                Status
-                <SortIcon :active="sortField === 'isActive'" :direction="sortDirection" />
+              <button
+                type="button"
+                class="flex items-center gap-1"
+                @click="emitSort('systemId')"
+                :aria-label="`Sort by sensor (${sortDirectionLabel})`"
+              >
+                Sensor
+                <SortIcon :active="sortField === 'systemId'" :direction="sortDirection" />
               </button>
             </th>
             <th scope="col" class="px-4 py-3 text-right">Actions</th>
@@ -62,13 +91,13 @@
 
         <tbody>
           <tr v-if="isLoading" class="border-t border-white/5 text-neutral-400">
-            <td colspan="10" class="px-4 py-6 text-center text-sm">
+            <td colspan="9" class="px-4 py-6 text-center text-sm">
               Loading drones&hellip;
             </td>
           </tr>
 
           <tr v-else-if="!drones.length" class="border-t border-white/5 text-neutral-400">
-            <td colspan="10" class="px-4 py-6 text-center text-sm">
+            <td colspan="9" class="px-4 py-6 text-center text-sm">
               No drones match the current filters.
             </td>
           </tr>
@@ -94,16 +123,13 @@
               {{ drone.id }}
             </td>
             <td class="px-4 py-4 font-semibold">
-              {{ drone.displayName }}
+              {{ drone.manufacturer || '—' }}
             </td>
-            <td class="px-4 py-4 font-mono text-xs">
-              {{ drone.macAddress }}
+            <td class="px-4 py-4">
+              {{ drone.modelName || '—' }}
             </td>
             <td class="px-4 py-4">
               {{ drone.serialNumber || '—' }}
-            </td>
-            <td class="px-4 py-4">
-              {{ drone.uasId || '—' }}
             </td>
             <td class="px-4 py-4 whitespace-nowrap text-neutral-200">
               {{ formatTimestamp(drone.firstSeen) }}
@@ -112,7 +138,15 @@
               {{ drone.lastSeen ? formatTimestamp(drone.lastSeen) : '—' }}
             </td>
             <td class="px-4 py-4">
-              <StatusBadge :status="drone.isActive ? 'active' : 'inactive'" />
+              <button
+                v-if="drone.systemId"
+                type="button"
+                class="inline-flex items-center rounded-md bg-primary-500/10 px-2 py-1 text-xs font-mono text-primary-300 underline-offset-2 hover:bg-primary-500/20 hover:underline"
+                @click="goToSensor(drone)"
+              >
+                {{ drone.systemId }}
+              </button>
+              <span v-else class="text-neutral-500">—</span>
             </td>
             <td class="px-4 py-4 flex justify-end gap-2">
               <button
@@ -132,6 +166,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useRouter } from 'vue-router'
 import type { DroneItem, DroneSortField } from '@/types/drones'
 import StatusBadge from '@/views/detections/components/StatusBadge.vue'
 import SortIcon from '@/views/detections/components/SortIcon.vue'
@@ -144,6 +179,8 @@ const props = defineProps<{
   selectedIds: Set<number>
 }>()
 
+const router = useRouter()
+
 const emit = defineEmits<{
   (e: 'change-sort', value: DroneSortField): void
   (e: 'show-details', drone: DroneItem): void
@@ -153,6 +190,16 @@ const emit = defineEmits<{
 
 const emitSort = (field: DroneSortField) => {
   emit('change-sort', field)
+}
+
+const goToSensor = (drone: DroneItem) => {
+  if (!drone.systemId) return
+  router.push({
+    path: '/sensors',
+    query: {
+      systemId: String(drone.systemId)
+    }
+  })
 }
 
 const formatTimestamp = (value: string): string => {

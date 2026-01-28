@@ -9,6 +9,8 @@ export interface DroneItem {
   firstSeen: string
   lastSeen: string | null
   isActive: boolean
+  manufacturer: string | null
+  modelName: string | null
   // Computed fields
   displayName: string
 }
@@ -18,7 +20,14 @@ export interface DroneFiltersState {
   status: 'all' | 'active' | 'inactive'
 }
 
-export type DroneSortField = 'id' | 'macAddress' | 'serialNumber' | 'firstSeen' | 'lastSeen' | 'isActive'
+export type DroneSortField =
+  | 'id'
+  | 'manufacturer'
+  | 'modelName'
+  | 'serialNumber'
+  | 'firstSeen'
+  | 'lastSeen'
+  | 'systemId'
 
 // Report types
 export interface TimePeriod {
