@@ -12,7 +12,6 @@ import type { DronePosition, RFDetection, OperatorPosition, GpsUnitPosition, Dro
 // In performance mode we want very long windows so the map can show all data,
 // and we also respect the legacy VITE_TEST_MODE flag if it is set.
 const isTestMode = IS_LIVE_VIEW_PERF_MODE || import.meta.env.VITE_TEST_MODE === 'true'
-const ONE_YEAR_MS = 365 * 24 * 60 * 60 * 1000
 
 // Helper to format milliseconds to human-readable string
 const formatTimeWindow = (ms: number): string => {
@@ -43,6 +42,10 @@ const isWithinDateRange = (timestamp: string | null | undefined, mapStore: Retur
 // Cache for time window values to avoid excessive logging
 const timeWindowCache = new Map<string, { value: number; source: string }>()
 
+const clearTimeWindowCache = (): void => {
+  timeWindowCache.clear()
+}
+
 // Get time window with priority: user selection > test mode > env variable > default
 const getTimeWindow = (mapStore: ReturnType<typeof useMapStore>, defaultMs: number, windowType: 'position' | 'detection' | 'maxAge' = 'position'): { value: number; source: string } => {
   // Check cache first
@@ -60,14 +63,11 @@ const getTimeWindow = (mapStore: ReturnType<typeof useMapStore>, defaultMs: numb
     return result
   }
   
-  // Priority 2: Test mode (1 year)
-  if (isTestMode) {
-    const result = { value: ONE_YEAR_MS, source: 'test' }
-    timeWindowCache.set(cacheKey, result)
-    return result
-  }
-  
-  // Priority 3: Environment variable
+  // When "Use Default" (null): always use env/default (15 min). Do not use 1-year
+  // test window — we must filter out outdated markers. Perf mode only affects
+  // logging/debounce, not the default time window.
+
+  // Priority 2: Environment variable
   const envKey = windowType === 'position' 
     ? 'VITE_ACTIVE_POSITION_WINDOW_MS'
     : windowType === 'detection'
@@ -83,7 +83,7 @@ const getTimeWindow = (mapStore: ReturnType<typeof useMapStore>, defaultMs: numb
     }
   }
   
-  // Priority 4: Default
+  // Priority 3: Default (15 min for position/detection/maxAge)
   const result = { value: defaultMs, source: 'default' }
   timeWindowCache.set(cacheKey, result)
   return result
@@ -95,12 +95,12 @@ const getActivePositionWindow = (mapStore: ReturnType<typeof useMapStore>): numb
 }
 
 const getDetectionWindow = (mapStore: ReturnType<typeof useMapStore>): number => {
-  const result = getTimeWindow(mapStore, 60 * 60 * 1000, 'detection') // Default: 1 hour
+  const result = getTimeWindow(mapStore, 15 * 60 * 1000, 'detection') // Default: 15 minutes (match position default)
   return result.value
 }
 
 const getMaxPositionAge = (mapStore: ReturnType<typeof useMapStore>): number => {
-  const result = getTimeWindow(mapStore, 60 * 60 * 1000, 'maxAge') // Default: 1 hour
+  const result = getTimeWindow(mapStore, 15 * 60 * 1000, 'maxAge') // Default: 15 minutes (match position default)
   return result.value
 }
 
@@ -461,6 +461,7 @@ export function useMapPins() {
   const loadPins = async () => {
     try {
       mapStore.setLoading(true)
+      clearTimeWindowCache()
 
     const getTrajectoryKey = (
       droneId: number | null | undefined,
@@ -1656,6 +1657,7 @@ export function useMapPins() {
   watch(
     () => [mapStore.timeWindowMs, mapStore.dateRange],
     () => {
+      clearTimeWindowCache()
       if (isMapReady.value) {
         // Reload pins with new time window or date range - this will re-filter based on the new settings
         void loadPins()
