@@ -80,7 +80,7 @@ export interface RFDetection {
   range_m?: number | null
   bearing?: number | null
   azimuth?: number | null
-  sensor_name?: string | null
+  unit_name?: string | null
   sensor_id?: string | number | null
   receiver_name?: string | null
   receiver_type?: string | null

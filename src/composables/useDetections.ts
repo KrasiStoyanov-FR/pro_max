@@ -110,12 +110,17 @@ const toNumber = (value: unknown): number | null => {
 }
 
 const resolveSensorName = (record: RFDetection): string => {
-  return (
-    record.sensor_name ||
-    record.receiver_name ||
-    record.receiver_type ||
-    (record.system_id ? `System ${record.system_id}` : 'Unknown sensor')
-  )
+  // Get unit_name from joined gps_unit_position table, truncate to 32 characters
+  let name = record.unit_name || record.receiver_name || record.receiver_type || null
+  
+  if (name && typeof name === 'string') {
+    // Truncate to 32 characters
+    name = name.length > 32 ? name.substring(0, 32) : name
+    return name
+  }
+  
+  // Fallback to system_id if no name available
+  return record.system_id ? `System ${record.system_id}` : 'Unknown sensor'
 }
 
 const resolveSensorId = (record: RFDetection): string | number | null => {
@@ -125,10 +130,10 @@ const resolveSensorId = (record: RFDetection): string | number | null => {
 const resolveSensors = (record: RFDetection): DetectionSensorInfo[] => {
   const sensors: DetectionSensorInfo[] = []
 
-  if (record.sensor_name) {
+  if (record.unit_name) {
     sensors.push({
       id: resolveSensorId(record),
-      name: record.sensor_name
+      name: record.unit_name
     })
   }
 
@@ -290,7 +295,7 @@ const buildDetectionKey = (record: RFDetection, fallbackIndex: number): string =
   const sensorKey =
     record.system_id?.toString().trim() ||
     record.sensor_id?.toString().trim() ||
-    record.sensor_name?.toString().trim() ||
+    record.unit_name?.toString().trim() ||
     record.receiver_name?.toString().trim() ||
     'unknown-sensor'
   parts.push(`sensor:${sensorKey}`)

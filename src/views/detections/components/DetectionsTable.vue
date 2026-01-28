@@ -113,9 +113,6 @@
                 class="inline-flex flex-col items-start rounded-md bg-primary-500/10 px-2 py-1 text-xs text-primary-300 underline-offset-2 hover:bg-primary-500/20 hover:underline"
                 @click="goToSensor(detection)"
               >
-                <span class="font-semibold leading-tight text-sm text-primary-100">
-                  {{ detection.sensorName }}
-                </span>
                 <span class="font-mono">
                   {{ detection.systemId }}
                 </span>

@@ -877,11 +877,45 @@ app.get('/api/db/table/:tableName', async (req, res) => {
     connection = await pool.getConnection()
 
     // Build base query
+    // For rf_detections, enrich with gps_unit_position.unit_name (or name) using unit_id match
     let baseQuery = `SELECT * FROM \`${tableName}\``
     if (USE_SQLITE) {
-      baseQuery = `SELECT * FROM ${tableName}`
+      if (tableName === 'rf_detections') {
+        // Use a subquery to get the most recent gps_unit_position for each detector:
+        // match rf_detections.system_id (the ID you see like DDS30) against gps_unit_position.unit_id.
+        baseQuery = `SELECT rf_detections.*,
+          (SELECT COALESCE(unit_name, name)
+             FROM gps_unit_position
+            WHERE TRIM(CAST(gps_unit_position.unit_id AS TEXT)) = TRIM(CAST(rf_detections.system_id AS TEXT))
+            ORDER BY gps_unit_position.time DESC, gps_unit_position.id DESC
+            LIMIT 1) AS unit_name
+          FROM rf_detections`
+      } else {
+        baseQuery = `SELECT * FROM ${tableName}`
+      }
     } else if (database) {
-      baseQuery = `SELECT * FROM \`${database}\`.\`${tableName}\``
+      if (tableName === 'rf_detections') {
+        // Same logic for MySQL/MariaDB
+        baseQuery = `SELECT rf_detections.*,
+          (SELECT COALESCE(unit_name, name)
+             FROM \`${database}\`.\`gps_unit_position\`
+            WHERE TRIM(CAST(gps_unit_position.unit_id AS CHAR)) = TRIM(CAST(rf_detections.system_id AS CHAR))
+            ORDER BY gps_unit_position.time DESC, gps_unit_position.id DESC
+            LIMIT 1) AS unit_name
+          FROM \`${database}\`.\`rf_detections\``
+      } else {
+        baseQuery = `SELECT * FROM \`${database}\`.\`${tableName}\``
+      }
+    } else {
+      if (tableName === 'rf_detections') {
+        baseQuery = `SELECT rf_detections.*,
+          (SELECT COALESCE(unit_name, name)
+             FROM \`gps_unit_position\`
+            WHERE TRIM(CAST(gps_unit_position.unit_id AS CHAR)) = TRIM(CAST(rf_detections.system_id AS CHAR))
+            ORDER BY gps_unit_position.time DESC, gps_unit_position.id DESC
+            LIMIT 1) AS unit_name
+          FROM \`rf_detections\``
+      }
     }
 
     // Build WHERE clause for filters (only for rf_detections table)
@@ -954,7 +988,11 @@ app.get('/api/db/table/:tableName', async (req, res) => {
     if (count === 'true') {
       let countQuery = `SELECT COUNT(*) as total FROM \`${tableName}\``
       if (USE_SQLITE) {
-        countQuery = `SELECT COUNT(*) as total FROM ${tableName}`
+        if (tableName === 'rf_detections') {
+          countQuery = `SELECT COUNT(*) as total FROM ${tableName}`
+        } else {
+          countQuery = `SELECT COUNT(*) as total FROM ${tableName}`
+        }
       } else if (database) {
         countQuery = `SELECT COUNT(*) as total FROM \`${database}\`.\`${tableName}\``
       }
