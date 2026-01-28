@@ -24,7 +24,8 @@
       <table class="min-w-full text-left text-sm text-white">
         <thead class="sticky top-0 z-10 bg-neutral-900/80 text-xs uppercase text-neutral-400 backdrop-blur">
           <tr>
-            <th scope="col" class="px-4 py-3">Type</th>
+            <th scope="col" class="px-4 py-3">Detection type</th>
+            <th scope="col" class="px-4 py-3">Drone</th>
             <th scope="col" class="px-4 py-3">
               <button type="button" class="flex items-center gap-1" @click="emitSort('status')" :aria-label="`Sort by status (${sortDirectionLabel})`">
                 Status
@@ -40,8 +41,8 @@
             <th scope="col" class="px-4 py-3">Altitude</th>
             <th scope="col" class="px-4 py-3">Bearing</th>
             <th scope="col" class="px-4 py-3">
-              <button type="button" class="flex items-center gap-1" @click="emitSort('lastSeen')" :aria-label="`Sort by last seen (${sortDirectionLabel})`">
-                Last seen
+              <button type="button" class="flex items-center gap-1" @click="emitSort('lastSeen')" :aria-label="`Sort by last detected (${sortDirectionLabel})`">
+                Last detected
                 <SortIcon :active="sortField === 'lastSeen'" :direction="sortDirection" />
               </button>
             </th>
@@ -53,13 +54,13 @@
 
         <tbody>
           <tr v-if="isLoading" class="border-t border-white/5 text-neutral-400">
-            <td colspan="9" class="px-4 py-6 text-center text-sm">
+            <td colspan="10" class="px-4 py-6 text-center text-sm">
               Loading detections&hellip;
             </td>
           </tr>
 
           <tr v-else-if="!detections.length" class="border-t border-white/5 text-neutral-400">
-            <td colspan="9" class="px-4 py-6 text-center text-sm">
+            <td colspan="10" class="px-4 py-6 text-center text-sm">
               No detections match the current filters.
             </td>
           </tr>
@@ -71,7 +72,24 @@
           >
             <td class="px-4 py-4 font-semibold">
               {{ detection.type }}
-              <p v-if="detection.droneId" class="text-xs text-neutral-400">Drone #{{ detection.droneId }}</p>
+            </td>
+            <td class="px-4 py-4">
+              <div class="flex flex-col">
+                <span class="font-semibold">
+                  <template v-if="detection.drone">
+                    {{ detection.drone.displayName }}
+                  </template>
+                  <template v-else-if="detection.droneId">
+                    Drone #{{ detection.droneId }}
+                  </template>
+                  <template v-else>
+                    —
+                  </template>
+                </span>
+                <p v-if="detection.drone?.serialNumber" class="text-xs text-neutral-400">
+                  SN: {{ detection.drone.serialNumber }}
+                </p>
+              </div>
             </td>
             <td class="px-4 py-4">
               <StatusBadge :status="detection.status" />
@@ -89,7 +107,20 @@
               {{ formatTimestamp(detection.lastSeen) }}
             </td>
             <td class="px-4 py-4">
-              <div class="flex flex-col">
+              <button
+                v-if="detection.systemId"
+                type="button"
+                class="inline-flex flex-col items-start rounded-md bg-primary-500/10 px-2 py-1 text-xs text-primary-300 underline-offset-2 hover:bg-primary-500/20 hover:underline"
+                @click="goToSensor(detection)"
+              >
+                <span class="font-semibold leading-tight text-sm text-primary-100">
+                  {{ detection.sensorName }}
+                </span>
+                <span class="font-mono">
+                  {{ detection.systemId }}
+                </span>
+              </button>
+              <div v-else class="flex flex-col">
                 <span class="font-semibold leading-tight">{{ detection.sensorName }}</span>
                 <span v-if="detection.sensorId" class="text-xs text-neutral-400">
                   ID: {{ detection.sensorId }}
@@ -97,7 +128,8 @@
               </div>
             </td>
             <td class="px-4 py-4">
-              <RiskIndicator :risk-level="detection.riskLevel" />
+              <RiskIndicator v-if="detection.riskLevel" :risk-level="detection.riskLevel" />
+              <span v-else class="text-xs text-neutral-500">—</span>
             </td>
             <td class="px-4 py-4 flex justify-end gap-2">
               <button
@@ -177,6 +209,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useRouter } from 'vue-router'
 import type { DetectionItem, DetectionRiskLevel, DetectionSortField } from '@/types/detections'
 import RiskIndicator from './RiskIndicator.vue'
 import StatusBadge from './StatusBadge.vue'
@@ -203,6 +236,8 @@ const emit = defineEmits<{
   (e: 'change-sort', value: DetectionSortField): void
   (e: 'show-details', detection: DetectionItem): void
 }>()
+
+const router = useRouter()
 
 const emitSort = (field: DetectionSortField) => {
   emit('change-sort', field)
@@ -237,6 +272,18 @@ const riskStripeClass = (risk: DetectionRiskLevel): string => {
 }
 
 const sortDirectionLabel = computed(() => (props.sortDirection === 'asc' ? 'ascending' : 'descending'))
+
+const goToSensor = (detection: DetectionItem): void => {
+  const systemId = detection.systemId
+  if (!systemId) return
+
+  router.push({
+    path: '/sensors',
+    query: {
+      systemId: String(systemId)
+    }
+  })
+}
 
 // Helper to unwrap refs
 const unwrapValue = (value: unknown): number => {

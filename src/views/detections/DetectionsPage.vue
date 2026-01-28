@@ -46,7 +46,7 @@
     </div>
 
     <div class="flex-1 overflow-hidden px-4 py-4 lg:px-8">
-      <div class="relative flex h-full flex-col gap-4 lg:flex-row">
+      <div class="relative flex h-full flex-col gap-4 2xl:flex-row">
         <div
           class="flex-1 min-w-0 overflow-auto rounded-2xl border border-white/5 bg-neutral-900/30 p-4 shadow-lg shadow-black/30"
           :class="tableContainerClass"
@@ -79,7 +79,7 @@
         <transition name="slide-in">
           <DetectionDetailsPanel
             v-if="panelVisible"
-            class="w-full flex-shrink-0 overflow-hidden lg:absolute lg:bottom-0 lg:right-0 lg:top-0 lg:w-[28rem]"
+            class="w-full flex-shrink-0 overflow-hidden 2xl:absolute 2xl:bottom-0 2xl:right-0 2xl:top-0 2xl:w-[28rem]"
             :visible="panelVisible"
             :detection="selectedDetection"
             @close="closeDetails"
@@ -144,7 +144,7 @@ const closeDetails = () => {
 }
 
 const tableContainerClass = computed(() => {
-  return panelVisible.value ? 'lg:pr-6 lg:mr-[30rem]' : ''
+  return panelVisible.value ? '2xl:pr-6 2xl:mr-[30rem]' : ''
 })
 </script>
 

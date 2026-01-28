@@ -73,18 +73,16 @@ export function useDrones(options: UseDronesOptions = {}): UseDronesResult {
   const drones = computed<DroneItem[]>(() => {
     const baseItems = dronesSource.value.map(mapDroneRecord)
 
-    // Enhance lastSeen with latest detection time when appropriate
+    // Derive firstSeen from detections when needed and ensure lastSeen is never before firstSeen
     return baseItems.map((drone) => {
-      if (drone.lastSeen) {
-        return drone
-      }
+      let firstSeen = drone.firstSeen
+      let lastSeen = drone.lastSeen
 
-      const firstSeenTime = new Date(drone.firstSeen).getTime()
-      if (!Number.isFinite(firstSeenTime)) {
-        return drone
-      }
+      const dbFirstTime = new Date(firstSeen).getTime()
+      const hasValidDbFirst = Number.isFinite(dbFirstTime)
 
-      const candidateTimes: number[] = []
+      // Collect candidate timestamps from detections for firstSeen
+      const candidateFirstTimes: number[] = []
 
       // By drone ID
       const detectionsByDrone: RFDetection[] = dataStore.getRFDetectionsByDroneId(drone.id) || []
@@ -96,8 +94,8 @@ export function useDrones(options: UseDronesOptions = {}): UseDronesResult {
           null
         if (!ts) return
         const time = new Date(ts).getTime()
-        if (Number.isFinite(time) && time > firstSeenTime) {
-          candidateTimes.push(time)
+        if (Number.isFinite(time)) {
+          candidateFirstTimes.push(time)
         }
       })
 
@@ -112,20 +110,37 @@ export function useDrones(options: UseDronesOptions = {}): UseDronesResult {
             null
           if (!ts) return
           const time = new Date(ts).getTime()
-          if (Number.isFinite(time) && time > firstSeenTime) {
-            candidateTimes.push(time)
+          if (Number.isFinite(time)) {
+            candidateFirstTimes.push(time)
           }
         })
       }
 
-      if (!candidateTimes.length) {
-        return drone
+      // Use earliest detection as firstSeen fallback/override when appropriate
+      if (candidateFirstTimes.length) {
+        const earliest = Math.min(...candidateFirstTimes)
+        if (!hasValidDbFirst || earliest < dbFirstTime) {
+          firstSeen = new Date(earliest).toISOString()
+        }
       }
 
-      const latest = Math.max(...candidateTimes)
+      // If database lastSeen is behind firstSeen, align it with firstSeen until it catches up
+      if (lastSeen) {
+        const lastTime = new Date(lastSeen).getTime()
+        const firstTimeForCompare = new Date(firstSeen).getTime()
+        if (
+          Number.isFinite(lastTime) &&
+          Number.isFinite(firstTimeForCompare) &&
+          lastTime < firstTimeForCompare
+        ) {
+          lastSeen = firstSeen
+        }
+      }
+
       return {
         ...drone,
-        lastSeen: new Date(latest).toISOString()
+        firstSeen,
+        lastSeen
       }
     })
   })

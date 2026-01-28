@@ -9,6 +9,17 @@ export interface DetectionSensorInfo {
   name: string
 }
 
+export interface DetectionDroneInfo {
+  id: number
+  systemId?: string | null
+  manufacturer: string | null
+  modelName: string | null
+  serialNumber: string | null
+  firstSeen: string | null
+  lastSeen: string | null
+  displayName: string
+}
+
 export interface DetectionItem {
   id: number
   type: DetectionType
@@ -19,7 +30,7 @@ export interface DetectionItem {
   lastSeen: string
   sensorName: string
   sensorId?: string | number | null
-  riskLevel: DetectionRiskLevel
+  riskLevel: DetectionRiskLevel | null
   zone?: string | null
   droneId?: number | null
   systemId?: string | null
@@ -35,6 +46,7 @@ export interface DetectionItem {
   confidence?: number | null
   targetId?: string | number | null
   sensors?: DetectionSensorInfo[]
+  drone?: DetectionDroneInfo
   source: RFDetection
 }
 

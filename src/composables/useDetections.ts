@@ -1,7 +1,7 @@
 import { ref, computed, onBeforeUnmount, watch, isRef, type Ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useDataStore } from '@/store/data'
-import type { DronePosition, RFDetection } from '@/types/database'
+import type { Drone, DronePosition, RFDetection } from '@/types/database'
 import type {
   DetectionFiltersState,
   DetectionItem,
@@ -145,19 +145,14 @@ const resolveSensors = (record: RFDetection): DetectionSensorInfo[] => {
   return sensors
 }
 
-const deriveRiskLevel = (record: RFDetection): DetectionRiskLevel => {
-  const candidate = record.risk_level?.toLowerCase()
+const deriveRiskLevel = (record: RFDetection): DetectionRiskLevel | null => {
+  const candidate = record.risk_level?.toString().toLowerCase()
   if (candidate === 'high') return 'high'
   if (candidate === 'medium') return 'medium'
   if (candidate === 'low') return 'low'
 
-  const strength = toNumber(record.signal_strength)
-  if (strength !== null) {
-    if (strength >= -50) return 'high'
-    if (strength >= -70) return 'medium'
-  }
-
-  return 'low'
+  // Risk is not yet formally defined – avoid inferring from other metrics
+  return null
 }
 
 const resolveDistance = (record: RFDetection, position?: DronePosition | null): number | null => {
@@ -309,8 +304,45 @@ const buildDetectionKey = (record: RFDetection, fallbackIndex: number): string =
   return parts.join('|')
 }
 
-const mapDetectionRecord = (record: RFDetection, position?: DronePosition | null): DetectionItem => {
+const buildDroneDisplayName = (drone: Drone): string => {
+  const manufacturer = (drone as any).manufacturer ?? null
+  const modelName = (drone as any).model_name ?? null
+
+  if (modelName && manufacturer) {
+    return `${manufacturer} ${modelName}`
+  }
+
+  if (modelName) {
+    return String(modelName)
+  }
+
+  if (drone.serial_number) return drone.serial_number
+  if (drone.uas_id) return drone.uas_id
+  if (drone.mac_address) return drone.mac_address
+
+  return `Drone #${drone.id}`
+}
+
+const mapDetectionRecord = (
+  record: RFDetection,
+  position?: DronePosition | null,
+  drone?: Drone | null
+): DetectionItem => {
   const coordinates = resolveCoordinates(record, position)
+
+  const droneInfo =
+    drone && typeof drone.id === 'number'
+      ? {
+          id: drone.id,
+          systemId: drone.system_id ?? null,
+          manufacturer: ((drone as any).manufacturer ?? null) as string | null,
+          modelName: ((drone as any).model_name ?? null) as string | null,
+          serialNumber: drone.serial_number ?? null,
+          firstSeen: drone.first_seen ?? null,
+          lastSeen: (drone as any).last_seen ?? null,
+          displayName: buildDroneDisplayName(drone)
+        }
+      : undefined
 
   return {
     id: record.id,
@@ -338,6 +370,7 @@ const mapDetectionRecord = (record: RFDetection, position?: DronePosition | null
     confidence: toNumber(record.confidence),
     targetId: record.target_id ?? record.drone_id ?? null,
     sensors: resolveSensors(record),
+    drone: droneInfo,
     source: record
   }
 }
@@ -487,7 +520,11 @@ export function useDetections(options: UseDetectionsOptions = {}): UseDetections
   const detections = computed<DetectionItem[]>(() => {
     return dedupedDetections.value.map(record => {
       const position = findSupportingPosition(record)
-      return mapDetectionRecord(record, position)
+      const drone =
+        typeof record.drone_id === 'number' && Number.isFinite(record.drone_id)
+          ? dataStore.getDrone(record.drone_id)
+          : undefined
+      return mapDetectionRecord(record, position, drone ?? null)
     })
   })
 

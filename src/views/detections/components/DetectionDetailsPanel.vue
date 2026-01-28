@@ -37,18 +37,62 @@
             <dd class="font-semibold text-white">{{ detection?.targetId ?? '—' }}</dd>
           </div>
           <div>
-            <dt class="text-xs uppercase tracking-widest text-neutral-500">Type</dt>
+            <dt class="text-xs uppercase tracking-widest text-neutral-500">Detection type</dt>
             <dd class="font-semibold text-white">{{ detection?.type ?? '—' }}</dd>
           </div>
           <div>
             <dt class="text-xs uppercase tracking-widest text-neutral-500">Risk</dt>
             <dd class="mt-1">
-              <RiskIndicator v-if="detection" :risk-level="detection.riskLevel" />
+              <RiskIndicator v-if="detection && detection.riskLevel" :risk-level="detection.riskLevel" />
+              <span v-else class="text-xs text-neutral-500">—</span>
             </dd>
           </div>
           <div>
             <dt class="text-xs uppercase tracking-widest text-neutral-500">Confidence</dt>
             <dd class="font-semibold text-white">{{ formatNumber(detection?.confidence, 0, '%') }}</dd>
+          </div>
+        </dl>
+      </div>
+
+      <div v-if="detection?.drone">
+        <h3 class="text-sm font-semibold uppercase tracking-wide text-neutral-400">Drone</h3>
+        <dl class="mt-3 grid grid-cols-2 gap-3 text-sm text-neutral-200">
+          <div>
+            <dt class="text-xs uppercase tracking-widest text-neutral-500">ID</dt>
+            <dd class="font-semibold text-white">{{ detection.drone.id }}</dd>
+          </div>
+          <div>
+            <dt class="text-xs uppercase tracking-widest text-neutral-500">Label</dt>
+            <dd class="font-semibold text-white">{{ detection.drone.displayName }}</dd>
+          </div>
+          <div>
+            <dt class="text-xs uppercase tracking-widest text-neutral-500">Manufacturer</dt>
+            <dd class="font-semibold text-white">{{ detection.drone.manufacturer ?? '—' }}</dd>
+          </div>
+          <div>
+            <dt class="text-xs uppercase tracking-widest text-neutral-500">Model</dt>
+            <dd class="font-semibold text-white">{{ detection.drone.modelName ?? '—' }}</dd>
+          </div>
+          <div>
+            <dt class="text-xs uppercase tracking-widest text-neutral-500">Serial Number</dt>
+            <dd class="font-semibold text-white">{{ detection.drone.serialNumber ?? '—' }}</dd>
+          </div>
+          <div>
+            <dt class="text-xs uppercase tracking-widest text-neutral-500">Sensor</dt>
+            <dd class="font-semibold text-white">
+              <span v-if="detection.drone.systemId">{{ detection.drone.systemId }}</span>
+              <span v-else class="text-neutral-500">—</span>
+            </dd>
+          </div>
+          <div>
+            <dt class="text-xs uppercase tracking-widest text-neutral-500">First Seen</dt>
+            <dd class="font-semibold text-white">{{ formatDate(detection.drone.firstSeen ?? undefined) }}</dd>
+          </div>
+          <div>
+            <dt class="text-xs uppercase tracking-widest text-neutral-500">Last Seen</dt>
+            <dd class="font-semibold text-white">
+              {{ detection.drone.lastSeen ? formatDate(detection.drone.lastSeen) : '—' }}
+            </dd>
           </div>
         </dl>
       </div>
