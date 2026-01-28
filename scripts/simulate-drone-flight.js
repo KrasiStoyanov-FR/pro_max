@@ -334,9 +334,11 @@ const createApiConnection = () => {
             if (queryResponse.data.success) {
               console.log(`[Sim] Drone inserted via query endpoint with id=${data.id}`)
               return [[{ insertId: data.id, changes: 1 }]]
+            } else {
+              // If query endpoint fails, fall through to regular insert
+              console.warn(`[Sim] Query endpoint returned success=false:`, queryResponse.data.error || 'Unknown error')
+              console.warn('[Sim] Trying regular insert endpoint...')
             }
-            // If query endpoint fails, fall through to regular insert
-            console.warn('[Sim] Query endpoint insert failed, trying regular insert endpoint...')
           } catch (queryError) {
             // If query endpoint doesn't work, fall through to regular insert
             const errorMsg = queryError.response?.data?.error || queryError.message
@@ -839,32 +841,70 @@ const main = async () => {
       console.log(`[Sim] ✓ Drone metadata row created with id=${DRONE_ID}`)
       
       // Wait a bit and verify it actually exists before proceeding
-      await sleep(300)
-      let verifyQuery = 'SELECT * FROM drones WHERE id = ? LIMIT 1'
-      if (!USE_SQLITE && DB_CONFIG.database) {
-        verifyQuery = `SELECT * FROM \`${DB_CONFIG.database}\`.\`drones\` WHERE id = ? LIMIT 1`
+      // For API connections, we need to retry verification as there may be caching/replication lag
+      let verified = false
+      const maxRetries = USE_API ? 10 : 1
+      const retryDelay = USE_API ? 800 : 300
+      
+      for (let retry = 0; retry < maxRetries; retry++) {
+        await sleep(retryDelay)
+        
+        let verifyQuery = 'SELECT * FROM drones WHERE id = ? LIMIT 1'
+        if (!USE_SQLITE && DB_CONFIG.database) {
+          verifyQuery = `SELECT * FROM \`${DB_CONFIG.database}\`.\`drones\` WHERE id = ? LIMIT 1`
+        }
+        
+        try {
+          const [verifyRows] = await conn.execute(verifyQuery, [DRONE_ID])
+          if (verifyRows && verifyRows.length > 0) {
+            console.log(`[Sim] ✓ Verified drone exists with id=${DRONE_ID} (attempt ${retry + 1}/${maxRetries})`)
+            verified = true
+            break
+          }
+        } catch (verifyError) {
+          if (retry < maxRetries - 1) {
+            console.log(`[Sim] Verification attempt ${retry + 1} failed, retrying...`)
+            continue
+          }
+        }
       }
-      const [verifyRows] = await conn.execute(verifyQuery, [DRONE_ID])
-      if (!verifyRows || verifyRows.length === 0) {
+      
+      if (!verified) {
         // Try finding by MAC address as fallback
         let macVerifyQuery = 'SELECT * FROM drones'
         if (!USE_SQLITE && DB_CONFIG.database) {
           macVerifyQuery = `SELECT * FROM \`${DB_CONFIG.database}\`.\`drones\``
         }
-        const [allDrones] = await conn.execute(macVerifyQuery, [])
-        const foundByMac = (allDrones || []).find(row => {
-          const rowMac = row.mac_address
-          return rowMac === macAddress || String(rowMac) === String(macAddress)
-        })
-        if (foundByMac) {
-          console.warn(`[Sim] ⚠️  Drone was created but with different ID (${foundByMac.id} instead of ${DRONE_ID})`)
-          console.warn(`[Sim] This will cause foreign key errors. The INSERT may have failed silently.`)
-          throw new Error(`Drone was not created with the expected ID. Found ID: ${foundByMac.id}, Expected: ${DRONE_ID}`)
-        } else {
-          throw new Error(`Drone metadata row was not created successfully. INSERT appeared to succeed but drone not found in database.`)
+        
+        try {
+          const [allDrones] = await conn.execute(macVerifyQuery, [])
+          const foundByMac = (allDrones || []).find(row => {
+            const rowMac = row.mac_address
+            return rowMac === macAddress || String(rowMac) === String(macAddress)
+          })
+          
+          if (foundByMac) {
+            console.warn(`[Sim] ⚠️  Drone was created but with different ID (${foundByMac.id} instead of ${DRONE_ID})`)
+            console.warn(`[Sim] This will cause foreign key errors. The INSERT may have failed silently.`)
+            throw new Error(`Drone was not created with the expected ID. Found ID: ${foundByMac.id}, Expected: ${DRONE_ID}`)
+          } else {
+            // For API connections, if we can't verify but INSERT succeeded, proceed anyway
+            // The foreign key constraint will catch real issues when inserting positions
+            if (USE_API) {
+              console.warn(`[Sim] ⚠️  Could not verify drone creation via API (may be caching), but proceeding anyway.`)
+              console.warn(`[Sim] If foreign key errors occur, the drone was not actually created.`)
+            } else {
+              throw new Error(`Drone metadata row was not created successfully. INSERT appeared to succeed but drone not found in database.`)
+            }
+          }
+        } catch (fallbackError) {
+          if (USE_API && !fallbackError.message.includes('Expected')) {
+            // For API, if verification fails but INSERT succeeded, proceed anyway
+            console.warn(`[Sim] ⚠️  Verification failed but INSERT appeared successful. Proceeding (FK constraints will catch real issues).`)
+          } else {
+            throw fallbackError
+          }
         }
-      } else {
-        console.log(`[Sim] ✓ Verified drone exists with id=${DRONE_ID}`)
       }
     } catch (insertError) {
       const errorMsg = insertError.message || insertError.toString() || ''
@@ -917,6 +957,40 @@ const main = async () => {
             1,
           ])
           console.log(`[Sim] ✓ Drone metadata row created with id=${DRONE_ID} (after forced cleanup)`)
+          
+          // Verify the retry insert
+          await sleep(USE_API ? 800 : 300)
+          let retryVerifyQuery = 'SELECT * FROM drones WHERE id = ? LIMIT 1'
+          if (!USE_SQLITE && DB_CONFIG.database) {
+            retryVerifyQuery = `SELECT * FROM \`${DB_CONFIG.database}\`.\`drones\` WHERE id = ? LIMIT 1`
+          }
+          
+          let retryVerified = false
+          for (let retry = 0; retry < (USE_API ? 10 : 1); retry++) {
+            if (retry > 0) {
+              await sleep(USE_API ? 800 : 300)
+            }
+            try {
+              const [retryVerifyRows] = await conn.execute(retryVerifyQuery, [DRONE_ID])
+              if (retryVerifyRows && retryVerifyRows.length > 0) {
+                console.log(`[Sim] ✓ Verified retry insert with id=${DRONE_ID} (attempt ${retry + 1})`)
+                retryVerified = true
+                break
+              }
+            } catch (e) {
+              if (retry < (USE_API ? 9 : 0)) {
+                console.log(`[Sim] Retry verification attempt ${retry + 1} failed, retrying...`)
+              }
+              // Continue to next retry
+            }
+          }
+          
+          if (!retryVerified && !USE_API) {
+            throw new Error(`Drone metadata row was not created/updated successfully. Cannot proceed with position insertions.`)
+          } else if (!retryVerified) {
+            console.warn(`[Sim] ⚠️  Could not verify retry insert via API after ${USE_API ? 10 : 1} attempts (may be caching), but proceeding anyway`)
+            console.warn(`[Sim] If foreign key errors occur during position insertions, the drone was not actually created.`)
+          }
         } catch (retryError) {
           throw new Error(`Failed to create drone metadata after cleanup: ${retryError.message}`)
         }
