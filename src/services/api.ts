@@ -200,7 +200,7 @@ export const databaseApi = {
     }
   ): Promise<RFDetectionsResponse> {
     const filterKey = filters
-      ? `${filters.type || 'all'}_${filters.status || 'all'}_${filters.timeWindow || 'all'}_${filters.zone || 'all'}_${filters.search || ''}`
+      ? `${filters.type || 'all'}_${filters.status || 'all'}_${filters.timeWindow || 'all'}_${filters.zone || 'all'}_${filters.search || ''}_${filters.systemId ?? ''}`
       : 'no_filters'
     const cacheKey = `rf_detections_${limit ?? 'all'}_${offset ?? 0}_${filterKey}`
     // REAL DATA: Original API call (commented out when using mock data)
@@ -230,6 +230,9 @@ export const databaseApi = {
           if (filters.search && filters.search.trim()) {
             params.append('search', filters.search.trim())
           }
+          if (filters.systemId != null && filters.systemId !== '') {
+            params.append('systemId', String(filters.systemId))
+          }
         }
         const response = await api.get(`/table/rf_detections?${params.toString()}`)
         return {
@@ -256,7 +259,7 @@ export const databaseApi = {
     systemId?: string | number | null
   }): Promise<{ success: boolean; count?: number; error?: string }> {
     const filterKey = filters
-      ? `${filters.type || 'all'}_${filters.status || 'all'}_${filters.timeWindow || 'all'}_${filters.zone || 'all'}_${filters.search || ''}`
+      ? `${filters.type || 'all'}_${filters.status || 'all'}_${filters.timeWindow || 'all'}_${filters.zone || 'all'}_${filters.search || ''}_${filters.systemId ?? ''}`
       : 'no_filters'
     const cacheKey = `rf_detections_count_${filterKey}`
     return getCachedData(cacheKey, async () => {
@@ -344,7 +347,7 @@ export const databaseApi = {
   },
 
   async getGpsUnitPositions(limit?: number): Promise<GpsUnitPositionsResponse> {
-    const cacheKey = `gps_unit_positions_${limit ?? 'all'}`
+    const cacheKey = `gps_unit_position_${limit ?? 'all'}`
     // REAL DATA: Original API call (commented out when using mock data)
     return getCachedData(cacheKey, async () => {
       try {
@@ -373,8 +376,8 @@ export const databaseApi = {
   }): Promise<DatabaseResponse<GpsUnitPosition>> {
     try {
       // Clear cache for GPS unit positions to force refresh
-      apiCache.delete('gps_unit_positions_all')
-      apiCache.delete('gps_unit_positions_undefined')
+      apiCache.delete('gps_unit_position_all')
+      apiCache.delete('gps_unit_position_undefined')
       
       // Prepare the device data for the database
       // Map form fields to actual database column names
@@ -437,8 +440,8 @@ export const databaseApi = {
   ): Promise<DatabaseResponse<GpsUnitPosition>> {
     try {
       // Clear cache for GPS unit positions to force refresh
-      apiCache.delete('gps_unit_positions_all')
-      apiCache.delete('gps_unit_positions_undefined')
+      apiCache.delete('gps_unit_position_all')
+      apiCache.delete('gps_unit_position_undefined')
       
       // Determine the primary key - for gps_unit_position, prefer id (numeric) over unit_id (may contain spaces/special chars)
       // Use id if available, otherwise fall back to unit_id
@@ -499,8 +502,8 @@ export const databaseApi = {
   async deleteGpsUnitPosition(recordId: string | number, pkColumn?: string): Promise<DatabaseResponse<{ deleted: number }>> {
     try {
       // Clear cache for GPS unit positions to force refresh after deletion
-      apiCache.delete('gps_unit_positions_all')
-      apiCache.delete('gps_unit_positions_undefined')
+      apiCache.delete('gps_unit_position_all')
+      apiCache.delete('gps_unit_position_undefined')
       
       const pkParam = pkColumn ? `&pkColumn=${encodeURIComponent(pkColumn)}` : ''
       console.log('[API] Deleting GPS unit position:', { recordId, pkColumn, url: `/table/gps_unit_position/${recordId}?database=${DATABASE_NAME}${pkParam}` })

@@ -242,6 +242,15 @@ const getSqliteTables = async connection => {
 
 // Routes
 
+// Version / deploy check: hit this URL to see if the server is running the rf_detections fix
+// e.g. GET http://dds.pm99.site:3001/api/db/version → if you see "rf_detections-fix-v1", the fix is deployed
+app.get('/api/db/version', (req, res) => {
+  res.json({
+    version: 'rf_detections-fix-v1',
+    message: 'If you see this, the server has the rf_detections explicit-columns + unit_name fix (no "name" column).'
+  })
+})
+
 // Database health check
 app.get('/api/db/health', async (req, res) => {
   let connection = null
@@ -871,114 +880,69 @@ app.get('/api/db/table/:tableName', async (req, res) => {
   let connection = null
   try {
     const { tableName } = req.params
-    const { database, limit, offset, count, type, status, timeWindow, zone, search } = req.query
+    const { database, limit, offset, count, type, status, timeWindow, zone, search, systemId } = req.query
 
     const pool = await createConnectionPool()
     connection = await pool.getConnection()
 
-    // Build base query
-    // For rf_detections, enrich with gps_unit_position.unit_name (or name) using unit_id match
+    // Build base query. rf_detections: explicit columns only (no SELECT *) + unit_name from sensors table.
+    // rf_detections has NO "name" column. Link to sensor via system_id = gps_unit_position.unit_id; show unit_name.
     let baseQuery = `SELECT * FROM \`${tableName}\``
-    if (USE_SQLITE) {
-      if (tableName === 'rf_detections') {
-        // Use a subquery to get the most recent gps_unit_position for each detector:
-        // match rf_detections.system_id (the ID you see like DDS30) against gps_unit_position.unit_id.
-        baseQuery = `SELECT rf_detections.*,
-          (SELECT COALESCE(unit_name, name)
-             FROM gps_unit_position
-            WHERE TRIM(CAST(gps_unit_position.unit_id AS TEXT)) = TRIM(CAST(rf_detections.system_id AS TEXT))
-            ORDER BY gps_unit_position.time DESC, gps_unit_position.id DESC
-            LIMIT 1) AS unit_name
-          FROM rf_detections`
+    if (tableName === 'rf_detections') {
+      const sensorsTable = 'gps_unit_position'
+      if (USE_SQLITE) {
+        baseQuery = `SELECT r.id, r.time, r.detection_status, r.signal_strength, r.frequency, r.drone_id, r.system_id,
+          (SELECT g.unit_name FROM ${sensorsTable} g WHERE TRIM(CAST(g.unit_id AS TEXT)) = TRIM(CAST(r.system_id AS TEXT)) LIMIT 1) AS unit_name
+          FROM rf_detections r`
+      } else if (database) {
+        baseQuery = `SELECT r.id, r.\`time\`, r.detection_status, r.signal_strength, r.frequency, r.drone_id, r.system_id,
+          (SELECT g.unit_name FROM \`${database}\`.\`${sensorsTable}\` g WHERE TRIM(CAST(g.unit_id AS CHAR)) = TRIM(CAST(r.system_id AS CHAR)) LIMIT 1) AS unit_name
+          FROM \`${database}\`.\`rf_detections\` r`
       } else {
-        baseQuery = `SELECT * FROM ${tableName}`
-      }
-    } else if (database) {
-      if (tableName === 'rf_detections') {
-        // Same logic for MySQL/MariaDB
-        baseQuery = `SELECT rf_detections.*,
-          (SELECT COALESCE(unit_name, name)
-             FROM \`${database}\`.\`gps_unit_position\`
-            WHERE TRIM(CAST(gps_unit_position.unit_id AS CHAR)) = TRIM(CAST(rf_detections.system_id AS CHAR))
-            ORDER BY gps_unit_position.time DESC, gps_unit_position.id DESC
-            LIMIT 1) AS unit_name
-          FROM \`${database}\`.\`rf_detections\``
-      } else {
-        baseQuery = `SELECT * FROM \`${database}\`.\`${tableName}\``
+        baseQuery = `SELECT r.id, r.\`time\`, r.detection_status, r.signal_strength, r.frequency, r.drone_id, r.system_id,
+          (SELECT g.unit_name FROM \`${sensorsTable}\` g WHERE TRIM(CAST(g.unit_id AS CHAR)) = TRIM(CAST(r.system_id AS CHAR)) LIMIT 1) AS unit_name
+          FROM \`rf_detections\` r`
       }
     } else {
-      if (tableName === 'rf_detections') {
-        baseQuery = `SELECT rf_detections.*,
-          (SELECT COALESCE(unit_name, name)
-             FROM \`gps_unit_position\`
-            WHERE TRIM(CAST(gps_unit_position.unit_id AS CHAR)) = TRIM(CAST(rf_detections.system_id AS CHAR))
-            ORDER BY gps_unit_position.time DESC, gps_unit_position.id DESC
-            LIMIT 1) AS unit_name
-          FROM \`rf_detections\``
+      if (USE_SQLITE) {
+        baseQuery = `SELECT * FROM ${tableName}`
+      } else if (database) {
+        baseQuery = `SELECT * FROM \`${database}\`.\`${tableName}\``
       }
     }
 
-    // Build WHERE clause for filters (only for rf_detections table)
+    // Build WHERE clause for rf_detections (only columns that exist: id, time, detection_status, signal_strength, frequency, drone_id, system_id)
     const whereConditions = []
     const queryParams = []
     
     if (tableName === 'rf_detections') {
-      // Type filter
-      if (type && type !== 'all') {
-        whereConditions.push(`(type = ? OR target_type = ? OR category = ?)`)
-        queryParams.push(type, type, type)
+      if (systemId && String(systemId).trim() !== '') {
+        whereConditions.push(USE_SQLITE ? `r.system_id = ?` : 'r.`system_id` = ?')
+        queryParams.push(String(systemId).trim())
       }
 
-      // Status filter
-      if (status && status !== 'all') {
-        whereConditions.push(`(status = ? OR tracking_status = ? OR alert_status = ?)`)
-        queryParams.push(status, status, status)
-      }
-
-      // Zone filter
-      if (zone && zone !== 'all') {
-        if (zone === 'none') {
-          whereConditions.push(`(zone IS NULL OR zone = '' OR zone = 'null')`)
-        } else {
-          whereConditions.push(`zone = ?`)
-          queryParams.push(zone)
-        }
-      }
-
-      // Time window filter (in minutes)
       if (timeWindow) {
         const timeWindowNum = parseInt(timeWindow, 10)
         if (!isNaN(timeWindowNum) && timeWindowNum > 0) {
-          // Use MySQL's DATE_SUB function to calculate cutoff time in database timezone
-          // This ensures we're comparing timestamps in the same timezone
-          // DATE_SUB(NOW(), INTERVAL X MINUTE) gives us the cutoff time
           if (USE_SQLITE) {
-            // SQLite: use datetime function
             const cutoffTime = new Date(Date.now() - timeWindowNum * 60 * 1000)
             const cutoffTimeStr = cutoffTime.toISOString().slice(0, 19).replace('T', ' ')
-            whereConditions.push(`time >= ?`)
+            whereConditions.push('r.time >= ?')
             queryParams.push(cutoffTimeStr)
           } else {
-            // MySQL/MariaDB: use DATE_SUB with NOW() to handle timezone correctly
-            // Note: 'time' is a reserved word in MySQL, so we need backticks
-            whereConditions.push(`\`time\` >= DATE_SUB(NOW(), INTERVAL ? MINUTE)`)
-            queryParams.push(timeWindowNum)
+            whereConditions.push(`r.\`time\` >= DATE_SUB(NOW(), INTERVAL ${timeWindowNum} MINUTE)`)
           }
         }
       }
 
-      // Search filter (search in type, sensor_name, receiver_name, id)
-      if (search && search.trim()) {
-        const searchTerm = `%${search.trim()}%`
-        whereConditions.push(`(
-          type LIKE ? OR
-          target_type LIKE ? OR
-          sensor_name LIKE ? OR
-          receiver_name LIKE ? OR
-          sensor_id LIKE ? OR
-          CAST(id AS CHAR) LIKE ?
-        )`)
-        queryParams.push(searchTerm, searchTerm, searchTerm, searchTerm, searchTerm, searchTerm)
+      if (search && String(search).trim() !== '') {
+        const searchTerm = `%${String(search).trim()}%`
+        if (USE_SQLITE) {
+          whereConditions.push('(r.system_id LIKE ? OR CAST(r.drone_id AS TEXT) LIKE ? OR CAST(r.id AS TEXT) LIKE ?)')
+        } else {
+          whereConditions.push('(r.`system_id` LIKE ? OR CAST(r.drone_id AS CHAR) LIKE ? OR CAST(r.id AS CHAR) LIKE ?)')
+        }
+        queryParams.push(searchTerm, searchTerm, searchTerm)
       }
     }
 
@@ -986,26 +950,49 @@ app.get('/api/db/table/:tableName', async (req, res) => {
 
     // If count is requested, return total count only
     if (count === 'true') {
-      let countQuery = `SELECT COUNT(*) as total FROM \`${tableName}\``
-      if (USE_SQLITE) {
-        if (tableName === 'rf_detections') {
-          countQuery = `SELECT COUNT(*) as total FROM ${tableName}`
+      let countQuery
+      if (tableName === 'rf_detections') {
+        if (USE_SQLITE) {
+          countQuery = `SELECT COUNT(*) as total FROM rf_detections r`
+        } else if (database) {
+          countQuery = `SELECT COUNT(*) as total FROM \`${database}\`.\`rf_detections\` r`
         } else {
-          countQuery = `SELECT COUNT(*) as total FROM ${tableName}`
+          countQuery = `SELECT COUNT(*) as total FROM \`rf_detections\` r`
         }
-      } else if (database) {
-        countQuery = `SELECT COUNT(*) as total FROM \`${database}\`.\`${tableName}\``
+      } else {
+        countQuery = `SELECT COUNT(*) as total FROM \`${tableName}\``
+        if (USE_SQLITE) {
+          countQuery = `SELECT COUNT(*) as total FROM ${tableName}`
+        } else if (database) {
+          countQuery = `SELECT COUNT(*) as total FROM \`${database}\`.\`${tableName}\``
+        }
       }
       countQuery += whereClause
 
       console.log(`[API] Executing count query: ${countQuery}`, queryParams.length > 0 ? `with params: ${JSON.stringify(queryParams)}` : '')
-      const [countRows] = await connection.execute(countQuery, queryParams.length > 0 ? queryParams : [])
-      const totalCount = countRows[0]?.total || 0
+      let totalCount = 0
+      try {
+        const [countRows] = await connection.execute(countQuery, queryParams.length > 0 ? queryParams : [])
+        totalCount = countRows[0]?.total || 0
+      } catch (countError) {
+        if (tableName === 'rf_detections' && (countError.code === 'ER_BAD_FIELD_ERROR' || countError.sqlMessage?.includes('Unknown column')) && whereConditions.some(c => c.includes('DATE_SUB') || c.includes('r.time'))) {
+          const fallbackWhereConditions = whereConditions.filter(c => !c.includes('DATE_SUB(NOW(), INTERVAL') && !c.includes('r.time >= ?'))
+          const fallbackWhereClause = fallbackWhereConditions.length > 0 ? ` WHERE ${fallbackWhereConditions.join(' AND ')}` : ''
+          const fallbackCountFrom = USE_SQLITE ? 'FROM rf_detections r' : (database ? `FROM \`${database}\`.\`rf_detections\` r` : 'FROM `rf_detections` r')
+          const fallbackCountQuery = `SELECT COUNT(*) as total ${fallbackCountFrom}` + fallbackWhereClause
+          const fallbackCountParams = whereConditions.some(c => c === 'time >= ?') ? queryParams.filter((_, i) => i !== (whereConditions.some(c => c.includes('system_id')) ? 1 : 0)) : queryParams
+          console.warn(`[API] rf_detections count query failed, retrying without time filter:`, countError.message)
+          const [countRows] = await connection.execute(fallbackCountQuery, fallbackCountParams.length > 0 ? fallbackCountParams : [])
+          totalCount = countRows[0]?.total || 0
+        } else {
+          throw countError
+        }
+      }
       console.log(`[API] Count result for ${tableName}:`, totalCount, typeof totalCount)
-      
+
       // Ensure count is a number (MySQL might return it as a string or BigInt)
       const countValue = typeof totalCount === 'bigint' ? Number(totalCount) : Number(totalCount)
-      
+
       return res.json({
         success: true,
         count: Number.isFinite(countValue) ? countValue : 0
@@ -1015,16 +1002,9 @@ app.get('/api/db/table/:tableName', async (req, res) => {
     let query = baseQuery + whereClause
 
     // Apply ORDER BY for consistent pagination (order by id descending for newest first)
-    // Try to order by id, but if the table doesn't have id, we'll catch the error
-    // Only add ORDER BY if we have a limit/offset (for pagination) or if it's rf_detections
     if (limit || offset || tableName === 'rf_detections') {
-      try {
-        const idColumn = USE_SQLITE ? 'id' : 'id'
-        query += ` ORDER BY ${idColumn} DESC`
-      } catch (orderError) {
-        // If ordering fails, we'll try without it
-        console.warn(`[API] Could not add ORDER BY for table ${tableName}, continuing without it`)
-      }
+      const idColumn = tableName === 'rf_detections' ? 'r.id' : (USE_SQLITE ? 'id' : 'id')
+      query += ` ORDER BY ${idColumn} DESC`
     }
 
     // Apply LIMIT and OFFSET for pagination
@@ -1059,10 +1039,37 @@ app.get('/api/db/table/:tableName', async (req, res) => {
       console.log(`[API] Query params:`, queryParams)
     }
 
+    // For rf_detections with time filter: build fallback query without time (in case table has no/different time column)
+    let fallbackQuery = null
+    let fallbackParams = []
+    const hasTimeFilter = tableName === 'rf_detections' && (whereConditions.some(c => c.includes('DATE_SUB(NOW(), INTERVAL')) || whereConditions.some(c => c.includes('r.time >= ?')))
+    if (hasTimeFilter) {
+      const fallbackWhereConditions = whereConditions.filter(c => !c.includes('DATE_SUB(NOW(), INTERVAL') && !c.includes('r.time >= ?'))
+      const fallbackWhereClause = fallbackWhereConditions.length > 0 ? ` WHERE ${fallbackWhereConditions.join(' AND ')}` : ''
+      const tail = query.slice((baseQuery + whereClause).length)
+      fallbackQuery = baseQuery + fallbackWhereClause + tail
+      // SQLite time filter used one placeholder at position 0 or 1 (after systemId); MariaDB inlined the number
+      if (whereConditions.some(c => c.includes('r.time >= ?'))) {
+        const timeParamIndex = whereConditions.some(c => c.includes('r.system_id')) ? 1 : 0
+        fallbackParams = queryParams.filter((_, i) => i !== timeParamIndex)
+      } else {
+        fallbackParams = queryParams
+      }
+    }
+
     try {
-      // Only pass queryParams if we have parameters, otherwise pass empty array
-      const [rows] = await connection.execute(query, queryParams.length > 0 ? queryParams : [])
-      
+      let rows
+      try {
+        [rows] = await connection.execute(query, queryParams.length > 0 ? queryParams : [])
+      } catch (queryError) {
+        if (tableName === 'rf_detections' && fallbackQuery && (queryError.code === 'ER_BAD_FIELD_ERROR' || queryError.code === 'ER_PARSE_ERROR' || queryError.sqlMessage?.includes('Unknown column'))) {
+          console.warn(`[API] rf_detections query failed (e.g. missing/different time column), retrying without time filter:`, queryError.message)
+          [rows] = await connection.execute(fallbackQuery, fallbackParams.length > 0 ? fallbackParams : [])
+        } else {
+          throw queryError
+        }
+      }
+
       res.json({
         success: true,
         data: rows

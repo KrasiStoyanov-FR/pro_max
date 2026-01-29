@@ -413,7 +413,7 @@ export const useDataStore = defineStore('data', () => {
 
   // ========== GPS UNIT POSITIONS (DETECTORS) ==========
   const fetchGpsUnitPositions = async (limit?: number, forceRefresh = false): Promise<GpsUnitPosition[]> => {
-    const key = `gps_unit_positions_${limit ?? 'all'}`
+    const key = `gps_unit_position_${limit ?? 'all'}`
     if (!forceRefresh && !isStale(key) && gpsUnitPositions.value.size > 0) {
       return gpsUnitPositionsList.value
     }
@@ -495,8 +495,8 @@ export const useDataStore = defineStore('data', () => {
       console.log('[DataStore] Removed GPS unit position:', { pk, removedKey, remaining: gpsUnitPositions.value.size })
       updateIndexes()
       // Clear cache to force refresh on next fetch
-      lastFetched.value.delete('gps_unit_positions_all')
-      lastFetched.value.delete('gps_unit_positions_undefined')
+      lastFetched.value.delete('gps_unit_position_all')
+      lastFetched.value.delete('gps_unit_position_undefined')
     } else {
       console.warn('[DataStore] Failed to find GPS unit position to remove:', pk, 'Available keys:', Array.from(gpsUnitPositions.value.keys()).slice(0, 5))
     }
