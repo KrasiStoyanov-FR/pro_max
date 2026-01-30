@@ -28,6 +28,31 @@ export type DroneSortField =
   | 'firstSeen'
   | 'lastSeen'
   | 'systemId'
+  | 'time'
+
+/** Unified row for Drones page table: each row is from drone_positions or rf_detections */
+export type UnifiedDetectionSource = 'position' | 'rf'
+
+export interface UnifiedDetectionRow {
+  source: UnifiedDetectionSource
+  /** Stable key for v-for and selection (e.g. "position-123", "rf-456") */
+  rowKey: string
+  id: number
+  time: string
+  systemId?: string | null
+  altitude?: number | null
+  speed?: number | null
+  receiverType?: string | null
+  /** Detection location for map preview */
+  latitude?: number | null
+  longitude?: number | null
+  /** RF only */
+  detectionStatus?: boolean | null
+  signalStrength?: number | null
+  frequency?: number | null
+  /** Resolved when source === 'position' and drone_id is set */
+  drone?: DroneItem | null
+}
 
 // Report types
 export interface TimePeriod {

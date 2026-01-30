@@ -38,6 +38,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref, watch, onBeforeUnmount } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { useMapStore } from '@/store/map'
 import { useAuth } from '@/composables/useAuth'
@@ -57,12 +58,48 @@ import type { GpsUnitPosition, RFDetection } from '@/types/database'
 // Composables
 useAuth()
 const { hasPermission } = usePermissions()
+const route = useRoute()
+const router = useRouter()
 const mapStore = useMapStore()
 const dataStore = useDataStore()
 const { pins: mapPins, selectedPin, initializeMap, loadPins, refreshPins, isMapReady } = useMapPins()
 
 // Computed properties
 const pins = computed(() => mapPins.value)
+
+// When navigating to map with ?systemId=XXX (e.g. from Drones page sensor button), zoom to and select that sensor
+watch(
+  [() => route.query.systemId, () => mapStore.pins],
+  ([systemId, pinsList]) => {
+    const id = typeof systemId === 'string' ? systemId : null
+    const list = Array.isArray(pinsList) ? pinsList : []
+    if (!id || list.length === 0) return
+    const sensorPin = list.find(
+      (p: MapPin) =>
+        p.type === 'sensor' &&
+        (p.data?.system_id !== undefined && p.data?.system_id !== null
+          ? String(p.data.system_id) === String(id)
+          : false)
+    )
+    if (sensorPin) {
+      const doFlyAndReplace = () => {
+        mapStore.flyToPin(sensorPin)
+        router.replace({ path: '/map', query: {} })
+      }
+      if (isMapReady.value) {
+        doFlyAndReplace()
+      } else {
+        const stop = watch(isMapReady, (ready) => {
+          if (ready) {
+            stop()
+            doFlyAndReplace()
+          }
+        }, { immediate: true })
+      }
+    }
+  },
+  { immediate: true }
+)
 
 // Device modal state
 const isDeviceModalOpen = ref(false)
