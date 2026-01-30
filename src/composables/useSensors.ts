@@ -2,7 +2,7 @@ import { ref, computed, onBeforeUnmount, watch, type Ref, isRef } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useDataStore } from '@/store/data'
 import type { GpsUnitPosition } from '@/types/database'
-import type { SensorItem, SensorStatus, SensorType } from '@/types/sensors'
+import type { SensorItem, SensorStatus, SensorType, SensorSortField, SensorGroupByField } from '@/types/sensors'
 
 export interface UseSensorsOptions {
   refreshInterval?: number
@@ -11,8 +11,19 @@ export interface UseSensorsOptions {
 
 export interface UseSensorsResult {
   sensors: Ref<SensorItem[]>
+  filteredSensors: Ref<SensorItem[]>
   isLoading: Ref<boolean>
   error: Ref<string | null>
+  filters: {
+    search: Ref<string>
+    status: Ref<'all' | 'active' | 'inactive'>
+  }
+  sort: {
+    field: Ref<SensorSortField | null>
+    direction: Ref<'asc' | 'desc'>
+    setSort: (field: SensorSortField) => void
+  }
+  groupBy: Ref<SensorGroupByField>
   refresh: () => Promise<void>
 }
 
@@ -111,14 +122,99 @@ export function useSensors(options: UseSensorsOptions = {}): UseSensorsResult {
 
   const sensors = computed<SensorItem[]>(() => {
     const list = gpsUnitPositionsList.value ?? []
-    return list
-      .map(mapSensorRecord)
-      .sort((a, b) => {
-        const timeA = a.lastCommunication ? new Date(a.lastCommunication).getTime() : 0
-        const timeB = b.lastCommunication ? new Date(b.lastCommunication).getTime() : 0
-        return timeB - timeA
-      })
+    return list.map(mapSensorRecord)
   })
+
+  const filters = {
+    search: ref<string>(''),
+    status: ref<'all' | 'active' | 'inactive'>('all')
+  }
+
+  const sortField = ref<SensorSortField | null>('lastCommunication')
+  const sortDirection = ref<'asc' | 'desc'>('desc')
+  const groupBy = ref<SensorGroupByField>('none')
+
+  const isSensorActive = (sensor: SensorItem): boolean => {
+    const sourceStatus = (sensor.source as any)?.status
+    const status = sourceStatus ? String(sourceStatus).toLowerCase() : sensor.status.toLowerCase()
+    return ['online', 'running', 'active', 'healthy'].includes(status)
+  }
+
+  const filteredSensors = computed<SensorItem[]>(() => {
+    let result = [...sensors.value]
+
+    // Apply search filter
+    if (filters.search.value.trim()) {
+      const searchLower = filters.search.value.toLowerCase().trim()
+      result = result.filter(sensor => {
+        const group = sensor.unitGroup ?? ''
+        const firmware = sensor.firmwareVersion ?? ''
+        return (
+          sensor.name.toLowerCase().includes(searchLower) ||
+          sensor.id.toLowerCase().includes(searchLower) ||
+          sensor.type.toLowerCase().includes(searchLower) ||
+          group.toLowerCase().includes(searchLower) ||
+          firmware.toLowerCase().includes(searchLower) ||
+          sensor.status.toLowerCase().includes(searchLower)
+        )
+      })
+    }
+
+    // Apply status filter
+    if (filters.status.value !== 'all') {
+      result = result.filter(sensor => {
+        const active = isSensorActive(sensor)
+        return filters.status.value === 'active' ? active : !active
+      })
+    }
+
+    // Apply sorting
+    if (sortField.value) {
+      result.sort((a, b) => {
+        let comparison = 0
+        switch (sortField.value) {
+          case 'id':
+            comparison = (a.id || '').localeCompare(b.id || '')
+            break
+          case 'name':
+            comparison = (a.name || '').localeCompare(b.name || '')
+            break
+          case 'unitGroup':
+            comparison = (a.unitGroup ?? '').localeCompare(b.unitGroup ?? '')
+            break
+          case 'type':
+            comparison = (a.type || '').localeCompare(b.type || '')
+            break
+          case 'status':
+            comparison = (a.status || '').localeCompare(b.status || '')
+            break
+          case 'firmwareVersion':
+            comparison = (a.firmwareVersion ?? '').localeCompare(b.firmwareVersion ?? '')
+            break
+          case 'lastCommunication': {
+            const timeA = a.lastCommunication ? new Date(a.lastCommunication).getTime() : 0
+            const timeB = b.lastCommunication ? new Date(b.lastCommunication).getTime() : 0
+            comparison = timeA - timeB
+            break
+          }
+          default:
+            return 0
+        }
+        return sortDirection.value === 'asc' ? comparison : -comparison
+      })
+    }
+
+    return result
+  })
+
+  const setSort = (field: SensorSortField) => {
+    if (sortField.value === field) {
+      sortDirection.value = sortDirection.value === 'asc' ? 'desc' : 'asc'
+    } else {
+      sortField.value = field
+      sortDirection.value = field === 'lastCommunication' ? 'desc' : 'asc'
+    }
+  }
 
   const isLoading = computed(() => Boolean(loading.value?.gpsUnitPositions))
   const error = computed(() => errors.value?.gpsUnitPositions ?? null)
@@ -189,8 +285,16 @@ export function useSensors(options: UseSensorsOptions = {}): UseSensorsResult {
 
   return {
     sensors,
+    filteredSensors,
     isLoading,
     error,
+    filters,
+    sort: {
+      field: sortField,
+      direction: sortDirection,
+      setSort
+    },
+    groupBy,
     refresh
   }
 }

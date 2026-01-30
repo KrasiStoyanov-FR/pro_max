@@ -33,4 +33,21 @@ export interface SensorItem {
   source: Record<string, unknown>
 }
 
+export interface SensorFiltersState {
+  search: string
+  status: 'all' | 'active' | 'inactive'
+  unitGroup: string
+}
+
+export type SensorSortField =
+  | 'id'
+  | 'name'
+  | 'unitGroup'
+  | 'type'
+  | 'status'
+  | 'firmwareVersion'
+  | 'lastCommunication'
+
+export type SensorGroupByField = 'none' | 'unitGroup' | 'type' | 'status'
+
 

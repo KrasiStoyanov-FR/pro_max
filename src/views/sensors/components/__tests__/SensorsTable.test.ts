@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { createPinia } from 'pinia'
 import SensorsTable from '../SensorsTable.vue'
 import type { SensorItem } from '@/types/sensors'
 
@@ -61,6 +62,10 @@ const sensors: SensorItem[] = [
 describe('SensorsTable', () => {
   it('renders sensors and highlights selection', () => {
     const wrapper = mount(SensorsTable, {
+      global: {
+        plugins: [createPinia()],
+        stubs: { SortIcon: true }
+      },
       props: {
         sensors,
         isLoading: false,
@@ -77,6 +82,10 @@ describe('SensorsTable', () => {
 
   it('emits show-details when button clicked', async () => {
     const wrapper = mount(SensorsTable, {
+      global: {
+        plugins: [createPinia()],
+        stubs: { SortIcon: true }
+      },
       props: {
         sensors,
         isLoading: false,

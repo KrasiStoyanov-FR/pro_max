@@ -233,7 +233,7 @@ const timeWindowSource = computed(() => {
 
 // Time window options (in milliseconds)
 const timeWindowOptions = [
-  { label: 'Use Default', value: null },
+  { label: 'Live View', value: null },
   { label: '15 minutes', value: 15 * 60 * 1000 },
   { label: '30 minutes', value: 30 * 60 * 1000 },
   { label: '1 hour', value: 60 * 60 * 1000 },

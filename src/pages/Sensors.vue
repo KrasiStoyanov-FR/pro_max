@@ -25,12 +25,23 @@
                 Refresh
               </button>
               <p class="text-xs text-neutral-400">
-                <span class="font-medium text-white">{{ sensors.length }}</span>
+                <span class="font-medium text-white">{{ filteredCount }}</span>
+                of
+                <span class="font-medium text-white">{{ totalCount }}</span>
                 sensors
               </p>
             </div>
           </div>
         </header>
+
+        <div class="border-b border-white/5 bg-neutral-900/40 px-6 py-4 lg:px-8">
+          <SensorsFilters
+            v-model:search="filterSearch"
+            v-model:status="filterStatus"
+            v-model:group-by="filterGroupBy"
+            :is-loading="isLoading"
+          />
+        </div>
 
         <div class="flex-1 overflow-hidden px-4 py-4 lg:px-8">
           <div class="relative flex h-full flex-col gap-4 lg:flex-row">
@@ -55,10 +66,14 @@
               </div>
 
               <SensorsTable
-                :sensors="sensors"
+                :sensors="filteredSensors"
                 :is-loading="isLoading"
                 :selected-id="selectedSensorId"
                 :deleting-id="deletingId"
+                :sort-field="sortField"
+                :sort-direction="sortDirection"
+                :group-by="filterGroupBy"
+                @change-sort="setSort"
                 @show-details="handleShowDetails"
                 @edit-sensor="handleEditSensor"
                 @delete-sensor="handleDeleteSensor"
@@ -100,6 +115,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import LayoutWrapper from '@/components/layout/LayoutWrapper.vue'
 import SensorsTable from '@/views/sensors/components/SensorsTable.vue'
+import SensorsFilters from '@/views/sensors/components/SensorsFilters.vue'
 import SensorDetailsPanel from '@/views/sensors/components/SensorDetailsPanel.vue'
 import DeviceCreationModal from '@/components/devices/DeviceCreationModal.vue'
 import { useSensors } from '@/composables/useSensors'
@@ -120,10 +136,29 @@ const { hasPermission } = usePermissions()
 
 // Static sensors - no periodic refresh needed
 // When mobile sensors are added, enable refreshInterval
-const { sensors, isLoading, error, refresh } = useSensors({
+const {
+  sensors,
+  filteredSensors,
+  isLoading,
+  error,
+  filters,
+  sort,
+  groupBy: filterGroupBy,
+  refresh
+} = useSensors({
   refreshInterval: 0, // Disabled for static sensors
   enabled: true
 })
+
+const sortField = sort.field
+const sortDirection = sort.direction
+const setSort = sort.setSort
+
+const filterSearch = filters.search
+const filterStatus = filters.status
+
+const totalCount = computed(() => sensors.value.length)
+const filteredCount = computed(() => filteredSensors.value.length)
 
 const dataStore = useDataStore()
 const { loading: dataLoading, errors: dataErrors } = storeToRefs(dataStore)
