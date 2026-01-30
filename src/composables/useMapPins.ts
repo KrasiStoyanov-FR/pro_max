@@ -331,10 +331,31 @@ export function useMapPins() {
     }
   }
 
+  /** Wait for the map container to have non-zero dimensions so Leaflet doesn't create a broken (black) map. */
+  const waitForContainerDimensions = (el: HTMLElement, maxWaitMs = 2000): Promise<void> => {
+    return new Promise((resolve) => {
+      const start = Date.now()
+      const check = () => {
+        if (el.clientWidth > 0 && el.clientHeight > 0) {
+          resolve()
+          return
+        }
+        if (Date.now() - start >= maxWaitMs) {
+          resolve()
+          return
+        }
+        requestAnimationFrame(check)
+      }
+      requestAnimationFrame(check)
+    })
+  }
+
   const initializeMap = async (container: HTMLElement, options?: Partial<MapViewport>) => {
     try {
       mapError.value = null
       mapStore.setLoading(true)
+
+      await waitForContainerDimensions(container)
 
       // Try to get user's current location
       let center = options?.center || viewport.value.center

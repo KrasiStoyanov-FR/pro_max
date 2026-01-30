@@ -67,13 +67,16 @@ const { pins: mapPins, selectedPin, initializeMap, loadPins, refreshPins, isMapR
 // Computed properties
 const pins = computed(() => mapPins.value)
 
-// When navigating to map with ?systemId=XXX (e.g. from Drones page sensor button), zoom to and select that sensor
+// When navigating to map with ?systemId=XXX (e.g. from Drones page sensor button), zoom to and select that sensor.
+// Wait for the map instance (set by MapView's useMapPins) and pins to be ready before flying.
+const pendingFlyToSystemId = ref<string | null>(null)
 watch(
-  [() => route.query.systemId, () => mapStore.pins],
-  ([systemId, pinsList]) => {
+  [() => route.query.systemId, () => mapStore.pins, () => mapStore.mapInstance],
+  ([systemId, pinsList, mapInstance]) => {
     const id = typeof systemId === 'string' ? systemId : null
     const list = Array.isArray(pinsList) ? pinsList : []
-    if (!id || list.length === 0) return
+    if (!id || list.length === 0 || !mapInstance) return
+    if (pendingFlyToSystemId.value === id) return
     const sensorPin = list.find(
       (p: MapPin) =>
         p.type === 'sensor' &&
@@ -82,20 +85,17 @@ watch(
           : false)
     )
     if (sensorPin) {
-      const doFlyAndReplace = () => {
-        mapStore.flyToPin(sensorPin)
-        router.replace({ path: '/map', query: {} })
-      }
-      if (isMapReady.value) {
-        doFlyAndReplace()
-      } else {
-        const stop = watch(isMapReady, (ready) => {
-          if (ready) {
-            stop()
-            doFlyAndReplace()
-          }
-        }, { immediate: true })
-      }
+      pendingFlyToSystemId.value = id
+      // Defer fly so the map has finished rendering and has valid dimensions (e.g. after route view is shown)
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          setTimeout(() => {
+            mapStore.flyToPin(sensorPin)
+            router.replace({ path: '/map', query: {} })
+            pendingFlyToSystemId.value = null
+          }, 100)
+        })
+      })
     }
   },
   { immediate: true }
@@ -475,6 +475,10 @@ watch(rfDetectionsList, (newDetections) => {
 
 // Lifecycle
 onMounted(() => {
+  // Show loading as soon as we're on the map page (before MapView initializes)
+  if (route.path === '/map' && !mapStore.mapInstance) {
+    mapStore.setLoading(true)
+  }
   // Initialize previous sets with current data
   if (gpsUnitPositionsList.value) {
     previousDeviceIds = new Set(

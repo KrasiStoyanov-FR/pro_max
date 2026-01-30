@@ -3,8 +3,8 @@
     <!-- Map container -->
     <div ref="mapContainer" class="h-full w-full relative z-10"></div>
 
-    <!-- Loading overlay -->
-    <div v-if="isLoading" class="absolute inset-0 bg-neutral-800 bg-opacity-75 flex items-center justify-center z-10">
+    <!-- Loading overlay (above map container so it's visible while map loads) -->
+    <div v-if="isLoading" class="absolute inset-0 bg-neutral-800 bg-opacity-75 flex items-center justify-center z-20">
       <div class="flex flex-col items-center space-y-2">
         <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
         <p class="text-sm text-neutral-600">Loading map...</p>

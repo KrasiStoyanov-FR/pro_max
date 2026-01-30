@@ -144,10 +144,17 @@ const allNavigationItems = [
     icon: PhCompass,
     roles: ['master_admin', 'admin', 'user'] // Available to all roles
   },
+  // {
+  //   name: 'Detections',
+  //   label: 'Detections',
+  //   href: '/detections',
+  //   icon: PhTarget,
+  //   roles: ['master_admin', 'admin', 'user'] // Available to all roles
+  // },
   {
-    name: 'Detections',
-    label: 'Detections',
-    href: '/detections',
+    name: 'Drones',
+    label: 'Drones',
+    href: '/drones',
     icon: PhTarget,
     roles: ['master_admin', 'admin', 'user'] // Available to all roles
   },
@@ -156,13 +163,6 @@ const allNavigationItems = [
     label: 'Sensors',
     href: '/sensors',
     icon: PhCellTower,
-    roles: ['master_admin', 'admin', 'user'] // Available to all roles
-  },
-  {
-    name: 'Drones',
-    label: 'Drones',
-    href: '/drones',
-    icon: PhDrone,
     roles: ['master_admin', 'admin', 'user'] // Available to all roles
   },
   {

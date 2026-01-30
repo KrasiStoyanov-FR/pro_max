@@ -6,9 +6,9 @@
           <div class="flex flex-wrap items-center justify-between gap-4">
             <div>
               <p class="text-xs font-semibold uppercase tracking-wide text-primary-300/80">Operations</p>
-              <h1 class="text-2xl font-semibold text-white">Drones</h1>
+              <h1 class="text-2xl font-semibold text-white">Detections</h1>
               <p class="text-sm text-neutral-400">
-                Manage and generate reports for all registered drones
+                Live and recent detections pulled directly from the mission database
               </p>
             </div>
             <div class="flex items-center gap-3">

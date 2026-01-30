@@ -234,7 +234,13 @@ export const useMapStore = defineStore('map', () => {
     }
 
     if (mapInstance.value) {
-      const currentZoom = mapInstance.value.getZoom() ?? viewport.value.zoom ?? 13
+      const map = mapInstance.value
+      // Recalculate size when coming from another page (e.g. sensor button); otherwise flyTo may not pan correctly
+      if (typeof map.invalidateSize === 'function') {
+        map.invalidateSize()
+      }
+
+      const currentZoom = map.getZoom() ?? viewport.value.zoom ?? 13
       const targetZoom = currentZoom
 
       const hasClusterPanel = selectedCluster.value !== null
@@ -245,7 +251,6 @@ export const useMapStore = defineStore('map', () => {
       const infoWidth = hasInfoPanel ? 350 : (willHaveInfoPanel ? 350 : 0)
       const totalPanelWidth = clusterWidth + infoWidth
 
-      const map = mapInstance.value
       let targetLat = pin.lat
       let targetLng = pin.lng
 
