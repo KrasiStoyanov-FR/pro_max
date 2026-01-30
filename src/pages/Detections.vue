@@ -8,10 +8,20 @@
               <p class="text-xs font-semibold uppercase tracking-wide text-primary-300/80">Operations</p>
               <h1 class="text-2xl font-semibold text-white">Detections</h1>
               <p class="text-sm text-neutral-400">
-                Live and recent RF detections pulled directly from the mission database
+                Live and recent detections pulled directly from the mission database
               </p>
             </div>
             <div class="flex items-center gap-3">
+              <button
+                v-if="selectedDronesForReport.length > 0 && hasPermission('detections.manage')"
+                type="button"
+                class="inline-flex items-center gap-2 rounded-lg border border-primary-500/50 bg-primary-500/20 px-4 py-2 text-sm font-medium text-white transition hover:bg-primary-500/30 disabled:cursor-not-allowed disabled:opacity-60"
+                @click="openReportModal"
+                :disabled="isLoading"
+              >
+                <PhFileText :size="16" weight="bold" />
+                Generate Report ({{ selectedDronesForReport.length }})
+              </button>
               <button
                 type="button"
                 class="inline-flex items-center gap-2 rounded-lg border border-white/20 px-4 py-2 text-sm font-medium text-white transition hover:border-white/40 disabled:cursor-not-allowed disabled:opacity-60"
@@ -35,18 +45,15 @@
         </header>
 
         <div class="border-b border-white/5 bg-neutral-900/40 px-6 py-4 lg:px-8">
-      <DetectionsFilters
-        v-model:search="filterSearch"
-        v-model:type="filterType"
-        v-model:status="filterStatus"
-        v-model:timeWindow="filterTimeWindow"
-        v-model:zone="filterZone"
-        v-model:sensorId="filterSensorId"
-        v-model:systemId="filterSystemId"
-        :is-loading="isLoading"
-        :zones="availableZones"
-        :sensors="availableSensors"
-      />
+          <DronesFilters
+            v-model:search="filterSearch"
+            v-model:type="filterType"
+            v-model:status="filterStatus"
+            v-model:time-window="filterTimeWindow"
+            v-model:system-id="filterSystemId"
+            :sensors="availableSensors"
+            :is-loading="isLoading"
+          />
         </div>
 
         <div class="flex-1 overflow-hidden px-4 py-4 lg:px-8">
@@ -71,231 +78,312 @@
                 </button>
               </div>
 
-              <DetectionsTable
-                :detections="paginatedDetections"
+              <DronesTable
+                :rows="paginatedRows"
                 :is-loading="isLoading"
                 :sort-field="sortField"
                 :sort-direction="sortDirection"
-                :pagination="pagination"
+                :selected-row-keys="selectedRowKeys"
+                :pagination="{
+                  currentPage,
+                  pageSize,
+                  totalPages,
+                  totalItems: filteredCount,
+                  setPage,
+                  setPageSize
+                }"
                 @change-sort="setSort"
                 @show-details="handleShowDetails"
+                @toggle-selection="handleToggleSelection"
+                @toggle-select-all="handleToggleSelectAll"
               />
             </div>
             <transition name="slide-in">
-              <DetectionDetailsPanel
+              <DroneDetailsPanel
                 v-if="panelVisible"
                 class="w-full flex-shrink-0 overflow-hidden lg:absolute lg:bottom-0 lg:right-0 lg:top-0 lg:w-[28rem]"
                 :visible="panelVisible"
-                :detection="selectedDetection"
+                :drone="selectedDrone"
+                :detection-coords="selectedDetectionCoords"
+                :detection="selectedRow"
                 @close="closeDetails"
               />
             </transition>
           </div>
         </div>
       </section>
+
+      <!-- Report Generation Modal -->
+      <ReportModal
+        v-if="showReportModal"
+        :selected-drone-ids="selectedDronesForReport.map(d => d.id)"
+        :visible="showReportModal"
+        @close="closeReportModal"
+        @report-generated="handleReportGenerated"
+      />
     </template>
   </LayoutWrapper>
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onMounted, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { computed, ref, watch } from 'vue'
 import { useAuth } from '@/composables/useAuth'
-import { useDetections } from '@/composables/useDetections'
-import { useSensors } from '@/composables/useSensors'
+import { usePermissions } from '@/composables/usePermissions'
+import { useMergedDetections } from '@/composables/useMergedDetections'
 import LayoutWrapper from '@/components/layout/LayoutWrapper.vue'
-import DetectionsFilters from '@/views/detections/components/DetectionsFilters.vue'
-import DetectionsTable from '@/views/detections/components/DetectionsTable.vue'
-import DetectionDetailsPanel from '@/views/detections/components/DetectionDetailsPanel.vue'
-import type { DetectionItem } from '@/types/detections'
+import DronesFilters from '@/views/drones/components/DronesFilters.vue'
+import DronesTable from '@/views/drones/components/DronesTable.vue'
+import DroneDetailsPanel from '@/views/drones/components/DroneDetailsPanel.vue'
+import ReportModal from '@/views/drones/components/ReportModal.vue'
+import { PhFileText } from '@phosphor-icons/vue'
+import type { DroneItem, DroneSortField, UnifiedDetectionRow } from '@/types/drones'
+import type { DetectionTypeFilter } from '@/views/drones/components/DronesFilters.vue'
 
 useAuth()
-const route = useRoute()
-const router = useRouter()
+const { hasPermission } = usePermissions()
 
 const {
-  detections,
-  filteredDetections,
-  paginatedDetections,
+  mergedDetections,
   isLoading,
   error,
-  filters,
-  sort,
-  pagination,
   refresh
-} = useDetections({
-  refreshInterval: 0, // Disabled auto-refresh
+} = useMergedDetections({
+  refreshInterval: 30000,
   enabled: true
 })
 
-const sortField = sort.field
-const sortDirection = sort.direction
-const setSort = sort.setSort
+const filterSearch = ref('')
+const filterType = ref<DetectionTypeFilter>('all')
+const filterStatus = ref<'all' | 'active' | 'inactive'>('all')
+const filterTimeWindow = ref<number | null>(null)
+const filterSystemId = ref<string | null>(null)
+const sortField = ref<DroneSortField | null>('time')
+const sortDirection = ref<'asc' | 'desc'>('desc')
 
-const filterSearch = filters.search
-const filterType = filters.type
-const filterStatus = filters.status
-const filterTimeWindow = filters.timeWindow
-const filterZone = filters.zone
-const filterSensorId = filters.sensorId
-const filterSystemId = filters.systemId
-
-// Load sensors for filter dropdown
-const { sensors } = useSensors({ enabled: true })
-const availableSensors = computed(() => {
-  return sensors.value.map(sensor => {
-    const source = sensor.source as any
-    return {
-      id: sensor.id,
-      name: sensor.name,
-      systemId: source?.system_id ?? null,
-      sensorId: source?.unit_id ?? source?.id ?? null
-    }
-  })
-})
-
-const totalCount = computed(() => detections.value.length)
-const filteredCount = computed(() => filteredDetections.value.length)
-const availableZones = computed(() => {
-  const zones = new Set<string>()
-  let hasUnassigned = false
-  detections.value.forEach(detection => {
-    if (detection.zone && detection.zone.trim().length > 0) {
-      zones.add(detection.zone)
-    } else {
-      hasUnassigned = true
-    }
-  })
-  const sortedZones = Array.from(zones).sort()
-  if (hasUnassigned) {
-    sortedZones.unshift('none')
+const setSort = (field: DroneSortField) => {
+  if (sortField.value === field) {
+    sortDirection.value = sortDirection.value === 'asc' ? 'desc' : 'asc'
+  } else {
+    sortField.value = field
+    sortDirection.value = 'desc'
   }
-  return sortedZones
+}
+
+const matchesSearch = (row: UnifiedDetectionRow, search: string): boolean => {
+  if (!search.trim()) return true
+  const q = search.trim().toLowerCase()
+  if (row.drone) {
+    const d = row.drone
+    return (
+      String(d.id).toLowerCase().includes(q) ||
+      (d.displayName?.toLowerCase().includes(q) ?? false) ||
+      (d.serialNumber?.toLowerCase().includes(q) ?? false) ||
+      (d.macAddress?.toLowerCase().includes(q) ?? false) ||
+      (d.uasId?.toLowerCase().includes(q) ?? false)
+    )
+  }
+  return row.rowKey.toLowerCase().includes(q) || String(row.id).includes(q)
+}
+
+const matchesStatus = (row: UnifiedDetectionRow, status: 'all' | 'active' | 'inactive'): boolean => {
+  if (status === 'all') return true
+  if (!row.drone) return true
+  return status === 'active' ? row.drone.isActive : !row.drone.isActive
+}
+
+const matchesType = (row: UnifiedDetectionRow, type: DetectionTypeFilter): boolean => {
+  if (type === 'all') return true
+  return type === 'position' ? row.source === 'position' : row.source === 'rf'
+}
+
+const matchesTimeWindow = (row: UnifiedDetectionRow, minutes: number | null): boolean => {
+  if (minutes === null || !Number.isFinite(minutes)) return true
+  const t = new Date(row.time).getTime()
+  if (!Number.isFinite(t)) return true
+  const cutoff = Date.now() - minutes * 60 * 1000
+  return t >= cutoff
+}
+
+const matchesSystemId = (row: UnifiedDetectionRow, systemId: string | null): boolean => {
+  if (systemId === null || systemId === '') return true
+  return (row.systemId ?? '') === systemId
+}
+
+const availableSensors = computed(() => {
+  const ids = new Set<string>()
+  mergedDetections.value.forEach(row => {
+    if (row.systemId) ids.add(String(row.systemId))
+  })
+  return Array.from(ids).sort()
 })
 
-const selectedDetectionId = ref<number | null>(null)
+const filteredRows = computed(() => {
+  const list = mergedDetections.value
+  const search = typeof filterSearch.value === 'string' ? filterSearch.value : ''
+  const status = filterStatus.value ?? 'all'
+  const type = filterType.value ?? 'all'
+  const timeWindow = filterTimeWindow.value ?? null
+  const systemId = filterSystemId.value ?? null
+  let rows = list.filter(
+    row =>
+      matchesSearch(row, search) &&
+      matchesStatus(row, status) &&
+      matchesType(row, type) &&
+      matchesTimeWindow(row, timeWindow) &&
+      matchesSystemId(row, systemId)
+  )
+  const field = sortField.value
+  const dir = sortDirection.value
+  if (field) {
+    rows = [...rows].sort((a, b) => {
+      let cmp = 0
+      switch (field) {
+        case 'time':
+          cmp = new Date(a.time).getTime() - new Date(b.time).getTime()
+          break
+        case 'id':
+          cmp = (a.drone?.id ?? a.id) - (b.drone?.id ?? b.id)
+          break
+        case 'manufacturer':
+          cmp = (a.drone?.manufacturer ?? '').localeCompare(b.drone?.manufacturer ?? '')
+          break
+        case 'modelName':
+          cmp = (a.drone?.modelName ?? '').localeCompare(b.drone?.modelName ?? '')
+          break
+        case 'serialNumber':
+          cmp = (a.drone?.serialNumber ?? '').localeCompare(b.drone?.serialNumber ?? '')
+          break
+        case 'firstSeen':
+          cmp = new Date(a.drone?.firstSeen ?? 0).getTime() - new Date(b.drone?.firstSeen ?? 0).getTime()
+          break
+        case 'lastSeen':
+          cmp = new Date(a.drone?.lastSeen ?? 0).getTime() - new Date(b.drone?.lastSeen ?? 0).getTime()
+          break
+        case 'systemId':
+          cmp = (a.systemId ?? '').localeCompare(b.systemId ?? '')
+          break
+        default:
+          break
+      }
+      return dir === 'asc' ? cmp : -cmp
+    })
+  }
+  return rows
+})
+
+const totalCount = computed(() => mergedDetections.value.length)
+const filteredCount = computed(() => filteredRows.value.length)
+
+const pageSize = ref(50)
+const currentPage = ref(1)
+const totalPages = computed(() => {
+  const total = filteredRows.value.length
+  const size = Math.max(1, pageSize.value)
+  return Math.ceil(total / size) || 1
+})
+const paginatedRows = computed(() => {
+  const list = filteredRows.value
+  const size = Math.max(1, pageSize.value)
+  const start = (Math.max(1, currentPage.value) - 1) * size
+  return list.slice(start, start + size)
+})
+const paginationStart = computed(() => {
+  const total = filteredRows.value.length
+  if (total === 0) return 0
+  const size = Math.max(1, pageSize.value)
+  const page = Math.max(1, currentPage.value)
+  return (page - 1) * size + 1
+})
+const paginationEnd = computed(() => {
+  const total = filteredRows.value.length
+  const size = Math.max(1, pageSize.value)
+  const page = Math.max(1, currentPage.value)
+  return Math.min(page * size, total)
+})
+const hasMultiplePages = computed(() => totalPages.value > 1)
+const setPage = (page: number) => {
+  currentPage.value = Math.max(1, Math.min(page, totalPages.value))
+}
+const setPageSize = (size: number) => {
+  pageSize.value = Math.max(25, Math.min(200, size))
+  currentPage.value = 1
+}
+
+watch(totalPages, (pages) => {
+  if (currentPage.value > pages && pages >= 1) {
+    currentPage.value = pages
+  }
+})
+
+const selectedRowKeys = ref<Set<string>>(new Set())
+const selectedDronesForReport = computed(() => {
+  const seen = new Set<number>()
+  return filteredRows.value
+    .filter(row => {
+      if (!selectedRowKeys.value.has(row.rowKey) || !row.drone) return false
+      if (seen.has(row.drone.id)) return false
+      seen.add(row.drone.id)
+      return true
+    })
+    .map(row => row.drone as DroneItem)
+})
+
+const selectedDrone = ref<DroneItem | null>(null)
+const selectedRow = ref<UnifiedDetectionRow | null>(null)
 const panelVisible = ref(false)
 
-const selectedDetection = computed(() => {
-  // First try to find in filtered detections (current view)
-  const inFiltered = filteredDetections.value.find(detection => detection.id === selectedDetectionId.value)
-  if (inFiltered) return inFiltered
-  // Fallback to all detections
-  return detections.value.find(detection => detection.id === selectedDetectionId.value) ?? null
+const selectedDetectionCoords = computed(() => {
+  const row = selectedRow.value
+  if (row?.latitude == null || row?.longitude == null) return null
+  const lat = Number(row.latitude)
+  const lng = Number(row.longitude)
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null
+  return { lat, lng }
 })
 
-const handleShowDetails = (detection: DetectionItem) => {
-  selectedDetectionId.value = detection.id
+const handleShowDetails = (row: UnifiedDetectionRow) => {
+  selectedDrone.value = row.drone ?? null
+  selectedRow.value = row
   panelVisible.value = true
 }
 
 const closeDetails = () => {
   panelVisible.value = false
+  selectedRow.value = null
+}
+
+const handleToggleSelection = (rowKey: string) => {
+  if (selectedRowKeys.value.has(rowKey)) {
+    selectedRowKeys.value.delete(rowKey)
+  } else {
+    selectedRowKeys.value.add(rowKey)
+  }
+}
+
+const handleToggleSelectAll = (checked: boolean) => {
+  const rows = paginatedRows.value
+  if (checked) {
+    rows.forEach(row => selectedRowKeys.value.add(row.rowKey))
+  } else {
+    rows.forEach(row => selectedRowKeys.value.delete(row.rowKey))
+  }
 }
 
 const tableContainerClass = computed(() => {
   return panelVisible.value ? 'lg:pr-6 lg:mr-[30rem]' : ''
 })
 
-// Function to apply query params to filters
-const applyQueryParams = async () => {
-  const sensorId = route.query.sensorId as string | undefined
-  const systemId = route.query.systemId as string | undefined
-  const detectionId = route.query.detectionId as string | undefined
-  const timeWindow = route.query.timeWindow as string | undefined
-  
-  let filtersChanged = false
-  
-  // Apply sensor filter - prioritize systemId over sensorId
-  if (systemId) {
-    if (filterSystemId.value !== systemId) {
-      filterSystemId.value = systemId
-      filterSensorId.value = null
-      filtersChanged = true
-    }
-  } else if (sensorId) {
-    if (filterSensorId.value !== sensorId) {
-      filterSensorId.value = sensorId
-      filterSystemId.value = null
-      filtersChanged = true
-    }
-  }
-  
-  // Apply time window filter (convert from minutes to the format used by filters)
-  if (timeWindow) {
-    const timeWindowMinutes = Number(timeWindow)
-    if (!Number.isNaN(timeWindowMinutes) && timeWindowMinutes > 0) {
-      if (filterTimeWindow.value !== timeWindowMinutes) {
-        filterTimeWindow.value = timeWindowMinutes
-        filtersChanged = true
-      }
-    }
-  }
-  
-  // Force refresh if filters changed
-  if (filtersChanged) {
-    await refresh()
-  }
-  
-  // Show detection details panel if detectionId is provided
-  if (detectionId) {
-    const id = Number(detectionId)
-    if (!Number.isNaN(id)) {
-      selectedDetectionId.value = id
-      
-      // Function to check and show the panel
-      const showPanel = () => {
-        // Check in all possible locations
-        const detection = paginatedDetections.value.find(d => d.id === id) ||
-                         filteredDetections.value.find(d => d.id === id) ||
-                         detections.value.find(d => d.id === id)
-        
-        if (detection) {
-          panelVisible.value = true
-          return true
-        }
-        return false
-      }
-      
-      // Try immediately (in case data is already loaded)
-      if (showPanel()) {
-        return // Panel is shown, we're done
-      }
-      
-      // If not found immediately, wait for data to load
-      // Watch for when loading completes
-      const checkAfterLoad = () => {
-        if (!isLoading.value) {
-          // Data has finished loading, try to show panel
-          if (!showPanel()) {
-            // Still not found, wait a bit more for filters to apply
-            setTimeout(() => {
-              if (!showPanel()) {
-                console.warn(`[Detections] Detection ${id} not found after applying filters`)
-              }
-            }, 500)
-          }
-        } else {
-          // Still loading, check again
-          setTimeout(checkAfterLoad, 200)
-        }
-      }
-      
-      // Start checking after a short delay
-      setTimeout(checkAfterLoad, 100)
-    }
+const showReportModal = ref(false)
+
+const openReportModal = () => {
+  if (selectedDronesForReport.value.length > 0) {
+    showReportModal.value = true
   }
 }
 
-// Apply query params on mount
-onMounted(() => {
-  applyQueryParams()
-})
+const closeReportModal = () => {
+  showReportModal.value = false
+}
 
-// Watch for route query changes (e.g., when navigating with query params)
-// Use immediate: false to avoid double execution on mount
-watch(() => route.query, () => {
-  applyQueryParams()
-}, { deep: true, immediate: false })
+const handleReportGenerated = () => {}
 </script>
-

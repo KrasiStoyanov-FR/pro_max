@@ -24,5 +24,3 @@ defineProps<{
   direction: 'asc' | 'desc'
 }>()
 </script>
-
-

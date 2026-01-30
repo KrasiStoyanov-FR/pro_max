@@ -2,7 +2,6 @@ import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/store/auth'
 import Detections from '@/pages/Detections.vue'
 import Sensors from '@/pages/Sensors.vue'
-import Drones from '@/pages/Drones.vue'
 
 // Lazy-loaded route components for code-splitting
 const Login = () => import('@/pages/Login.vue')
@@ -49,21 +48,16 @@ const router = createRouter({
       }
     },
     {
+      path: '/drones',
+      redirect: '/detections'
+    },
+    {
       path: '/sensors',
       name: 'Sensors',
       component: Sensors,
       meta: {
         requiresAuth: true,
         title: 'Sensors - Defense Radar Dashboard'
-      }
-    },
-    {
-      path: '/drones',
-      name: 'Drones',
-      component: Drones,
-      meta: {
-        requiresAuth: true,
-        title: 'Drones - Defense Radar Dashboard'
       }
     },
     // Protected routes - only accessible to admin and master_admin

@@ -256,7 +256,7 @@
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import type { DroneSortField, UnifiedDetectionRow } from '@/types/drones'
-import SortIcon from '@/views/detections/components/SortIcon.vue'
+import SortIcon from '@/components/shared/SortIcon.vue'
 
 interface PaginationControls {
   currentPage: number | { value: number }

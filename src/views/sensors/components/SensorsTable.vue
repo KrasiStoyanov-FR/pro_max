@@ -247,7 +247,7 @@ import { computed } from 'vue'
 import { PhPencilSimple, PhTrash } from '@phosphor-icons/vue'
 import type { SensorItem, SensorSortField, SensorGroupByField } from '@/types/sensors'
 import { usePermissions } from '@/composables/usePermissions'
-import SortIcon from '@/views/detections/components/SortIcon.vue'
+import SortIcon from '@/components/shared/SortIcon.vue'
 
 const props = withDefaults(
   defineProps<{

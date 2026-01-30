@@ -144,17 +144,10 @@ const allNavigationItems = [
     icon: PhCompass,
     roles: ['master_admin', 'admin', 'user'] // Available to all roles
   },
-  // {
-  //   name: 'Detections',
-  //   label: 'Detections',
-  //   href: '/detections',
-  //   icon: PhTarget,
-  //   roles: ['master_admin', 'admin', 'user'] // Available to all roles
-  // },
   {
-    name: 'Drones',
-    label: 'Drones',
-    href: '/drones',
+    name: 'Detections',
+    label: 'Detections',
+    href: '/detections',
     icon: PhTarget,
     roles: ['master_admin', 'admin', 'user'] // Available to all roles
   },

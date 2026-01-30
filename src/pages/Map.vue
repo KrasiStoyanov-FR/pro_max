@@ -67,7 +67,7 @@ const { pins: mapPins, selectedPin, initializeMap, loadPins, refreshPins, isMapR
 // Computed properties
 const pins = computed(() => mapPins.value)
 
-// When navigating to map with ?systemId=XXX (e.g. from Drones page sensor button), zoom to and select that sensor.
+// When navigating to map with ?systemId=XXX (e.g. from Detections page sensor button), zoom to and select that sensor.
 // Wait for the map instance (set by MapView's useMapPins) and pins to be ready before flying.
 const pendingFlyToSystemId = ref<string | null>(null)
 watch(
