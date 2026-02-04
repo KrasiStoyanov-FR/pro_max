@@ -1,5 +1,52 @@
 <template>
   <div class="absolute top-4 left-4 z-20 bg-neutral-900/95 backdrop-blur-sm rounded-lg shadow-lg border border-neutral-700/50 p-3 max-w-56">
+    <!-- Map search (inside filters) -->
+    <div class="mb-3 pb-3 border-b border-neutral-700/50">
+      <label class="block text-xs text-neutral-400 mb-1.5">Search map</label>
+      <div class="flex items-center gap-1.5">
+        <div class="flex-1 input-field min-w-0">
+          <input
+            v-model="searchQuery"
+            type="search"
+            autocomplete="off"
+            placeholder="Places, sensors, drones..."
+            class="!border-0 !bg-transparent !py-1.5 !text-sm"
+            aria-label="Search map"
+            @input="scheduleSearch"
+            @keydown.enter.prevent="runSearchNow"
+          />
+          <div class="input-field__icon input-field__icon--right">
+            <PhMagnifyingGlass aria-hidden="true" weight="bold" class="icon text-neutral-400" />
+          </div>
+        </div>
+        <button
+          v-if="hasSearchResults || searchQuery"
+          type="button"
+          class="shrink-0 rounded p-1.5 text-neutral-400 hover:text-white hover:bg-neutral-700 transition-colors"
+          title="Clear search"
+          aria-label="Clear search"
+          @click="clearSearchNow"
+        >
+          <PhX :size="16" weight="bold" />
+        </button>
+      </div>
+      <div class="max-h-52 overflow-hidden mt-1.5">
+      <MapSearchResultsPanel
+        v-if="showSearchPanel"
+        :marker-results="markerResults"
+        :place-results="placeResults"
+        :is-searching="isSearching"
+        :error="searchError"
+        :place-search-error="placeSearchError"
+        :can-zoom-to-selection="canZoomToSelection"
+        @zoom-to-place="zoomToPlace"
+        @select-marker="selectMarker"
+        @fit-to-selection="fitOrFlyToResults"
+        @clear="clearSearchNow"
+      />
+      </div>
+    </div>
+
     <div class="flex items-center justify-between mb-2">
       <h3 class="text-sm font-semibold text-white">Map Filters</h3>
       <button
@@ -10,7 +57,7 @@
         {{ allVisible ? 'Hide All' : 'Show All' }}
       </button>
     </div>
-    
+
     <!-- Time Window Filter -->
     <div class="mb-3 pb-3 border-b border-neutral-700/50">
       <label class="block text-xs text-neutral-400 mb-1.5">Time Window</label>
@@ -141,13 +188,84 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref, watch, onUnmounted } from 'vue'
+import { PhMagnifyingGlass, PhX } from '@phosphor-icons/vue'
 import { storeToRefs } from 'pinia'
 import { useMapStore } from '@/store/map'
+import { useMapSearch } from '@/composables/useMapSearch'
 import type { MapPin } from '@/types/map'
 import DateRangePicker from '@/components/shared/DateRangePicker.vue'
+import MapSearchResultsPanel from '@/components/map/MapSearchResultsPanel.vue'
 
 const mapStore = useMapStore()
+const {
+  query: searchQuery,
+  markerResults,
+  placeResults,
+  isSearching,
+  error: searchError,
+  placeSearchError,
+  hasResults: hasSearchResults,
+  canZoomToSelection,
+  runSearch,
+  clearSearch,
+  fitOrFlyToResults,
+  zoomToPlace,
+  selectMarker
+} = useMapSearch()
+
+const SEARCH_DEBOUNCE_MS = 400
+let searchDebounceId: ReturnType<typeof setTimeout> | null = null
+
+/** Show panel when we have results, any error, or a completed search (so "No results" or place error is visible). */
+const showSearchPanel = computed(
+  () =>
+    hasSearchResults.value ||
+    searchError.value != null ||
+    placeSearchError.value != null ||
+    (searchQuery.value.trim() !== '' && !isSearching.value)
+)
+
+function scheduleSearch() {
+  if (searchDebounceId != null) {
+    clearTimeout(searchDebounceId)
+    searchDebounceId = null
+  }
+  if (!searchQuery.value.trim()) {
+    clearSearch()
+    return
+  }
+  searchDebounceId = setTimeout(() => {
+    searchDebounceId = null
+    runSearch()
+  }, SEARCH_DEBOUNCE_MS)
+}
+
+async function runSearchNow() {
+  if (searchDebounceId != null) {
+    clearTimeout(searchDebounceId)
+    searchDebounceId = null
+  }
+  if (!searchQuery.value.trim()) {
+    clearSearch()
+    return
+  }
+  await runSearch()
+  fitOrFlyToResults()
+}
+
+function clearSearchNow() {
+  if (searchDebounceId != null) {
+    clearTimeout(searchDebounceId)
+    searchDebounceId = null
+  }
+  clearSearch()
+}
+
+onUnmounted(() => {
+  if (searchDebounceId != null) clearTimeout(searchDebounceId)
+  clearSearch()
+})
 const { visibleMarkerTypes, timeWindowMs, dateRange, sensorFilterMode } = storeToRefs(mapStore)
 
 // Helper to format milliseconds to human-readable string

@@ -242,6 +242,36 @@ const getSqliteTables = async connection => {
 
 // Routes
 
+// Geocode proxy (Nominatim): avoids CORS and 418 by calling from server with proper User-Agent
+app.get('/api/geocode', async (req, res) => {
+  const q = req.query.q
+  if (!q || typeof q !== 'string') {
+    return res.status(400).json({ error: 'Missing query parameter q' })
+  }
+  const limit = Math.min(parseInt(req.query.limit, 10) || 10, 20)
+  const params = new URLSearchParams({
+    q: q.trim(),
+    format: 'json',
+    limit: String(limit),
+    addressdetails: '1'
+  })
+  const url = `https://nominatim.openstreetmap.org/search?${params.toString()}`
+  try {
+    const response = await fetch(url, {
+      headers: {
+        Accept: 'application/json',
+        'User-Agent': 'DefenseRadarDashboard/1.0 (MapSearch; Node.js proxy)'
+      }
+    })
+    if (!response.ok) throw new Error(`Nominatim ${response.status}`)
+    const data = await response.json()
+    res.json(data)
+  } catch (err) {
+    console.error('[Geocode] Nominatim error:', err)
+    res.status(502).json({ error: 'Geocoding failed', message: err.message })
+  }
+})
+
 // Version / deploy check: hit this URL to see if the server is running the rf_detections fix
 // e.g. GET http://dds.pm99.site:3001/api/db/version → if you see "rf_detections-fix-v1", the fix is deployed
 app.get('/api/db/version', (req, res) => {

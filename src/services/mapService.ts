@@ -102,9 +102,11 @@ class MapService {
   private highlightedDetectionId: number | null = null
   private selectedClusterId: string | null = null // Track selected cluster to hide its marker
   private selectedPin: MapPin | null = null // Track selected pin to maintain selection state during zoom/pan
+  private previousSelectedPinId: string | null = null // For search mode: only update icon of selected + previous
   private detectionRangeCircles: Map<string, L.Circle> = new Map() // Detection range visualization
   private clusteringEnabled: boolean = false // Clustering disabled by default - users have full control
   public visibleMarkerTypes: Set<MapPin['type']> | null = null
+  private searchResultPinIds: Set<string> | null = null
 
   private getClusterRadiusForZoom(): number {
     if (!this.map) return CLUSTER_CONFIG.maxClusterRadius
@@ -257,16 +259,20 @@ class MapService {
   // Add detection range circles around GPS units/receivers
   private addDetectionRanges(pins: MapPin[] = this.allPins): void {
     if (!this.map) return
-    
+
     // Clear existing detection range circles
     this.clearDetectionRanges()
-    
+
     // Detection range in meters
     const DETECTION_RANGE_METERS = 1500 // 1.5km detection range
-    
+
     // Find GPS units (sensor type pins) - these are the detection sources
-    const detectionSources = pins.filter(pin => pin.type === 'sensor' && pin.status === 'active')
-    
+    let detectionSources = pins.filter(pin => pin.type === 'sensor' && pin.status === 'active')
+    // When search is active, only show radius for sensors that match the search
+    if (this.searchResultPinIds != null && this.searchResultPinIds.size > 0) {
+      detectionSources = detectionSources.filter(source => this.searchResultPinIds!.has(source.id))
+    }
+
     detectionSources.forEach(source => {
       // Create a circle to show detection range
         const rangeCircle = L.circle([source.lat, source.lng], {
@@ -324,6 +330,14 @@ class MapService {
     this.updateMarkerFocusStyles()
   }
 
+  setSearchResultPinIds(ids: Set<string> | null): void {
+    this.searchResultPinIds = ids
+    this.previousSelectedPinId = null
+    this.updateMarkerFocusStyles()
+    this.clearDetectionRanges()
+    this.addDetectionRanges()
+  }
+
   private updateMarkerFocusStyles(): void {
     const resetDetections = () => {
       this.detectionsById.forEach(({ marker }) => {
@@ -335,8 +349,55 @@ class MapService {
       })
     }
 
+    const searchActive = this.searchResultPinIds != null && this.searchResultPinIds.size > 0
+
+    if (searchActive) {
+      const currentSelectedId = this.selectedPin?.id ?? null
+      const idsToUpdateIcon = new Set<string>()
+      if (currentSelectedId) idsToUpdateIcon.add(currentSelectedId)
+      if (this.previousSelectedPinId) idsToUpdateIcon.add(this.previousSelectedPinId)
+      this.previousSelectedPinId = currentSelectedId
+
+      this.markers.forEach(marker => {
+        const pinData = (marker as any).pinData as MapPin | undefined
+        if (!pinData) return
+        const isSearchMatch = this.searchResultPinIds!.has(pinData.id)
+        this.applyMarkerOpacity(marker, isSearchMatch)
+        if (!idsToUpdateIcon.has(pinData.id)) return
+        const isSelected = this.selectedPin?.id === pinData.id
+        const newIcon = this.getIconForPinType(pinData.type, pinData.status, isSelected, !isSearchMatch, pinData.data, isSearchMatch)
+        marker.setIcon(newIcon)
+      })
+      this.detectionsById.forEach(({ marker, pin }, key) => {
+        const element = marker.getElement()
+        if (!element) return
+        const isTargetTypeVisible = this.visibleMarkerTypes?.has('target') ?? true
+        const isSearchMatch = this.searchResultPinIds!.has(pin.id)
+        if (isSearchMatch && isTargetTypeVisible) {
+          element.classList.remove('marker--hidden')
+          element.classList.add('marker--detection-focus')
+          if (key === this.highlightedDetectionId) {
+            element.classList.add('marker--detection-selected')
+          } else {
+            element.classList.remove('marker--detection-selected')
+          }
+        } else {
+          element.classList.add('marker--hidden')
+        }
+      })
+      return
+    }
+
     if (!this.focusState.active) {
-      this.markers.forEach(marker => this.resetMarkerAppearance(marker))
+      this.markers.forEach(marker => {
+        this.resetMarkerAppearance(marker)
+        const pinData = (marker as any).pinData as MapPin | undefined
+        if (pinData) {
+          const isSelected = this.selectedPin?.id === pinData.id
+          const newIcon = this.getIconForPinType(pinData.type, pinData.status, isSelected, false, pinData.data, false)
+          marker.setIcon(newIcon)
+        }
+      })
       resetDetections()
       return
     }
@@ -669,44 +730,45 @@ class MapService {
   highlightSelectedPin(selectedPin: MapPin | null): void {
     if (!this.map) return
 
-    console.log('Highlighting selected pin:', selectedPin?.id, selectedPin?.title)
-
     // Store the selected pin to maintain state during zoom/pan
     this.selectedPin = selectedPin
 
     // Remove any existing highlight marker
     this.clearHighlightMarker()
 
+    const searchActive = this.searchResultPinIds != null && this.searchResultPinIds.size > 0
+
     if (selectedPin) {
-      // Update the existing marker to be enlarged and pulsing
       const existingMarker = this.markers.get(selectedPin.id)
       if (existingMarker) {
-        // Recreate the marker with isSelected=true to get enlarged version
-        const newIcon = this.getIconForPinType(selectedPin.type, selectedPin.status, true, false, selectedPin.data)
+        const isSearchMatch = searchActive && this.searchResultPinIds!.has(selectedPin.id)
+        const newIcon = this.getIconForPinType(selectedPin.type, selectedPin.status, true, false, selectedPin.data, isSearchMatch)
         existingMarker.setIcon(newIcon)
-        // Ensure it's on top
         existingMarker.setZIndexOffset(1000)
       } else {
-        // Marker doesn't exist yet, create it as selected
-        const marker = this.createMarker(selectedPin, true, false)
+        const isSearchMatch = searchActive && this.searchResultPinIds!.has(selectedPin.id)
+        const marker = this.createMarker(selectedPin, true, false, isSearchMatch)
         this.markers.set(selectedPin.id, marker)
         marker.addTo(this.map)
         marker.setZIndexOffset(1000)
       }
 
-      // Force individual pins to be shown with fade effect
+      if (searchActive) {
+        this.updateMarkerFocusStyles()
+        return
+      }
       this.forceShowIndividualPins(selectedPin)
     } else {
-      // If selectedPin is null, restore all markers to normal size
+      const isSearchActive = this.searchResultPinIds != null && this.searchResultPinIds.size > 0
       this.markers.forEach((marker, pinId) => {
         const pin = this.allPins.find(p => p.id === pinId)
         if (pin) {
-          const newIcon = this.getIconForPinType(pin.type, pin.status, false, false, pin.data)
+          const isSearchMatch = isSearchActive && this.searchResultPinIds!.has(pin.id)
+          const newIcon = this.getIconForPinType(pin.type, pin.status, false, false, pin.data, isSearchMatch)
           marker.setIcon(newIcon)
           marker.setZIndexOffset(0)
         }
       })
-      // Clear the fade effect
       this.clearFadeEffect()
     }
 
@@ -799,63 +861,33 @@ class MapService {
   }
 
   private forceShowIndividualPins(selectedPin: MapPin): void {
-    console.log('Force showing individual pins with fade effect for:', selectedPin.id)
-    console.log('Existing markers count:', this.markers.size)
-
-    // If no markers exist, we need to create them first
     if (this.markers.size === 0) {
-      console.log('No existing markers, creating individual pins')
       this.showIndividualPins(selectedPin)
       return
     }
-
-    // Clear clusters but keep markers
     this.clearClusters()
 
-    // Update existing markers with correct selection state
+    const isSearchActive = this.searchResultPinIds != null && this.searchResultPinIds.size > 0
     this.markers.forEach((marker, pinId) => {
       const pin = this.allPins.find(p => p.id === pinId)
       if (!pin) return
       
       const isSelected = selectedPin?.id === pinId
       const isFaded = selectedPin !== null && !isSelected
-      console.log(`Processing existing marker ${pinId}: isSelected=${isSelected}, isFaded=${isFaded}`)
+      const isSearchMatch = isSearchActive && this.searchResultPinIds!.has(pin.id)
 
-      // Update marker icon to reflect selection state
-      const newIcon = this.getIconForPinType(pin.type, pin.status, isSelected, isFaded, pin.data)
+      const newIcon = this.getIconForPinType(pin.type, pin.status, isSelected, isFaded, pin.data, isSearchMatch)
       marker.setIcon(newIcon)
-      
-      // Update z-index
-      if (isSelected) {
-        marker.setZIndexOffset(1000)
-      } else {
-        marker.setZIndexOffset(0)
-      }
-
-      if (isFaded) {
-        console.log(`Fading existing marker ${pinId}`)
-        // Add a small delay to ensure the marker is fully rendered
-        setTimeout(() => {
-          this.fadeMarker(marker)
-        }, 50)
-      } else {
-        console.log(`Brightening selected marker ${pinId}`)
-        this.brightenMarker(marker)
-      }
+      if (isSelected) marker.setZIndexOffset(1000)
+      else marker.setZIndexOffset(0)
+      if (isFaded) setTimeout(() => this.fadeMarker(marker), 50)
+      else this.brightenMarker(marker)
     })
   }
 
-  private applyFadeEffect(selectedPin: MapPin): void {
-    console.log('Applying fade effect, selected pin:', selectedPin.id)
-    console.log('Total markers available:', this.markers.size)
-
-    // Since markers are already created with fade effect in showIndividualPins,
-    // we don't need to apply additional fade effect here
-    console.log('Markers already have fade effect applied in showIndividualPins')
-  }
+  private applyFadeEffect(_selectedPin: MapPin): void {}
 
   private clearFadeEffect(): void {
-    console.log('Clearing fade effect')
 
     // Restore all markers to full opacity
     this.markers.forEach((marker) => {
@@ -933,7 +965,7 @@ class MapService {
     })
   }
 
-  private createMarker(pin: MapPin, isSelected: boolean = false, isFaded: boolean = false): L.Marker {
+  private createMarker(pin: MapPin, isSelected: boolean = false, isFaded: boolean = false, isSearchMatch: boolean = false): L.Marker {
     if (isSelected) {
       console.log('Creating selected marker for pin:', pin.id, pin.title)
     }
@@ -942,7 +974,7 @@ class MapService {
     }
 
     const marker = L.marker([pin.lat, pin.lng], {
-      icon: this.getIconForPinType(pin.type, pin.status, isSelected, isFaded, pin.data)
+      icon: this.getIconForPinType(pin.type, pin.status, isSelected, isFaded, pin.data, isSearchMatch)
     })
 
       // Store fade state on marker for hover effects
@@ -1026,7 +1058,8 @@ class MapService {
         setTimeout(() => {
           const marker = this.markers.get(pinToUse.id)
           if (marker) {
-            const newIcon = this.getIconForPinType(pinToUse.type, pinToUse.status, true, false, pinToUse.data)
+            const isSearchMatch = this.searchResultPinIds?.has(pinToUse.id) ?? false
+            const newIcon = this.getIconForPinType(pinToUse.type, pinToUse.status, true, false, pinToUse.data, isSearchMatch)
             marker.setIcon(newIcon)
             marker.setZIndexOffset(1000)
           }
@@ -1071,13 +1104,15 @@ class MapService {
     console.log('Showing individual pins, selected pin:', selectedPin?.id)
 
     // When not clustering, show ALL individual pins
+    const isSearchActive = this.searchResultPinIds != null && this.searchResultPinIds.size > 0
     this.allPins.forEach(pin => {
       const isSelected = selectedPin?.id === pin.id
       const isFaded = selectedPin !== null && !isSelected // Fade all pins except the selected one
+      const isSearchMatch = isSearchActive && this.searchResultPinIds!.has(pin.id)
       console.log(`Pin ${pin.id}: isSelected=${isSelected}, isFaded=${isFaded}`)
 
-      // Create marker for all pins with correct selection state
-      const marker = this.createMarker(pin, isSelected, isFaded)
+      // Create marker for all pins with correct selection state; keep teardrop when search match
+      const marker = this.createMarker(pin, isSelected, isFaded, isSearchMatch)
       this.markers.set(pin.id, marker)
       marker.addTo(this.map!)
       
@@ -1106,11 +1141,13 @@ class MapService {
 
     // Second pass: Filter clusters by minimum distance and size
     potentialClusters.forEach(clusterPins => {
+      const isSearchActive = this.searchResultPinIds != null && this.searchResultPinIds.size > 0
       if (clusterPins.length < CLUSTER_CONFIG.minPinsForCluster) {
         // Too few pins - add as individual markers
         clusterPins.forEach(pin => {
           if (!processedPins.has(pin.id)) {
-            const marker = this.createMarker(pin)
+            const isSearchMatch = isSearchActive && this.searchResultPinIds!.has(pin.id)
+            const marker = this.createMarker(pin, false, false, isSearchMatch)
             this.markers.set(pin.id, marker)
             marker.addTo(this.map!)
             processedPins.add(pin.id)
@@ -1133,9 +1170,11 @@ class MapService {
           
           if (hasExpandedPins) {
             // Don't re-cluster the currently selected cluster - add pins as individual markers
+            const isSearchActive = this.searchResultPinIds != null && this.searchResultPinIds.size > 0
             clusterPins.forEach(pin => {
               if (!processedPins.has(pin.id)) {
-                const marker = this.createMarker(pin)
+                const isSearchMatch = isSearchActive && this.searchResultPinIds!.has(pin.id)
+                const marker = this.createMarker(pin, false, false, isSearchMatch)
                 this.markers.set(pin.id, marker)
                 marker.addTo(this.map!)
                 processedPins.add(pin.id)
@@ -1158,6 +1197,7 @@ class MapService {
         return distance < clusterSpacing
       })
 
+      const isSearchActiveForRemaining = this.searchResultPinIds != null && this.searchResultPinIds.size > 0
       if (!tooClose) {
         clusters.push(cluster)
         clusterPins.forEach(pin => processedPins.add(pin.id))
@@ -1165,7 +1205,8 @@ class MapService {
         // If too close, add pins as individual markers instead
         clusterPins.forEach(pin => {
           if (!processedPins.has(pin.id)) {
-            const marker = this.createMarker(pin)
+            const isSearchMatch = isSearchActiveForRemaining && this.searchResultPinIds!.has(pin.id)
+            const marker = this.createMarker(pin, false, false, isSearchMatch)
             this.markers.set(pin.id, marker)
             marker.addTo(this.map!)
             processedPins.add(pin.id)
@@ -1175,9 +1216,11 @@ class MapService {
     })
 
     // Add remaining unprocessed pins as individual markers
+    const isSearchActiveFinal = this.searchResultPinIds != null && this.searchResultPinIds.size > 0
     pins.forEach(pin => {
       if (!processedPins.has(pin.id)) {
-        const marker = this.createMarker(pin)
+        const isSearchMatch = isSearchActiveFinal && this.searchResultPinIds!.has(pin.id)
+        const marker = this.createMarker(pin, false, false, isSearchMatch)
         this.markers.set(pin.id, marker)
         marker.addTo(this.map!)
       }
@@ -1327,7 +1370,7 @@ class MapService {
     // Note: Don't clear selectedClusterId here - it's managed separately
   }
 
-  private getIconForPinType(type: string, status: string, isSelected: boolean = false, isFaded: boolean = false, pinData?: any): any {
+  private getIconForPinType(type: string, status: string, isSelected: boolean = false, isFaded: boolean = false, pinData?: any, isSearchMatch: boolean = false): any {
     // RF detections are shown at sensor locations with pulse animation
     if (type === 'target') {
       const size = isSelected ? 22 : 16
@@ -1375,6 +1418,34 @@ class MapService {
     const iconSvg = this.getSizedPhosphorSvg(type, iconSizePx)
     const pulseCircleSizePx = isSelected ? (type === 'drone' ? 64 : (isSensor ? 60 : 48)) : 0
     const pulseCircleBorderWidth = isSelected ? (type === 'drone' ? 4 : (isSensor ? 4 : 3)) : 0
+
+    // Search match: pin/teardrop shape (same colors, icon inside); slightly larger than circle markers
+    if (isSearchMatch) {
+      const teardropScale = 1.35
+      const pinW = Math.round(markerSizePx * teardropScale)
+      const pinH = Math.round(pinW * 1.5)
+      const anchorY = pinH
+      const teardropPath = 'M12 0C5.373 0 0 5.373 0 12c0 6 12 24 12 24S24 18 24 12C24 5.373 18.627 0 12 0z'
+      const pinIconPx = Math.round(iconSizePx * 1.15)
+      const iconTop = Math.round(pinH * 0.08)
+      const iconLeft = Math.round((pinW - pinIconPx) / 2)
+      const iconSvgWithColor = iconSvg.includes('fill=') ? iconSvg : iconSvg.replace('<svg ', '<svg fill="currentColor" ')
+      return L.divIcon({
+        className: 'custom-marker custom-marker--pin',
+        html: `
+          <div class="relative overflow-hidden" style="width:${pinW}px;height:${pinH}px">
+            <svg viewBox="0 0 24 36" style="position:absolute;left:0;top:0;width:100%;height:100%;display:block;z-index:1" preserveAspectRatio="none">
+              <path d="${teardropPath}" fill="${sensorColor}" stroke="${sensorBorderColor}" stroke-width="1.5"/>
+            </svg>
+            <div style="position:absolute;left:${iconLeft}px;top:${iconTop}px;width:${pinIconPx}px;height:${pinIconPx}px;color:#fff;z-index:2;display:flex;align-items:center;justify-content:center;pointer-events:none">
+              ${iconSvgWithColor}
+            </div>
+          </div>
+        `,
+        iconSize: [pinW, pinH],
+        iconAnchor: [pinW / 2, anchorY]
+      } as any)
+    }
 
     // Container size needs to accommodate the pulsing circle when selected
     const containerSizePx = isSelected ? pulseCircleSizePx : markerSizePx
@@ -1716,6 +1787,30 @@ class MapService {
     return this.map ? this.map.getBounds() : null
   }
 
+  getBoundsFromPins(pins: MapPin[]): L.LatLngBounds | null {
+    if (!pins.length) return null
+    const bounds = L.latLngBounds(
+      pins.map((p) => [p.lat, p.lng] as L.LatLngExpression)
+    )
+    return bounds
+  }
+
+  /** Build bounds from an array of points (e.g. markers + places). Returns null if empty. */
+  getBoundsFromPoints(points: Array<{ lat: number; lng: number }>): L.LatLngBounds | null {
+    if (!points.length) return null
+    if (points.length === 1) {
+      const p = points[0]
+      const pad = 0.005
+      return L.latLngBounds(
+        [p.lat - pad, p.lng - pad],
+        [p.lat + pad, p.lng + pad]
+      )
+    }
+    return L.latLngBounds(
+      points.map((p) => [p.lat, p.lng] as L.LatLngExpression)
+    )
+  }
+
   getCenter(): L.LatLng | null {
     return this.map ? this.map.getCenter() : null
   }
@@ -1823,7 +1918,8 @@ class MapService {
     this.onClusterClickCallback = null
     this.onTrajectoryPointClickCallback = null
     this.currentTileLayer = null
-    this.focusState = { active: false, dronePinId: null, droneTargetId: null }
+    this.focusState = { active: false, dronePinId: null, droneTargetId: null, droneSystemId: null, detectorPinId: null, detectorRangeMeters: null, detectorLatLng: null, mode: 'drone', linkedDroneIds: [] }
+    this.searchResultPinIds = null
     this.highlightedDetectionId = null
     this.selectedClusterId = null
   }

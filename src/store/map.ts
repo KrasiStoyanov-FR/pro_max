@@ -41,6 +41,9 @@ export const useMapStore = defineStore('map', () => {
   // 'without_detections' = only sensors without any RF detections
   const sensorFilterMode = ref<'all' | 'with_detections' | 'without_detections'>('all')
 
+  // Map search: pin IDs that match the current search (null = no search active)
+  const mapSearchResultIds = ref<Set<string> | null>(null)
+
   // Viewport tracking for panels
   const availableViewport = ref({
     left: 0,
@@ -320,15 +323,27 @@ export const useMapStore = defineStore('map', () => {
     })
   }
 
-  const searchPins = (query: string) => {
+  const searchPins = (query: string): MapPin[] => {
     if (!query.trim()) return pins.value
-    
-    const lowercaseQuery = query.toLowerCase()
-    return pins.value.filter(pin => 
-      pin.title.toLowerCase().includes(lowercaseQuery) ||
-      pin.description?.toLowerCase().includes(lowercaseQuery) ||
-      pin.type?.toLowerCase().includes(lowercaseQuery)
-    )
+
+    const q = query.toLowerCase()
+    const match = (s: string | undefined | null) => s != null && String(s).toLowerCase().includes(q)
+    return pins.value.filter((pin) => {
+      if (match(pin.title) || match(pin.description) || match(pin.type)) return true
+      const d = pin.data
+      if (!d) return false
+      return (
+        match(d.system_id) ||
+        match(d.unit_name) ||
+        match(d.unit_id) ||
+        match(d.drone_id) ||
+        match(d.name)
+      )
+    })
+  }
+
+  const setMapSearchResultIds = (ids: Set<string> | null) => {
+    mapSearchResultIds.value = ids
   }
 
   const filterPinsByType = (type: string) => {
@@ -349,6 +364,7 @@ export const useMapStore = defineStore('map', () => {
     isFocusMode.value = false
     focusModeType.value = 'none'
     linkedSensorDroneIds.value = []
+    mapSearchResultIds.value = null
     viewport.value = {
       center: [42.6977, 23.3219], // Sofia, Bulgaria (where most drones are located)
       zoom: 10
@@ -550,7 +566,8 @@ export const useMapStore = defineStore('map', () => {
     timeWindowMs,
     dateRange,
     sensorFilterMode,
-    
+    mapSearchResultIds,
+
     // Getters
     selectedPinData,
     selectedClusterData,
@@ -575,6 +592,7 @@ export const useMapStore = defineStore('map', () => {
     flyToLocation,
     getPinsInBounds,
     searchPins,
+    setMapSearchResultIds,
     filterPinsByType,
     setLoading,
     resetMap,
