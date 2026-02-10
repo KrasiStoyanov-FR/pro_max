@@ -83,18 +83,8 @@ const createConnectionPool = async () => {
 
   connectionPoolPromise = (async () => {
   try {
-    console.log('[MariaDB] Testing connection...')
-    const testConnection = await mysql.createConnection({
-      host: DB_CONFIG.host,
-      port: DB_CONFIG.port,
-      user: DB_CONFIG.user,
-      password: DB_CONFIG.password,
-      connectTimeout: 10000
-    })
-    
-    await testConnection.ping()
-    await testConnection.end()
-    console.log('[MariaDB] Test connection successful')
+    // Create connection pool directly without pre-check
+    console.log('[MariaDB] Creating connection pool...')
     
     connectionPool = mysql.createPool({
       ...DB_CONFIG,
