@@ -445,18 +445,30 @@ export const useMapStore = defineStore('map', () => {
       const isTestMode = import.meta.env.VITE_TEST_MODE === 'true'
       const ONE_YEAR_MS = 365 * 24 * 60 * 60 * 1000
       
-      let detectionWindowMs: number
-      const userWindow = timeWindowMs.value
-      if (userWindow !== null && userWindow > 0) {
-        detectionWindowMs = userWindow
-      } else if (isTestMode) {
-        detectionWindowMs = ONE_YEAR_MS
-      } else {
-        const envValue = import.meta.env.VITE_DETECTION_WINDOW_MS
-        detectionWindowMs = envValue ? parseInt(envValue, 10) : 60 * 60 * 1000 // Default: 1 hour
-      }
+      let cutoffTime: number
+      let now: number
+      let detectionWindowMs: number | null = null
       
-      const cutoffTime = Date.now() - detectionWindowMs
+      const currentRange = dateRange.value
+      if (currentRange) {
+        // Historical mode: use date range
+        cutoffTime = new Date(currentRange.start).getTime()
+        now = new Date(currentRange.end).getTime()
+      } else {
+        // Real-time mode: use detection window
+        const userWindow = timeWindowMs.value
+        if (userWindow !== null && userWindow > 0) {
+          detectionWindowMs = userWindow
+        } else if (isTestMode) {
+          detectionWindowMs = ONE_YEAR_MS
+        } else {
+          const envValue = import.meta.env.VITE_DETECTION_WINDOW_MS
+          detectionWindowMs = envValue ? parseInt(envValue, 10) : 60 * 60 * 1000 // Default: 1 hour
+        }
+        
+        now = Date.now()
+        cutoffTime = now - detectionWindowMs
+      }
       
       filtered = filtered.filter(pin => {
         if (pin.type !== 'sensor') {
@@ -465,14 +477,19 @@ export const useMapStore = defineStore('map', () => {
         
         // Check if sensor has detections
         const detections = Array.isArray(pin.data?.detections) ? pin.data.detections : []
-        const now = Date.now()
+        
         const hasRecentDetections = detections.some((detection: any) => {
           if (!detection.timestamp) return false
           // Handle both boolean true and number 1 as active status
           const isActive = detection.status === true || detection.status === 1
           if (!isActive) return false
           const detectionTime = new Date(detection.timestamp).getTime()
-          return detectionTime >= cutoffTime
+          
+          if (currentRange) {
+            return detectionTime >= cutoffTime && detectionTime <= now
+          } else {
+            return detectionTime >= cutoffTime
+          }
         })
         
         // Log sensor filtering decision
@@ -483,8 +500,9 @@ export const useMapStore = defineStore('map', () => {
             filterMode: sensorFilterMode.value,
             totalDetections: detections.length,
             windowMs: detectionWindowMs,
-            windowHours: (detectionWindowMs / (60 * 60 * 1000)).toFixed(2),
+            windowHours: detectionWindowMs ? (detectionWindowMs / (60 * 60 * 1000)).toFixed(2) : null,
             cutoffTime: new Date(cutoffTime).toISOString(),
+            dateRange: currentRange ? { start: currentRange.start, end: currentRange.end } : null,
             detections: detections.map((d: any) => ({
               id: d.id,
               timestamp: d.timestamp,
@@ -493,8 +511,12 @@ export const useMapStore = defineStore('map', () => {
               ageMs: d.timestamp ? (now - new Date(d.timestamp).getTime()) : null,
               ageHours: d.timestamp ? ((now - new Date(d.timestamp).getTime()) / (60 * 60 * 1000)).toFixed(2) : null,
               status: d.status,
-              isRecent: d.timestamp ? new Date(d.timestamp).getTime() >= cutoffTime : false,
-                passesFilter: d.timestamp && (d.status === true || d.status === 1) ? new Date(d.timestamp).getTime() >= cutoffTime && (d.status === true || d.status === 1) : false
+              isRecent: d.timestamp ? (currentRange 
+                ? new Date(d.timestamp).getTime() >= cutoffTime && new Date(d.timestamp).getTime() <= now
+                : new Date(d.timestamp).getTime() >= cutoffTime) : false,
+                passesFilter: d.timestamp && (d.status === true || d.status === 1) ? (currentRange 
+                ? new Date(d.timestamp).getTime() >= cutoffTime && new Date(d.timestamp).getTime() <= now
+                : new Date(d.timestamp).getTime() >= cutoffTime) && (d.status === true || d.status === 1) : false
             })),
             hasRecentDetections,
             willShow: sensorFilterMode.value === 'with_detections' ? hasRecentDetections : !hasRecentDetections

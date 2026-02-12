@@ -1318,7 +1318,7 @@ class MapService {
     const rfDetectionsFilterEnabled = this.visibleMarkerTypes?.has('target') ?? true
     const hasSensorsWithDetections = rfDetectionsFilterEnabled && pins.some(pin => 
       pin.type === 'sensor' && 
-      (pin.data?.hasRFDetections === true || (Array.isArray(pin.data?.detections) && pin.data.detections.length > 0))
+      (pin.data?.hasRFDetections === true)
     )
     
     // Use orange color scheme if cluster contains sensors with RF detections AND filter is enabled
@@ -1395,7 +1395,7 @@ class MapService {
     const isAlarm = status === 'critical'
     const isWarning = status === 'warning'
     // Sensors with RF detections should pulse to indicate activity
-    const hasRFDetections = pinData?.hasRFDetections === true || (Array.isArray(pinData?.detections) && pinData.detections.length > 0)
+    const hasRFDetections = pinData?.hasRFDetections === true
     const shouldPulse = isAlarm || isWarning || (type === 'sensor' && hasRFDetections) // Pulse for critical, warning, or sensors with detections
     
     // For sensors with RF detections, use orange/red color scheme (moderate alert level)

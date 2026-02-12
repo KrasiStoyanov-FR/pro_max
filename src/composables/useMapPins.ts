@@ -38,6 +38,11 @@ const isWithinDateRange = (timestamp: string | null | undefined, mapStore: Retur
   return timestampMs >= startMs && timestampMs <= endMs
 }
 
+// Helper to strictly check if a detection is active (status 1)
+const isActiveDetection = (status: unknown): boolean => {
+  return status === true || status === 1 || (typeof status === 'string' && status === '1')
+}
+
 // Cache for time window values to avoid excessive logging
 const timeWindowCache = new Map<string, { value: number; source: string }>()
 
@@ -765,32 +770,36 @@ export function useMapPins() {
         error: rfDetectionsResponse.error
       })
       
+      // Initialize active system IDs set to track systems with recent detections
+      const activeSystemIds = new Set<string>()
+
+      // Calculate time window settings once for both detections and operators
+      const dateRange = mapStore.getDateRange()
+      let cutoffTime: number
+      let now: number
+      let DETECTION_WINDOW_MS: number | null = null
+      
+      if (dateRange) {
+        // Historical mode: use date range
+        cutoffTime = new Date(dateRange.start).getTime()
+        now = new Date(dateRange.end).getTime()
+      } else {
+        // Real-time mode: use detection window
+        DETECTION_WINDOW_MS = getDetectionWindow(mapStore)
+        cutoffTime = Date.now() - DETECTION_WINDOW_MS
+        now = Date.now()
+      }
+
+      console.log('[MapPins] Time window settings:', {
+        dateRange: dateRange ? { start: dateRange.start, end: dateRange.end } : null,
+        windowMs: DETECTION_WINDOW_MS,
+        windowHours: DETECTION_WINDOW_MS ? (DETECTION_WINDOW_MS / (60 * 60 * 1000)).toFixed(2) : null,
+        cutoffTime: new Date(cutoffTime).toISOString(),
+        nowISO: new Date(now).toISOString()
+      })
+
       if (rfDetectionsResponse.success && rfDetectionsResponse.data) {
-        // Check if date range filtering is active
-        const dateRange = mapStore.getDateRange()
-        let cutoffTime: number
-        let now: number
-        let DETECTION_WINDOW_MS: number | null = null
-        
-        if (dateRange) {
-          // Historical mode: use date range
-          cutoffTime = new Date(dateRange.start).getTime()
-          now = new Date(dateRange.end).getTime()
-        } else {
-          // Real-time mode: use detection window
-          DETECTION_WINDOW_MS = getDetectionWindow(mapStore)
-          cutoffTime = Date.now() - DETECTION_WINDOW_MS
-          now = Date.now()
-        }
-        
         console.log('[MapPins] RF Detections filter:', {
-          dateRange: dateRange ? { start: dateRange.start, end: dateRange.end } : null,
-          windowMs: DETECTION_WINDOW_MS,
-          windowHours: DETECTION_WINDOW_MS ? (DETECTION_WINDOW_MS / (60 * 60 * 1000)).toFixed(2) : null,
-          cutoffTime: new Date(cutoffTime).toISOString(),
-          cutoffTimeMs: cutoffTime,
-          now: now,
-          nowISO: new Date(now).toISOString(),
           totalDetections: rfDetectionsResponse.data.length
         })
         
@@ -893,16 +902,22 @@ export function useMapPins() {
         rfDetectionsResponse.data.forEach((detection: RFDetection) => {
           const detectionTimeMs = detection.time ? new Date(detection.time).getTime() : NaN
           
+          // STRICT FILTER: invalid timestamps must be skipped immediately
+          if (!Number.isFinite(detectionTimeMs)) {
+            skippedCount++
+            return
+          }
+
           // Filter detections based on date range or time window
           if (dateRange) {
             // Historical mode: check if within date range
-            if (Number.isFinite(detectionTimeMs) && (detectionTimeMs < cutoffTime || detectionTimeMs > now)) {
+            if (detectionTimeMs < cutoffTime || detectionTimeMs > now) {
               filteredCount++
               return
             }
           } else {
             // Real-time mode: filter out detections OLDER than the cutoff
-            if (Number.isFinite(detectionTimeMs) && detectionTimeMs < cutoffTime) {
+            if (detectionTimeMs < cutoffTime) {
               filteredCount++
               return
             }
@@ -942,6 +957,13 @@ export function useMapPins() {
             const existing = detectionsBySystemId.get(systemId) || []
             existing.push(checkpoint)
             detectionsBySystemId.set(systemId, existing)
+
+            // Track active systems for operator visibility
+            // Only consider systems active if they have a positive detection status
+            // Strictly check for active status (true, 1, "1") using helper
+            if (isActiveDetection(detection.detection_status)) {
+              activeSystemIds.add(systemId)
+            }
           }
         })
         
@@ -999,34 +1021,71 @@ export function useMapPins() {
         })
       }
 
-      // Convert operator positions to map pins (with near-duplicate de-duplication)
+      // Convert operator positions to map pins (optimized: only show active operators)
       if (operatorPositionsResponse.success && operatorPositionsResponse.data) {
-        // First, map raw operator positions to tentative pins
-        const rawOperatorPins = operatorPositionsResponse.data.reduce<MapPin[]>((acc, position: OperatorPosition) => {
+        // Track latest operator position per active system
+        // Use a Map to store the latest position for each system_id
+        const latestActiveOperators = new Map<string, OperatorPosition>()
+
+        operatorPositionsResponse.data.forEach((position: OperatorPosition) => {
+          let systemId: string | null = null
+
+          // Try to link via system_id
+          if (position.system_id !== null && position.system_id !== undefined) {
+            systemId = String(position.system_id)
+          } 
+          // Fallback: Try to link via drone_id if system_id is missing
+          else if (position.drone_id !== null && position.drone_id !== undefined) {
+            // Find active detection for this drone to get the system_id
+            if (rfDetectionsResponse.success && rfDetectionsResponse.data) {
+              const activeDetection = rfDetectionsResponse.data.find(d => 
+                d.drone_id === position.drone_id && 
+                d.system_id && 
+                activeSystemIds.has(String(d.system_id))
+              )
+              
+              if (activeDetection) {
+                systemId = String(activeDetection.system_id)
+              }
+            }
+          }
+
+          if (systemId && activeSystemIds.has(systemId)) {
+            const existing = latestActiveOperators.get(systemId)
+            
+            // Keep the latest position
+            // If no existing position or current position is newer
+            if (!existing || toTimeValue(position.time) > toTimeValue(existing.time)) {
+              // Enhance position with system_id if it was inferred
+              if (!position.system_id) {
+                position.system_id = systemId
+              }
+              latestActiveOperators.set(systemId, position)
+            }
+          }
+        })
+
+        // Generate pins for the latest active operators
+        latestActiveOperators.forEach((position) => {
           const lat = parseFloat(position.latitude.toString())
           const lng = parseFloat(position.longitude.toString())
 
           if (!isValidCoordinate(lat, lng)) {
-            return acc
+            return
           }
 
-          const detectorKey = position.system_id !== null && position.system_id !== undefined
-            ? String(position.system_id)
-            : (position.drone_id !== null && position.drone_id !== undefined ? String(position.drone_id) : null)
-          const detectorMeta = detectorKey
-            ? (systemIdToDetector.get(detectorKey) ?? null)
-            : null
+          const detectorKey = String(position.system_id)
+          const detectorMeta = systemIdToDetector.get(detectorKey) ?? null
 
           const label = (() => {
             const base = position.drone_id !== null && position.drone_id !== undefined
               ? `Operator - Drone ${position.drone_id}`
               : 'Operator'
             if (detectorMeta?.name) return `${base} • ${detectorMeta.name}`
-            if (position.system_id !== null && position.system_id !== undefined) return `${base} • system:${position.system_id}`
-            return `${base} (unassigned)`
+            return `${base} • system:${position.system_id}`
           })()
 
-          acc.push({
+          pins.push({
             id: `operator-pos-${position.id}`,
             lat,
             lng,
@@ -1048,84 +1107,12 @@ export function useMapPins() {
             },
             timestamp: position.time
           })
-
-          return acc
-        }, [])
-
-        // De-duplicate operators with same/nearly same location and same key modifiers
-        const MERGE_DISTANCE_KM = 0.02 // ~20 meters
-        const mergedOperatorPins: MapPin[] = []
-
-        // Helper: try to find an existing cluster this pin belongs to
-        const findClusterIndex = (pin: MapPin): number => {
-          for (let i = 0; i < mergedOperatorPins.length; i++) {
-            const cluster = mergedOperatorPins[i]
-            const sameDrone =
-              (cluster.data?.drone_id ?? null) === (pin.data?.drone_id ?? null)
-            const sameSystem =
-              (cluster.data?.system_id ?? null) === (pin.data?.system_id ?? null)
-
-            if (sameDrone && sameSystem) {
-              const distanceKm = haversineDistanceKm(
-                { lat: cluster.lat, lng: cluster.lng, timestamp: cluster.timestamp! },
-                { lat: pin.lat, lng: pin.lng, timestamp: pin.timestamp! }
-              )
-              if (distanceKm <= MERGE_DISTANCE_KM) {
-                return i
-              }
-            }
-          }
-          return -1
-        }
-
-        rawOperatorPins.forEach((pin) => {
-          const idx = findClusterIndex(pin)
-          if (idx === -1) {
-            // Create new cluster baseline with aggregation meta
-            mergedOperatorPins.push({
-              ...pin,
-              // Track aggregation count and sample ids inside data
-              data: {
-                ...pin.data,
-                _aggregate_count: 1,
-                _ids: [pin.id]
-              }
-            })
-          } else {
-            const cluster = mergedOperatorPins[idx]
-            const count = (cluster.data?._aggregate_count as number) ?? 1
-            const ids = (cluster.data?._ids as string[]) ?? [cluster.id]
-
-            // Update centroid minimally by simple averaging for stability
-            const newCount = count + 1
-            const newLat = (cluster.lat * count + pin.lat) / newCount
-            const newLng = (cluster.lng * count + pin.lng) / newCount
-
-            mergedOperatorPins[idx] = {
-              ...cluster,
-              lat: newLat,
-              lng: newLng,
-              title: count >= 1
-                ? `Operators (${newCount})`
-                : cluster.title,
-              description: cluster.data?.drone_id
-                ? `Operators near drone ${cluster.data.drone_id}`
-                : 'Operators (aggregated)',
-              data: {
-                ...cluster.data,
-                _aggregate_count: newCount,
-                _ids: [...ids, pin.id]
-              }
-            }
-          }
         })
-
-        pins.push(...mergedOperatorPins)
       }
 
       if (gpsUnitPositionsResponse.success && gpsUnitPositionsResponse.data) {
         const seenSensorKeys = new Set<string>()
-        const gpsPins = gpsUnitPositionsResponse.data.reduce<MapPin[]>((acc, unit: GpsUnitPosition) => {
+        const gpsPins = gpsUnitPositionsResponse.data.reduce((acc: MapPin[], unit: GpsUnitPosition) => {
           const lat = extractCoordinate(unit, ['latitude', 'lat', 'latitude_deg', 'gps_lat', 'geo_lat', 'y'])
           const lng = extractCoordinate(unit, ['longitude', 'lng', 'lon', 'longitude_deg', 'gps_lng', 'gps_lon', 'geo_lon', 'x'])
           
@@ -1177,26 +1164,29 @@ export function useMapPins() {
           // Check for recent active detections (within time window)
           // Note: status can be boolean true or number 1 (both mean active)
           const hasActiveDetections = sensorDetections.some(d => {
-            // Handle both boolean true and number 1 as active status
-            // Type assertion needed because status might be 1 (number) from DB
-            const statusValue = d.status as boolean | number
-            const isActive = statusValue === true || statusValue === 1
-            if (!isActive) return false
+            // Strictly check for active status (true, 1, "1") using helper
+            if (!isActiveDetection(d.status)) return false
+            
             if (!d.timestamp) return false
-            const detectionTime = new Date(d.timestamp).getTime()
-            const DETECTION_WINDOW_MS = getDetectionWindow(mapStore)
-            const cutoffTime = Date.now() - DETECTION_WINDOW_MS
-            return detectionTime >= cutoffTime
+            
+            const t = new Date(d.timestamp).getTime()
+            if (!Number.isFinite(t)) return false // Ensure valid timestamp
+            
+            if (dateRange) {
+              return t >= cutoffTime && t <= now
+            } else {
+              return t >= cutoffTime
+            }
           })
           const finalStatus = hasActiveDetections ? 'warning' : status
           const finalPriority = hasActiveDetections ? 'high' : 'medium'
           
           // Log sensor detection details for debugging
           if (sensorDetections.length > 0) {
-            const dateRange = mapStore.getDateRange()
-            const DETECTION_WINDOW_MS = dateRange ? null : getDetectionWindow(mapStore)
-            const cutoffTime = dateRange ? new Date(dateRange.start).getTime() : (DETECTION_WINDOW_MS ? Date.now() - DETECTION_WINDOW_MS : null)
-            const now = dateRange ? new Date(dateRange.end).getTime() : Date.now()
+            // const dateRange = mapStore.getDateRange()
+            // const DETECTION_WINDOW_MS = dateRange ? null : getDetectionWindow(mapStore)
+            // const cutoffTime = dateRange ? new Date(dateRange.start).getTime() : (DETECTION_WINDOW_MS ? Date.now() - DETECTION_WINDOW_MS : null)
+            // const now = dateRange ? new Date(dateRange.end).getTime() : Date.now()
             
             console.log(`[MapPins] Sensor ${unit.system_id} detections:`, {
               systemId: unit.system_id,
@@ -1205,27 +1195,35 @@ export function useMapPins() {
               detections: sensorDetections.map(d => ({
                 id: d.id,
                 timestamp: d.timestamp,
-                timestampISO: d.timestamp ? new Date(d.timestamp).toISOString() : null,
-                timestampMs: d.timestamp ? new Date(d.timestamp).getTime() : null,
-                ageMs: d.timestamp ? (now - new Date(d.timestamp).getTime()) : null,
-                ageHours: d.timestamp ? ((now - new Date(d.timestamp).getTime()) / (60 * 60 * 1000)).toFixed(2) : null,
+                // timestampISO: d.timestamp ? new Date(d.timestamp).toISOString() : null,
+                // timestampMs: d.timestamp ? new Date(d.timestamp).getTime() : null,
+                // ageMs: d.timestamp ? (now - new Date(d.timestamp).getTime()) : null,
+                // ageHours: d.timestamp ? ((now - new Date(d.timestamp).getTime()) / (60 * 60 * 1000)).toFixed(2) : null,
                 status: d.status,
-                statusType: typeof d.status,
-                cutoffTime: cutoffTime ? new Date(cutoffTime).toISOString() : null,
-                isRecent: d.timestamp && cutoffTime ? new Date(d.timestamp).getTime() >= cutoffTime : false,
+                // statusType: typeof d.status,
+                // cutoffTime: cutoffTime ? new Date(cutoffTime).toISOString() : null,
+                // isRecent: d.timestamp && cutoffTime ? new Date(d.timestamp).getTime() >= cutoffTime : false,
                 passesFilter: (() => {
-                  const statusValue = d.status as boolean | number
-                  const isActive = statusValue === true || statusValue === 1
+                  const statusValue = d.status as unknown
+                  const isActive = 
+                    statusValue === true || 
+                    statusValue === 1 || 
+                    String(statusValue) === '1' || 
+                    String(statusValue).toLowerCase() === 'true'
+                  
+                  if (!isActive) return false
+                  if (!d.timestamp) return false
+                  const t = new Date(d.timestamp).getTime()
                   if (dateRange) {
-                    return d.timestamp && isActive ? isWithinDateRange(d.timestamp, mapStore) && isActive : false
+                    return t >= cutoffTime && t <= now
                   } else {
-                    return d.timestamp && isActive && cutoffTime ? new Date(d.timestamp).getTime() >= cutoffTime && isActive : false
+                    return t >= cutoffTime
                   }
                 })()
               })),
               hasActiveDetections,
               windowMs: DETECTION_WINDOW_MS,
-              windowHours: DETECTION_WINDOW_MS ? (DETECTION_WINDOW_MS / (60 * 60 * 1000)).toFixed(2) : null
+              // windowHours: DETECTION_WINDOW_MS ? (DETECTION_WINDOW_MS / (60 * 60 * 1000)).toFixed(2) : null
             })
           }
 
@@ -1237,7 +1235,7 @@ export function useMapPins() {
             detection_range_km: 1.5, // 1.5km detection range
             // Attach RF detections to sensor pin
             detections: sensorDetections.length > 0 ? sensorDetections : undefined,
-            hasRFDetections: sensorDetections.length > 0
+            hasRFDetections: hasActiveDetections
           }
           
           // Log what we're attaching to the sensor pin
@@ -1702,8 +1700,59 @@ export function useMapPins() {
         dronePositions: dataStore.dronePositionsList.value,
         rfDetections: dataStore.rfDetectionsList.value,
         drones: dataStore.dronesList.value,
+        operatorPositions: dataStore.operatorPositionsList.value,
         gpsUnits: Array.from(sensorsCache.value.values())
       }
+
+      // Calculate time window for filtering active systems
+      const dateRange = mapStore.getDateRange()
+      let cutoffTime: number
+      let now: number
+      
+      if (dateRange) {
+        cutoffTime = new Date(dateRange.start).getTime()
+        now = new Date(dateRange.end).getTime()
+      } else {
+        const DETECTION_WINDOW_MS = getDetectionWindow(mapStore)
+        cutoffTime = Date.now() - DETECTION_WINDOW_MS
+        now = Date.now()
+      }
+
+      // Identify active systems based on recent detections
+      const activeSystemIds = new Set<string>()
+      storeData.rfDetections.forEach(d => {
+        const t = d.time ? new Date(d.time).getTime() : NaN
+        
+        // Filter by time window - strict check
+        if (!Number.isFinite(t)) return
+
+        if (dateRange) {
+          if (t < cutoffTime || t > now) return
+        } else {
+          if (t < cutoffTime) return
+        }
+        
+        // Check for active status
+        if (d.system_id && isActiveDetection(d.detection_status)) {
+          activeSystemIds.add(String(d.system_id))
+        }
+      })
+
+      // Build detector lookup for operator labels
+      const systemIdToDetector = new Map<string, { name?: string | null; unit_id?: number | null }>()
+      storeData.gpsUnits.forEach((unit: GpsUnitPosition) => {
+        if (typeof (unit as any)?.system_id === 'string') {
+          systemIdToDetector.set((unit as any).system_id as string, {
+            name: (unit as any).name ?? null,
+            unit_id: (unit as any).unit_id ?? null
+          })
+        } else if (typeof (unit as any)?.unit_id !== 'undefined') {
+          systemIdToDetector.set(String((unit as any).unit_id), {
+            name: (unit as any).name ?? null,
+            unit_id: (unit as any).unit_id ?? null
+          })
+        }
+      })
 
       // Rebuild pins from current store data (much faster than full API call)
       // This approach minimizes blinking by using already-updated store data
@@ -1772,28 +1821,128 @@ export function useMapPins() {
         })
       })
 
+      // Process operator positions (optimized: only show active operators)
+      if (storeData.operatorPositions && storeData.operatorPositions.length > 0) {
+        const latestActiveOperators = new Map<string, OperatorPosition>()
+
+        storeData.operatorPositions.forEach((position: OperatorPosition) => {
+          let systemId: string | null = null
+
+          // Try to link via system_id
+          if (position.system_id !== null && position.system_id !== undefined) {
+            systemId = String(position.system_id)
+          } 
+          // Fallback: Try to link via drone_id if system_id is missing
+          else if (position.drone_id !== null && position.drone_id !== undefined) {
+            // Find active detection for this drone to get the system_id
+            const activeDetection = storeData.rfDetections.find(d => 
+              d.drone_id === position.drone_id && 
+              d.system_id && 
+              activeSystemIds.has(String(d.system_id))
+            )
+            
+            if (activeDetection) {
+              systemId = String(activeDetection.system_id)
+            }
+          }
+
+          if (systemId && activeSystemIds.has(systemId)) {
+            const existing = latestActiveOperators.get(systemId)
+            if (!existing || toTimeValue(position.time) > toTimeValue(existing.time)) {
+              // Enhance position with system_id if it was inferred
+              if (!position.system_id) {
+                position.system_id = systemId
+              }
+              latestActiveOperators.set(systemId, position)
+            }
+          }
+        })
+
+        latestActiveOperators.forEach((position) => {
+          const lat = parseFloat(position.latitude.toString())
+          const lng = parseFloat(position.longitude.toString())
+
+          if (!isValidCoordinate(lat, lng)) return
+
+          const detectorKey = String(position.system_id)
+          const detectorMeta = systemIdToDetector.get(detectorKey) ?? null
+
+          const label = (() => {
+            const base = position.drone_id !== null && position.drone_id !== undefined
+              ? `Operator - Drone ${position.drone_id}`
+              : 'Operator'
+            if (detectorMeta?.name) return `${base} • ${detectorMeta.name}`
+            return `${base} • system:${position.system_id}`
+          })()
+
+          pins.push({
+            id: `operator-pos-${position.id}`,
+            lat,
+            lng,
+            title: label,
+            description: (() => {
+              const parts: string[] = []
+              if (position.drone_id !== null && position.drone_id !== undefined) parts.push(`Drone ${position.drone_id}`)
+              if (position.system_id !== null && position.system_id !== undefined) parts.push(`System ${position.system_id}`)
+              if (detectorMeta?.name) parts.push(`Detector: ${detectorMeta.name}`)
+              return parts.length ? `Operator linked to ${parts.join(' • ')}` : 'Operator'
+            })(),
+            type: 'friendly',
+            status: 'active',
+            priority: 'low',
+            data: {
+              drone_id: position.drone_id,
+              system_id: position.system_id ?? null,
+              timestamp: position.time
+            },
+            timestamp: position.time
+          })
+        })
+      }
+
       // Process GPS units (sensors) from cache
       storeData.gpsUnits.forEach((unit: GpsUnitPosition) => {
         const lat = parseCoordinate((unit as any)?.gps_lat) ?? parseCoordinate(unit.latitude)
         const lng = parseCoordinate((unit as any)?.gps_lon) ?? parseCoordinate(unit.longitude)
 
-        if (!isValidCoordinate(lat, lng)) return
+        if (lat === null || lng === null || !isValidCoordinate(lat, lng)) return
 
         const systemId = unit.system_id ?? unit.unit_id
         const unitKey = String(systemId ?? unit.id ?? 'unknown')
         
         // Get detections for this sensor from store
-        const sensorDetections = storeData.rfDetections
-          .filter((d: RFDetection) => String(d.system_id ?? '') === String(systemId ?? ''))
-          .map((d: RFDetection) => ({
-            id: d.id,
-            timestamp: d.time,
-            frequency: d.frequency,
-            signalStrength: d.signal_strength,
-            status: d.detection_status,
-            systemId: d.system_id ?? null,
-            droneId: d.drone_id ?? null
-          }))
+        // Ensure strictly matching system_id to avoid cross-contamination
+        const validSystemId = systemId ? String(systemId) : null
+        const sensorDetections: DetectionCheckpoint[] = validSystemId
+          ? storeData.rfDetections
+            .filter((d: RFDetection) => d.system_id && String(d.system_id) === validSystemId)
+            .map((d: RFDetection) => ({
+              id: d.id,
+              timestamp: d.time,
+              frequency: d.frequency,
+              signalStrength: d.signal_strength,
+              status: d.detection_status,
+              systemId: d.system_id ?? null,
+              droneId: d.drone_id ?? null
+            }))
+          : []
+
+        // Check if any detections are active within the current time window
+        const hasActiveDetections = sensorDetections.some(d => {
+          // Strictly handle active status: true, 1, or "1"
+          if (!isActiveDetection(d.status)) return false
+          
+          if (!d.timestamp) return false
+          
+          const t = new Date(d.timestamp).getTime()
+          if (!Number.isFinite(t)) return false // Ensure valid timestamp
+          
+          if (dateRange) {
+            return t >= cutoffTime && t <= now
+          } else {
+            return t >= cutoffTime
+          }
+        })
 
         pins.push({
           id: `gps-unit-${unitKey}`,
@@ -1801,15 +1950,15 @@ export function useMapPins() {
           lng: lng!,
           title: (unit as any)?.unit_name || unit.name || `RF Receiver ${unitKey}`,
           type: 'sensor',
-          status: sensorDetections.length > 0 ? 'warning' : 'active',
-          priority: sensorDetections.length > 0 ? 'high' : 'medium',
+          status: hasActiveDetections ? 'warning' : 'active',
+          priority: hasActiveDetections ? 'high' : 'medium',
           data: {
             unit_id: unit.unit_id ?? null,
             system_id: systemId ? String(systemId) : null,
             status: unit.status,
             timestamp: unit.time ?? null,
             detections: sensorDetections.length > 0 ? sensorDetections : undefined,
-            hasRFDetections: sensorDetections.length > 0
+            hasRFDetections: hasActiveDetections
           },
           timestamp: unit.time ?? new Date().toISOString()
         })
