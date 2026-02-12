@@ -89,8 +89,12 @@
                 :detections="selectedSensorDetections"
                 :detections-loading="detectionsLoading"
                 :detections-error="detectionsError"
+                :merged-detections="selectedSensorMergedDetections"
+                :merged-detections-loading="mergedDetectionsLoading"
+                :merged-detections-error="mergedDetectionsError"
                 @close="closeDetails"
                 @show-detection="handleShowDetection"
+                @show-merged-detection="handleShowMergedDetection"
               />
             </transition>
           </div>
@@ -130,6 +134,8 @@ import { databaseApi } from '@/services/api'
 const router = useRouter()
 const route = useRoute()
 import { useDetections } from '@/composables/useDetections'
+import { useMergedDetections } from '@/composables/useMergedDetections'
+import type { UnifiedDetectionRow } from '@/types/drones'
 
 useAuth()
 const { hasPermission } = usePermissions()
@@ -163,14 +169,22 @@ const filteredCount = computed(() => filteredSensors.value.length)
 const dataStore = useDataStore()
 const { loading: dataLoading, errors: dataErrors } = storeToRefs(dataStore)
 
-// Fetch detections for the sensor details panel
+// Fetch detections for the sensor details panel (legacy RF-only list)
 const { detections, isLoading: detectionsIsLoading, error: detectionsErr } = useDetections({
-  refreshInterval: 10000, // Refresh every 10 seconds
+  refreshInterval: 10000,
+  enabled: true
+})
+
+// Merged detections (position + RF, grouped like Detections page) for panel
+const { mergedDetections, isLoading: mergedLoading, error: mergedErr } = useMergedDetections({
+  refreshInterval: 10000,
   enabled: true
 })
 
 const detectionsLoading = computed(() => detectionsIsLoading.value)
 const detectionsError = computed(() => detectionsErr.value ?? null)
+const mergedDetectionsLoading = computed(() => mergedLoading.value)
+const mergedDetectionsError = computed(() => mergedErr.value ?? null)
 
 const selectedSensorId = ref<string | null>(null)
 const panelVisible = ref(false)
@@ -186,7 +200,6 @@ const selectedSensorDetections = computed<DetectionItem[]>(() => {
   const sensor = selectedSensor.value
   if (!sensor || !sensor.source) return []
   
-  // Try to match by system_id first
   const systemId = (sensor.source as any)?.system_id
   if (systemId) {
     const targetSystemId = String(systemId)
@@ -195,7 +208,6 @@ const selectedSensorDetections = computed<DetectionItem[]>(() => {
     )
   }
   
-  // Fallback: try to match by sensor_id or unit_id
   const sensorId = (sensor.source as any)?.unit_id ?? (sensor.source as any)?.id
   if (sensorId) {
     const targetSensorId = String(sensorId)
@@ -205,6 +217,23 @@ const selectedSensorDetections = computed<DetectionItem[]>(() => {
   }
   
   return []
+})
+
+// Merged rows for this sensor (position + RF, same grouping as Detections page)
+const selectedSensorMergedDetections = computed<UnifiedDetectionRow[]>(() => {
+  const sensor = selectedSensor.value
+  if (!sensor || !sensor.source) {
+    return []
+  }
+  const source = sensor.source as any
+  const systemId = source?.system_id ?? source?.systemId ?? source?.unit_id ?? sensor?.id
+  if (systemId == null || systemId === '') {
+    return []
+  }
+  const target = String(systemId)
+  return mergedDetections.value.filter(
+    row => (row.systemId ?? '') === target
+  )
 })
 
 const preselectSensorFromRoute = () => {
@@ -349,29 +378,25 @@ const closeDetails = () => {
 }
 
 const handleShowDetection = (detection: DetectionItem, timeWindowMinutes?: number) => {
-  // Navigate to detections page with the detection ID, sensor filter, and time window
   const source = selectedSensor.value?.source as any
-  const systemId = source?.system_id
+  const systemId = source?.system_id ?? source?.systemId
   const sensorId = source?.unit_id ?? source?.id
-  
-  const query: Record<string, string> = {
-    detectionId: String(detection.id)
-  }
-  if (systemId) {
-    query.systemId = String(systemId)
-  } else if (sensorId) {
-    query.sensorId = String(sensorId)
-  }
-  
-  // Add time window if provided
-  if (timeWindowMinutes !== undefined && timeWindowMinutes > 0) {
-    query.timeWindow = String(timeWindowMinutes)
-  }
-  
-  router.push({
-    path: '/detections',
-    query
-  })
+  const query: Record<string, string> = { detectionId: String(detection.id) }
+  if (detection.droneId) query.droneId = String(detection.droneId)
+  if (systemId) query.systemId = String(systemId)
+  else if (sensorId) query.sensorId = String(sensorId)
+  if (timeWindowMinutes !== undefined && timeWindowMinutes > 0) query.timeWindow = String(timeWindowMinutes)
+  query.type = 'rf' // legacy list is RF-only
+  router.push({ path: '/detections', query })
+}
+
+const handleShowMergedDetection = (row: UnifiedDetectionRow, timeWindowMinutes?: number) => {
+  const query: Record<string, string> = { detectionId: String(row.id) }
+  if (row.drone?.id != null) query.droneId = String(row.drone.id)
+  if (row.systemId) query.systemId = String(row.systemId)
+  if (timeWindowMinutes !== undefined && timeWindowMinutes > 0) query.timeWindow = String(timeWindowMinutes)
+  if (row.source === 'position' || row.source === 'rf') query.type = row.source
+  router.push({ path: '/detections', query })
 }
 
 const tableContainerClass = computed(() => {

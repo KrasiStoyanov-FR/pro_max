@@ -126,7 +126,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref, watch, onMounted } from 'vue'
 import { useAuth } from '@/composables/useAuth'
 import { usePermissions } from '@/composables/usePermissions'
 import { useMergedDetections } from '@/composables/useMergedDetections'
@@ -138,7 +138,9 @@ import ReportModal from '@/views/drones/components/ReportModal.vue'
 import { PhFileText } from '@phosphor-icons/vue'
 import type { DroneItem, DroneSortField, UnifiedDetectionRow } from '@/types/drones'
 import type { DetectionTypeFilter } from '@/views/drones/components/DronesFilters.vue'
+import { useRoute } from 'vue-router'
 
+const route = useRoute()
 useAuth()
 const { hasPermission } = usePermissions()
 
@@ -214,6 +216,9 @@ const availableSensors = computed(() => {
   mergedDetections.value.forEach(row => {
     if (row.systemId) ids.add(String(row.systemId))
   })
+  const q = route.query
+  if (q.systemId && String(q.systemId).trim()) ids.add(String(q.systemId).trim())
+  if (q.sensorId && String(q.sensorId).trim()) ids.add(String(q.sensorId).trim())
   return Array.from(ids).sort()
 })
 
@@ -386,4 +391,63 @@ const closeReportModal = () => {
 }
 
 const handleReportGenerated = () => {}
+
+function applyRouteQueryToFilters() {
+  const { systemId, sensorId, timeWindow, type, status, search } = route.query
+
+  if (systemId) {
+    filterSystemId.value = String(systemId)
+  } else if (sensorId) {
+    filterSystemId.value = String(sensorId)
+  }
+
+  if (timeWindow) {
+    const min = parseInt(String(timeWindow), 10)
+    if (!isNaN(min) && min > 0) {
+      filterTimeWindow.value = min
+    }
+  }
+
+  if (type === 'position' || type === 'rf') {
+    filterType.value = type
+  }
+  if (status === 'active' || status === 'inactive') {
+    filterStatus.value = status
+  }
+  if (typeof search === 'string' && search.trim()) {
+    filterSearch.value = search.trim()
+  }
+}
+
+onMounted(() => {
+  applyRouteQueryToFilters()
+})
+
+watch(
+  () => route.query,
+  () => {
+    applyRouteQueryToFilters()
+  },
+  { deep: true }
+)
+
+// Watch for data changes to handle auto-selection from route query
+watch(filteredRows, (rows) => {
+  const { droneId, detectionId } = route.query
+  if ((!droneId && !detectionId) || panelVisible.value || rows.length === 0) return
+
+  const targetRow = rows.find(row => {
+    // Match by droneId if available (preferred for grouped rows)
+    if (droneId && row.drone?.id === Number(droneId)) return true
+    
+    // Fallback to detectionId (for specific RF detections or if grouping logic matches)
+    if (detectionId && String(row.id) === String(detectionId)) return true
+    
+    return false
+  })
+
+  if (targetRow) {
+    handleShowDetails(targetRow)
+  }
+}, { immediate: true })
 </script>

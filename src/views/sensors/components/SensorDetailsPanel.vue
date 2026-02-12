@@ -142,75 +142,86 @@
               </option>
             </select>
           </div>
-          <p v-if="detectionsToDisplay.length > 0 || (props.detections && props.detections.length > 0)" class="text-xs text-neutral-500">
-            Showing {{ detectionsToDisplay.length }} {{ detectionsToDisplay.length === 1 ? 'detection' : 'detections' }}
-            <span v-if="totalDetectionsInWindow > detectionsToDisplay.length">
-              (of {{ totalDetectionsInWindow }} within selected time window)
-            </span>
-            <span v-else-if="totalDetectionsInWindow > 0">
-              within selected time window
-            </span>
+          <p v-if="useMergedList ? mergedRowsInWindow.length > 0 : detectionsToDisplay.length > 0" class="text-xs text-neutral-500">
+            Showing {{ useMergedList ? mergedRowsInWindow.length : detectionsToDisplay.length }} {{ (useMergedList ? mergedRowsInWindow.length : detectionsToDisplay.length) === 1 ? 'detection' : 'detections' }}
+            <span v-if="useMergedList && totalMergedInWindow > mergedRowsInWindow.length">(of {{ totalMergedInWindow }} within window)</span>
+            <span v-else-if="!useMergedList && totalDetectionsInWindow > detectionsToDisplay.length">(of {{ totalDetectionsInWindow }} within window)</span>
           </p>
         </div>
-        <div v-if="detectionsLoading" class="mt-3 rounded-lg border border-white/5 bg-white/5 px-3 py-2 text-sm text-neutral-300">
+        <div v-if="useMergedList && mergedDetectionsLoading" class="mt-3 rounded-lg border border-white/5 bg-white/5 px-3 py-2 text-sm text-neutral-300">
           Loading detections…
         </div>
-        <div
-          v-else-if="detectionsError"
-          class="mt-3 rounded-lg border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-sm text-rose-100"
-        >
-          {{ detectionsError }}
+        <div v-else-if="useMergedList && mergedDetectionsError" class="mt-3 rounded-lg border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-sm text-rose-100">
+          {{ mergedDetectionsError }}
         </div>
-        <ul v-else-if="detectionsToDisplay.length" class="mt-3 space-y-2">
-          <template v-for="(detection, index) in detectionsToDisplay" :key="detection.id">
-            <!-- Show gap indicator if there's a significant time gap from previous detection -->
-            <li
-              v-if="index > 0 && hasSignificantGap(detection, detectionsToDisplay[index - 1])"
-              class="flex items-center gap-2 py-1 text-xs text-amber-400/70"
-            >
-              <div class="flex-1 border-t border-amber-500/30"></div>
-              <span class="font-medium">Gap: {{ formatTimeGap(detection.lastSeen, detectionsToDisplay[index - 1].lastSeen) }}</span>
-              <div class="flex-1 border-t border-amber-500/30"></div>
-            </li>
-            <li
-              class="group rounded-lg border border-white/5 bg-white/5 px-3 py-2 text-sm text-neutral-200 transition hover:border-white/20 hover:bg-white/10 cursor-pointer"
-              @click="handleDetectionClick(detection)"
-            >
+        <ul v-else-if="useMergedList && mergedRowsInWindow.length" class="mt-3 space-y-2">
+          <li
+            v-for="row in mergedRowsInWindow"
+            :key="row.rowKey"
+            class="rounded-lg border border-white/5 bg-white/5 px-3 py-2 text-sm text-neutral-200 transition hover:border-white/20 hover:bg-white/10"
+          >
             <div class="flex items-center justify-between text-xs">
               <div class="flex flex-col">
-                <span class="font-medium text-white">{{ formatRelativeTime(detection.lastSeen) }}</span>
-                <span class="text-neutral-500 text-[10px]">{{ formatAbsoluteTime(detection.lastSeen) }}</span>
+                <span class="font-medium text-white">{{ formatRelativeTime(row.time) }}</span>
+                <span class="text-neutral-500 text-[10px]">{{ formatAbsoluteTime(row.time) }}</span>
               </div>
-              <div class="flex items-center gap-2">
-                <span
-                  class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold uppercase tracking-wide"
-                  :class="detectionStatusClasses(detection.status)"
-                >
-                  {{ detection.status }}
-                </span>
-                <span
-                  class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold uppercase tracking-wide"
-                  :class="detectionTypeClasses(detection.type)"
-                >
-                  {{ detection.type }}
-                </span>
-              </div>
-            </div>
-            <div class="mt-1.5 flex items-center gap-4 text-xs text-neutral-300">
-              <span v-if="detection.signalStrength !== null && detection.signalStrength !== undefined">
-                Signal: <span class="font-semibold text-white">{{ detection.signalStrength }} dBm</span>
-              </span>
-              <span v-if="detection.distanceMeters !== null && detection.distanceMeters !== undefined">
-                Distance: <span class="font-semibold text-white">{{ formatDistance(detection.distanceMeters) }}</span>
-              </span>
-              <span v-if="hasValidFrequency(detection.frequency)">
-                Freq: <span class="font-semibold text-white">{{ formatFrequency(detection.frequency) }}</span>
+              <span
+                class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold uppercase tracking-wide"
+                :class="row.source === 'position' ? 'bg-emerald-500/20 text-emerald-200 border border-emerald-500/40' : 'bg-amber-500/20 text-amber-200 border border-amber-500/40'"
+              >
+                {{ row.source === 'position' ? 'Position' : 'RF' }}
               </span>
             </div>
+            <div class="mt-1.5 text-xs text-neutral-300">
+              {{ row.drone?.displayName ?? 'Unknown target' }}
+            </div>
+            <button
+              type="button"
+              class="mt-2 w-full rounded border border-primary-500/50 bg-primary-500/10 px-2 py-1 text-xs font-medium text-primary-200 transition hover:bg-primary-500/20"
+              @click.stop="handleMergedRowClick(row)"
+            >
+              View details
+            </button>
           </li>
-          </template>
         </ul>
-        <div v-if="detectionsToDisplay.length > 0" class="mt-3">
+        <template v-else-if="!useMergedList">
+          <div v-if="detectionsLoading" class="mt-3 rounded-lg border border-white/5 bg-white/5 px-3 py-2 text-sm text-neutral-300">
+            Loading detections…
+          </div>
+          <div v-else-if="detectionsError" class="mt-3 rounded-lg border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-sm text-rose-100">
+            {{ detectionsError }}
+          </div>
+          <ul v-else-if="detectionsToDisplay.length" class="mt-3 space-y-2">
+            <template v-for="(detection, index) in detectionsToDisplay" :key="detection.id">
+              <li v-if="index > 0 && hasSignificantGap(detection, detectionsToDisplay[index - 1])" class="flex items-center gap-2 py-1 text-xs text-amber-400/70">
+                <div class="flex-1 border-t border-amber-500/30"></div>
+                <span class="font-medium">Gap: {{ formatTimeGap(detection.lastSeen, detectionsToDisplay[index - 1].lastSeen) }}</span>
+                <div class="flex-1 border-t border-amber-500/30"></div>
+              </li>
+              <li
+                class="group rounded-lg border border-white/5 bg-white/5 px-3 py-2 text-sm text-neutral-200 transition hover:border-white/20 hover:bg-white/10 cursor-pointer"
+                @click="handleDetectionClick(detection)"
+              >
+                <div class="flex items-center justify-between text-xs">
+                  <div class="flex flex-col">
+                    <span class="font-medium text-white">{{ formatRelativeTime(detection.lastSeen) }}</span>
+                    <span class="text-neutral-500 text-[10px]">{{ formatAbsoluteTime(detection.lastSeen) }}</span>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold uppercase tracking-wide" :class="detectionStatusClasses(detection.status)">{{ detection.status }}</span>
+                    <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold uppercase tracking-wide" :class="detectionTypeClasses(detection.type)">{{ detection.type }}</span>
+                  </div>
+                </div>
+                <div class="mt-1.5 flex items-center gap-4 text-xs text-neutral-300">
+                  <span v-if="detection.signalStrength != null">Signal: <span class="font-semibold text-white">{{ detection.signalStrength }} dBm</span></span>
+                  <span v-if="detection.distanceMeters != null">Distance: <span class="font-semibold text-white">{{ formatDistance(detection.distanceMeters) }}</span></span>
+                  <span v-if="hasValidFrequency(detection.frequency)">Freq: <span class="font-semibold text-white">{{ formatFrequency(detection.frequency) }}</span></span>
+                </div>
+              </li>
+            </template>
+          </ul>
+        </template>
+        <div v-if="(useMergedList && mergedRowsInWindow.length > 0) || (!useMergedList && detectionsToDisplay.length > 0)" class="mt-3">
           <button
             type="button"
             class="w-full rounded-lg border border-primary-500/50 bg-primary-500/20 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-primary-500/30"
@@ -220,11 +231,8 @@
           </button>
         </div>
         <p v-else class="mt-3 text-sm text-neutral-400">
-          <span v-if="props.detections && props.detections.length > 0">
-            No detections found within the selected time window ({{ formatTimeWindow(selectedTimeWindow) }}).
-            <span class="block mt-1 text-xs text-neutral-500">
-              Try selecting a longer time window to see older detections.
-            </span>
+          <span v-if="useMergedList ? (props.mergedDetections?.length ?? 0) > 0 : (props.detections?.length ?? 0) > 0">
+            No detections within the selected time window ({{ formatTimeWindow(selectedTimeWindow) }}). Try a longer window.
           </span>
           <span v-else>
             No recent detections for this sensor.
@@ -250,6 +258,7 @@ import { useMapStore } from '@/store/map'
 import MapPreview from '@/components/shared/MapPreview.vue'
 import type { SensorItem, SensorStatus } from '@/types/sensors'
 import type { DetectionItem, DetectionStatus, DetectionType } from '@/types/detections'
+import type { UnifiedDetectionRow } from '@/types/drones'
 import { usePermissions } from '@/composables/usePermissions'
 
 const router = useRouter()
@@ -304,15 +313,23 @@ const props = withDefaults(defineProps<{
   detections?: DetectionItem[]
   detectionsLoading?: boolean
   detectionsError?: string | null
+  /** Grouped detections (position + RF) for this sensor, same as Detections page */
+  mergedDetections?: UnifiedDetectionRow[]
+  mergedDetectionsLoading?: boolean
+  mergedDetectionsError?: string | null
 }>(), {
   detections: () => [],
   detectionsLoading: false,
-  detectionsError: null
+  detectionsError: null,
+  mergedDetections: () => [],
+  mergedDetectionsLoading: false,
+  mergedDetectionsError: null
 })
 
 const emit = defineEmits<{
   (e: 'close'): void
   (e: 'show-detection', detection: DetectionItem, timeWindow?: number): void
+  (e: 'show-merged-detection', row: UnifiedDetectionRow, timeWindow?: number): void
 }>()
 
 const { isAdmin } = usePermissions()
@@ -327,7 +344,7 @@ const coordinates = computed(() => {
   }
 })
 
-// Helper to filter and deduplicate detections by time window
+// Helper to filter, deduplicate, and group detections by time window and droneId
 const getFilteredDetections = (detections: DetectionItem[], timeWindowMs: number) => {
   // Calculate cutoff time based on selected time window
   const cutoffTime = Date.now() - timeWindowMs
@@ -338,16 +355,25 @@ const getFilteredDetections = (detections: DetectionItem[], timeWindowMs: number
     return detectionTime >= cutoffTime
   })
   
-  // Deduplicate by detection ID (keep most recent)
-  const seen = new Map<number, DetectionItem>()
+  // Group by droneId (if available) to show only the latest detection per drone
+  // For detections without droneId, group by id (deduplicate)
+  const groups = new Map<string, DetectionItem>()
+  
   filteredByTime.forEach(detection => {
-    const existing = seen.get(detection.id)
+    // Key strategy:
+    // If it has a droneId, use that as the key to group all detections for that drone
+    // If not, use the detection ID (unique per detection)
+    const key = detection.droneId !== null && detection.droneId !== undefined
+      ? `drone:${detection.droneId}`
+      : `det:${detection.id}`
+      
+    const existing = groups.get(key)
     if (!existing || new Date(detection.lastSeen).getTime() > new Date(existing.lastSeen).getTime()) {
-      seen.set(detection.id, detection)
+      groups.set(key, detection)
     }
   })
   
-  return Array.from(seen.values())
+  return Array.from(groups.values())
     .sort((a, b) => new Date(b.lastSeen).getTime() - new Date(a.lastSeen).getTime())
 }
 
@@ -362,9 +388,27 @@ const MAX_DISPLAY_DETECTIONS = 20
 const detectionsToDisplay = computed(() => {
   const detections = props.detections ?? []
   const filtered = getFilteredDetections(detections, selectedTimeWindow.value)
-  // Limit to MAX_DISPLAY_DETECTIONS most recent for display
   return filtered.slice(0, MAX_DISPLAY_DETECTIONS)
 })
+
+// Merged rows (grouped like Detections page) filtered by time window
+const mergedRowsInWindow = computed(() => {
+  const list = props.mergedDetections ?? []
+  const cutoff = Date.now() - selectedTimeWindow.value
+  const filtered = list
+    .filter(row => new Date(row.time).getTime() >= cutoff)
+    .sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime())
+    .slice(0, MAX_DISPLAY_DETECTIONS)
+  return filtered
+})
+
+const totalMergedInWindow = computed(() => {
+  const list = props.mergedDetections ?? []
+  const cutoff = Date.now() - selectedTimeWindow.value
+  return list.filter(row => new Date(row.time).getTime() >= cutoff).length
+})
+
+const useMergedList = computed(() => (props.mergedDetections?.length ?? 0) > 0)
 
 const onTimeWindowChange = () => {
   // Time window is already updated via v-model
@@ -617,9 +661,13 @@ const formatTimeWindow = (ms: number): string => {
 }
 
 const handleDetectionClick = (detection: DetectionItem) => {
-  // Pass the time window so it can be included in navigation
   const timeWindowMinutes = Math.round(selectedTimeWindow.value / (60 * 1000))
   emit('show-detection', detection, timeWindowMinutes)
+}
+
+const handleMergedRowClick = (row: UnifiedDetectionRow) => {
+  const timeWindowMinutes = Math.round(selectedTimeWindow.value / (60 * 1000))
+  emit('show-merged-detection', row, timeWindowMinutes)
 }
 
 const handleViewAllDetections = () => {
