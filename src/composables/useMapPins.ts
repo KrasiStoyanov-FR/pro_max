@@ -772,6 +772,13 @@ export function useMapPins() {
       
       // Initialize active system IDs set to track systems with recent detections
       const activeSystemIds = new Set<string>()
+      
+      // Map to store RF tracks (detections with coordinates) grouped by drone+system
+      const rfTrackMap = new Map<string, { 
+        points: DroneTrajectoryPoint[], 
+        detections: RFDetection[],
+        latestDetection: RFDetection
+      }>()
 
       // Calculate time window settings once for both detections and operators
       const dateRange = mapStore.getDateRange()
@@ -928,6 +935,50 @@ export function useMapPins() {
           }
           registeredCount++
 
+          // Check for coordinates in the RF detection itself
+          const detLat = parseCoordinate((detection as any).latitude) ??
+                         parseCoordinate((detection as any).lat) ??
+                         parseCoordinate((detection as any).latitude_deg) ??
+                         parseCoordinate((detection as any).gps_lat)
+          const detLng = parseCoordinate((detection as any).longitude) ??
+                         parseCoordinate((detection as any).lon) ??
+                         parseCoordinate((detection as any).lng) ??
+                         parseCoordinate((detection as any).longitude_deg) ??
+                         parseCoordinate((detection as any).gps_lon)
+
+          // If valid coordinates exist, add to RF track
+          if (detLat !== null && detLng !== null && isValidCoordinate(detLat, detLng)) {
+            const droneId = detection.drone_id
+            const systemId = detection.system_id
+            
+            // Only create track if we have at least drone_id or system_id to group by
+            // User requested grouping by "same sensor ... and same target"
+            if (droneId !== null && droneId !== undefined && systemId !== null && systemId !== undefined) {
+              const trackKey = `rf-track:${droneId}:${systemId}`
+              const trackEntry = rfTrackMap.get(trackKey) || { points: [], detections: [], latestDetection: detection }
+              
+              // Add point
+              if (detection.time) {
+                trackEntry.points.push({
+                  lat: detLat,
+                  lng: detLng,
+                  timestamp: detection.time
+                })
+              }
+              
+              trackEntry.detections.push(detection)
+              
+              // Update latest detection
+              const currentLatestTime = trackEntry.latestDetection.time ? new Date(trackEntry.latestDetection.time).getTime() : 0
+              const newTime = detection.time ? new Date(detection.time).getTime() : 0
+              if (newTime >= currentLatestTime) {
+                trackEntry.latestDetection = detection
+              }
+              
+              rfTrackMap.set(trackKey, trackEntry)
+            }
+          }
+
           const checkpoint: DetectionCheckpoint = {
             id: detection.id,
             timestamp: detection.time,
@@ -997,9 +1048,80 @@ export function useMapPins() {
           skippedDuplicates: skippedCount,
           registered: registeredCount,
           detectionsBySensor: detectionsBySystemId.size,
+          rfTracksCount: rfTrackMap.size,
           availableSensors: Array.from(systemIdToSensorCoordinates.keys()).length,
           sampleSensors: Array.from(systemIdToSensorCoordinates.keys()).slice(0, 5),
           detectionsBySensorDetails: detectionsBySensorDetails.slice(0, 10) // First 10 sensors
+        })
+
+        // Generate Map Pins for RF Tracks
+        rfTrackMap.forEach((entry, key) => {
+          const { latestDetection, points } = entry
+          const lat = parseCoordinate((latestDetection as any).latitude) ??
+                      parseCoordinate((latestDetection as any).lat) ??
+                      parseCoordinate((latestDetection as any).latitude_deg) ??
+                      parseCoordinate((latestDetection as any).gps_lat)
+          const lng = parseCoordinate((latestDetection as any).longitude) ??
+                      parseCoordinate((latestDetection as any).lon) ??
+                      parseCoordinate((latestDetection as any).lng) ??
+                      parseCoordinate((latestDetection as any).longitude_deg) ??
+                      parseCoordinate((latestDetection as any).gps_lon)
+                      
+          if (lat === null || lng === null) return
+
+          // Sort points by timestamp
+          points.sort((a, b) => {
+            const ta = a.timestamp ? new Date(a.timestamp).getTime() : 0
+            const tb = b.timestamp ? new Date(b.timestamp).getTime() : 0
+            return ta - tb
+          })
+          
+          const filteredPoints = filterTrajectoryPoints(points)
+          
+          // Use ID based on grouping
+          const droneId = latestDetection.drone_id
+          const systemId = latestDetection.system_id
+          const pinId = `rf-track-${droneId}-${systemId}`
+          
+          const droneMeta = droneId ? droneMetadata.get(String(droneId)) : null
+          const displayName = droneMeta?.uas_id 
+            ? `RF Target ${droneMeta.uas_id}` 
+            : `RF Target ${droneId}`
+            
+          const description = `Detected by System ${systemId}`
+
+          pins.push({
+            id: pinId,
+            lat,
+            lng,
+            title: displayName,
+            description,
+            type: 'target', // Use 'target' to distinguish from 'drone' (position) and 'sensor'
+            status: 'active',
+            priority: 'high',
+            timestamp: latestDetection.time || new Date().toISOString(),
+            data: {
+              id: latestDetection.id,
+              drone_id: droneId,
+              system_id: systemId,
+              detection_status: latestDetection.detection_status,
+              frequency: latestDetection.frequency,
+              signal_strength: latestDetection.signal_strength,
+              // Include trajectory data for InfoPanel visualization
+              trajectory: filteredPoints,
+              // Flag to indicate this is a track
+              isTrack: true,
+              detections: entry.detections.map(d => ({
+                id: d.id,
+                timestamp: d.time,
+                frequency: d.frequency,
+                signalStrength: d.signal_strength,
+                status: d.detection_status,
+                systemId: d.system_id,
+                droneId: d.drone_id
+              }))
+            }
+          })
         })
       }
       
@@ -1697,10 +1819,10 @@ export function useMapPins() {
       // Use data from store (already updated by realtime handlers)
       // Only fetch minimal data needed to rebuild affected pins
       const storeData = {
-        dronePositions: dataStore.dronePositionsList.value,
-        rfDetections: dataStore.rfDetectionsList.value,
-        drones: dataStore.dronesList.value,
-        operatorPositions: dataStore.operatorPositionsList.value,
+        dronePositions: dataStore.dronePositionsList,
+        rfDetections: dataStore.rfDetectionsList,
+        drones: dataStore.dronesList,
+        operatorPositions: dataStore.operatorPositionsList,
         gpsUnits: Array.from(sensorsCache.value.values())
       }
 

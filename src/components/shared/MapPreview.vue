@@ -14,15 +14,19 @@
 import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick, onUpdated } from 'vue'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
+import type { DroneTrajectoryPoint } from '@/types/map'
 
 const props = defineProps<{
   coordinates?: { lat: number; lng: number } | null
+  trajectory?: DroneTrajectoryPoint[]
   zoom?: number
 }>()
 
 const mapRef = ref<HTMLDivElement | null>(null)
 const mapInstance = ref<L.Map | null>(null)
 const marker = ref<L.Marker | null>(null)
+const polyline = ref<L.Polyline | null>(null)
+const markers = ref<L.CircleMarker[]>([]) // For individual trajectory points
 // Store last valid coordinates to prevent map destruction during temporary data refreshes
 const lastValidCoordinates = ref<{ lat: number; lng: number } | null>(null)
 // Track if user has manually interacted with the map (panned/zoomed)
@@ -87,8 +91,19 @@ const setupMap = async () => {
       maxZoom: 18
     }).addTo(mapInstance.value)
 
-    marker.value = L.marker([coords.lat, coords.lng]).addTo(mapInstance.value)
-    mapInstance.value.setView([coords.lat, coords.lng], props.zoom ?? 14)
+    if (coords) {
+      marker.value = L.marker([coords.lat, coords.lng]).addTo(mapInstance.value)
+      
+      // Add trajectory if available
+      if (props.trajectory && props.trajectory.length > 1) {
+        updateTrajectory()
+      } else {
+        // Only set view if no trajectory to fit bounds to
+        mapInstance.value.setView([coords.lat, coords.lng], props.zoom ?? 14)
+      }
+    } else {
+      mapInstance.value.setView([0, 0], 2)
+    }
     
     // Track user interactions - don't auto-reset view if user has panned/zoomed
     mapInstance.value.on('dragstart', () => {
@@ -103,6 +118,55 @@ const setupMap = async () => {
   }, 100)
 }
 
+const updateTrajectory = () => {
+  if (!mapInstance.value) return
+
+  // Clear existing polyline and markers
+  if (polyline.value) {
+    polyline.value.remove()
+    polyline.value = null
+  }
+  markers.value.forEach(m => m.remove())
+  markers.value = []
+
+  if (!props.trajectory || props.trajectory.length < 2) return
+
+  const latLngs = props.trajectory.map(p => [p.lat, p.lng] as [number, number])
+  
+  // Draw polyline
+  polyline.value = L.polyline(latLngs, {
+    color: '#3b82f6', // primary-500
+    weight: 4,
+    opacity: 1.0,
+    dashArray: '10, 10' // dashed line for flight path
+  }).addTo(mapInstance.value)
+
+  // Add small circle markers for points
+  props.trajectory.forEach(p => {
+    const circle = L.circleMarker([p.lat, p.lng], {
+      radius: 5,
+      fillColor: '#fbbf24', // amber-400 (visible yellow/orange)
+      color: '#000', // black border for contrast
+      weight: 1.5,
+      opacity: 1,
+      fillOpacity: 1
+    }).addTo(mapInstance.value!)
+    markers.value.push(circle)
+  })
+
+  // Fit bounds to show the whole trajectory
+  const bounds = L.latLngBounds(latLngs)
+  // Add current marker position to bounds if it exists
+  if (marker.value) {
+    bounds.extend(marker.value.getLatLng())
+  }
+  
+  mapInstance.value.fitBounds(bounds, { 
+    padding: [20, 20],
+    maxZoom: props.zoom ?? 16
+  })
+}
+
 const updateMarker = () => {
   const coords = effectiveCoordinates.value
   if (!mapInstance.value || !marker.value || !coords) return
@@ -110,12 +174,17 @@ const updateMarker = () => {
   // Only update if coordinates actually changed (not just a temporary null during refetch)
   if (hasCoordinates.value) {
     // Update marker position
-    marker.value.setLatLng([coords.lat, coords.lng])
+    marker.value!.setLatLng([coords.lat, coords.lng])
     
-    // Only reset view if user hasn't manually interacted with the map
-    // This allows users to pan/zoom and explore without the map jumping back
-    if (!userHasInteracted.value) {
-      mapInstance.value.setView([coords.lat, coords.lng], props.zoom ?? 14)
+    // Update trajectory
+    if (props.trajectory && props.trajectory.length > 1) {
+      updateTrajectory()
+    } else {
+      // Only reset view if user hasn't manually interacted with the map
+      // This allows users to pan/zoom and explore without the map jumping back
+      if (!userHasInteracted.value) {
+        mapInstance.value.setView([coords.lat, coords.lng], props.zoom ?? 14)
+      }
     }
     
     // Invalidate size when updating
@@ -163,6 +232,12 @@ watch(
   },
   { deep: true }
 )
+
+watch(() => props.trajectory, () => {
+  if (mapInstance.value) {
+    updateTrajectory()
+  }
+}, { deep: true })
 </script>
 
 

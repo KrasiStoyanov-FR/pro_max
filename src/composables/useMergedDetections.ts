@@ -82,12 +82,40 @@ export function useMergedDetections(
       : []
     const rfList = Array.isArray(rfDetectionsList.value) ? rfDetectionsList.value : []
 
-    const rows: UnifiedDetectionRow[] = []
-
     const toNum = (v: unknown): number | null => {
       if (v === null || v === undefined) return null
       const n = Number(v)
       return Number.isFinite(n) ? n : null
+    }
+
+    const latestRows = new Map<string, UnifiedDetectionRow>()
+    const finalRows: UnifiedDetectionRow[] = []
+
+    const processRow = (row: UnifiedDetectionRow) => {
+      const droneId = row.drone?.id
+      
+      if (droneId !== undefined && droneId !== null) {
+        // Group by Drone ID + Sensor ID + Source Type
+        const systemId = row.systemId ?? 'unknown'
+        const key = `${row.source}::${droneId}::${systemId}`
+        
+        const existing = latestRows.get(key)
+        const newTime = timeToMs(row.time)
+        
+        if (!existing) {
+          latestRows.set(key, row)
+        } else {
+           const oldTime = timeToMs(existing.time)
+           const newValid = Number.isFinite(newTime)
+           const oldValid = Number.isFinite(oldTime)
+           
+           if (newValid && (!oldValid || newTime > oldTime)) {
+             latestRows.set(key, row)
+           }
+        }
+      } else {
+        finalRows.push(row)
+      }
     }
 
     for (const pos of positions) {
@@ -95,7 +123,8 @@ export function useMergedDetections(
         typeof pos.drone_id === 'number' && Number.isFinite(pos.drone_id)
           ? dataStore.getDrone(pos.drone_id)
           : undefined
-      rows.push({
+      
+      const row: UnifiedDetectionRow = {
         source: 'position',
         rowKey: `position-${pos.id}`,
         id: pos.id,
@@ -107,14 +136,21 @@ export function useMergedDetections(
         latitude: toNum(pos.latitude) ?? null,
         longitude: toNum(pos.longitude) ?? null,
         drone: drone ? mapDroneToItem(drone) : null
-      })
+      }
+      processRow(row)
     }
 
     for (const rf of rfList) {
+      const drone =
+        typeof rf.drone_id === 'number' && Number.isFinite(rf.drone_id)
+          ? dataStore.getDrone(rf.drone_id)
+          : undefined
+
       const time = rf.time ?? rf.last_seen ?? rf.updated_at ?? ''
       const lat = toNum(rf.latitude ?? rf.lat) ?? null
       const lng = toNum(rf.longitude ?? rf.lon ?? rf.lng) ?? null
-      rows.push({
+      
+      const row: UnifiedDetectionRow = {
         source: 'rf',
         rowKey: `rf-${rf.id}`,
         id: rf.id,
@@ -128,11 +164,14 @@ export function useMergedDetections(
         detectionStatus: rf.detection_status ?? null,
         signalStrength: rf.signal_strength ?? null,
         frequency: rf.frequency ?? null,
-        drone: null
-      })
+        drone: drone ? mapDroneToItem(drone) : null
+      }
+      processRow(row)
     }
 
-    rows.sort((a, b) => {
+    finalRows.push(...latestRows.values())
+
+    finalRows.sort((a, b) => {
       const ta = timeToMs(a.time)
       const tb = timeToMs(b.time)
       if (!Number.isFinite(ta) && !Number.isFinite(tb)) return 0
@@ -141,7 +180,7 @@ export function useMergedDetections(
       return tb - ta
     })
 
-    return rows
+    return finalRows
   })
 
   const isLoading = computed(

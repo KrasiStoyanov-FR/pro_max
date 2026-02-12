@@ -30,7 +30,11 @@
     </header>
 
     <div v-if="detectionCoords" class="mb-4">
-      <MapPreview :coordinates="detectionCoords" />
+      <MapPreview 
+        :coordinates="detectionCoords" 
+        :trajectory="droneTrajectory"
+        :zoom="12"
+      />
     </div>
 
     <section class="flex-1 space-y-6 overflow-y-auto pr-2">
@@ -148,6 +152,28 @@
           </div>
         </dl>
       </div>
+
+      <!-- Trajectory Points List (only if we have trajectory data) -->
+      <div v-if="droneTrajectory && droneTrajectory.length > 0">
+        <h3 class="text-sm font-semibold uppercase tracking-wide text-neutral-400">Flight Path</h3>
+        <div class="mt-3 rounded-lg border border-white/5 bg-white/5 max-h-48 overflow-y-auto">
+          <table class="w-full text-xs text-left">
+            <thead class="bg-[#1F1F20] text-neutral-400 sticky top-0">
+              <tr>
+                <th class="px-3 py-2 font-medium">Time</th>
+                <th class="px-3 py-2 font-medium">Lat, Lng</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5">
+              <!-- Show in reverse chronological order (newest first) -->
+              <tr v-for="(point, idx) in [...droneTrajectory].reverse()" :key="idx" class="hover:bg-white/5">
+                <td class="px-3 py-2 text-neutral-300 whitespace-nowrap">{{ formatTimeOnly(point.timestamp) }}</td>
+                <td class="px-3 py-2 font-mono text-neutral-400">{{ point.lat.toFixed(5) }}, {{ point.lng.toFixed(5) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
     </section>
 
     <footer v-if="drone && hasPermission('detections.manage')" class="mt-6 border-t border-white/5 pt-4">
@@ -166,11 +192,14 @@
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { usePermissions } from '@/composables/usePermissions'
+import { useDataStore } from '@/store/data'
 import MapPreview from '@/components/shared/MapPreview.vue'
 import type { DroneItem, UnifiedDetectionRow } from '@/types/drones'
+import type { DroneTrajectoryPoint } from '@/types/map'
 
 const { hasPermission } = usePermissions()
 const router = useRouter()
+const dataStore = useDataStore()
 
 const props = withDefaults(
   defineProps<{
@@ -193,6 +222,40 @@ defineEmits<{
   (e: 'close'): void
 }>()
 
+// Computed property to extract trajectory data if available
+// Computed property to extract trajectory data if available
+const droneTrajectory = computed<DroneTrajectoryPoint[] | undefined>(() => {
+  // Check if the detection row has trajectory data attached (RF source case)
+  if (props.detection?.source === 'rf' && (props.detection as any).trajectory) {
+    return (props.detection as any).trajectory
+  }
+
+  // For Position source (Drone), we need to fetch positions from the store
+  if (props.detection?.source === 'position' && props.detection.drone?.id) {
+    const droneId = props.detection.drone.id
+    // Get all positions for this drone from the store
+    const positions = dataStore.getDronePositionsByDroneId(droneId) || []
+    
+    // Sort by time
+    const sorted = [...positions].sort((a, b) => {
+      return new Date(a.time).getTime() - new Date(b.time).getTime()
+    })
+
+    // Map to DroneTrajectoryPoint
+    const points: DroneTrajectoryPoint[] = sorted
+      .map(p => ({
+        lat: Number(p.latitude),
+        lng: Number(p.longitude),
+        timestamp: p.time
+      }))
+      .filter(p => Number.isFinite(p.lat) && Number.isFinite(p.lng))
+
+    return points.length > 0 ? points : undefined
+  }
+  
+  return undefined
+})
+
 const panelTitle = computed(() => {
   if (props.drone) return props.drone.displayName
   if (props.detection) {
@@ -208,6 +271,13 @@ const formatDate = (value?: string): string => {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return value
   return date.toLocaleString()
+}
+
+const formatTimeOnly = (value?: string): string => {
+  if (!value) return '—'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleTimeString()
 }
 
 const formatAltitude = (value?: number | null): string => {
