@@ -175,7 +175,8 @@
             >
               <option class="text-neutral-900" value="all">All Sensors</option>
               <option class="text-neutral-900" value="with_detections">With Recent RF Detections</option>
-              <option class="text-neutral-900" value="without_detections">Without RF Detections</option>
+              <option class="text-neutral-900" value="with_targets">With Active Targets</option>
+              <option class="text-neutral-900" value="without_detections">Without Detections</option>
             </select>
             <p class="text-[10px] text-neutral-500 mt-0.5">
               {{ sensorFilterModeDescription }}
@@ -369,7 +370,7 @@ const customTimeWindow = ref(false)
 const customDateRange = ref<{ start: string; end: string } | null>(null)
 
 // Sensor filter mode
-const selectedSensorFilterMode = ref<'all' | 'with_detections' | 'without_detections'>(sensorFilterMode.value)
+const selectedSensorFilterMode = ref<'all' | 'with_detections' | 'with_targets' | 'without_detections'>(sensorFilterMode.value)
 
 // Watch for external changes to sensorFilterMode
 watch(sensorFilterMode, (newValue) => {
@@ -377,17 +378,39 @@ watch(sensorFilterMode, (newValue) => {
 })
 
 const onSensorFilterModeChange = () => {
-  mapStore.setSensorFilterMode(selectedSensorFilterMode.value)
+  const mode = selectedSensorFilterMode.value
+  mapStore.setSensorFilterMode(mode)
+
+  // Coupling logic for filters
+  if (mode === 'with_detections') {
+    // "Only RF detections": shouldn't see targets (drones) on the map
+    mapStore.setMarkerTypeVisible('target', true) // Show RF markers
+    mapStore.setMarkerTypeVisible('drone', false) // Hide Drone markers
+  } else if (mode === 'with_targets') {
+    // "Sensors with targets": see only sensors with detections and a target (not RF detections)
+    mapStore.setMarkerTypeVisible('drone', true) // Show Drone markers
+    mapStore.setMarkerTypeVisible('target', false) // Hide RF markers
+  } else if (mode === 'without_detections') {
+    // "No detections": see all normal sensors
+    mapStore.setMarkerTypeVisible('target', false) // Hide RF markers (noise)
+    mapStore.setMarkerTypeVisible('drone', false) // Hide Drone markers (targets)
+  } else if (mode === 'all') {
+    // Restore visibility of detections when showing all sensors
+    mapStore.setMarkerTypeVisible('target', true)
+    mapStore.setMarkerTypeVisible('drone', true)
+  }
 }
 
 const sensorFilterModeDescription = computed(() => {
   switch (selectedSensorFilterMode.value) {
     case 'with_detections':
       return `Shows sensors with active RF detections within the active time window (${currentTimeWindowDisplay.value})`
+    case 'with_targets':
+      return 'Shows sensors with active drone targets (non-RF detections)'
     case 'without_detections':
-      return 'Shows only sensors that have no RF detections (no alerts)'
+      return 'Shows only sensors that have no active detections (no alerts)'
     default:
-      return 'Shows all sensors regardless of RF detection status'
+      return 'Shows all sensors regardless of detection status'
   }
 })
 

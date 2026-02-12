@@ -38,8 +38,9 @@ export const useMapStore = defineStore('map', () => {
   // Sensor filter mode - how to filter sensors
   // 'all' = show all sensors
   // 'with_detections' = only sensors with recent RF detections (within time window)
+  // 'with_targets' = only sensors with active drone targets (non-RF)
   // 'without_detections' = only sensors without any RF detections
-  const sensorFilterMode = ref<'all' | 'with_detections' | 'without_detections'>('all')
+  const sensorFilterMode = ref<'all' | 'with_detections' | 'with_targets' | 'without_detections'>('all')
 
   // Map search: pin IDs that match the current search (null = no search active)
   const mapSearchResultIds = ref<Set<string> | null>(null)
@@ -492,13 +493,17 @@ export const useMapStore = defineStore('map', () => {
           }
         })
         
+        // Check if sensor has active drone detections (non-RF)
+        const hasDroneDetections = pin.data?.hasDroneDetections === true
+        
         // Log sensor filtering decision
-        if (sensorFilterMode.value !== 'all' && detections.length > 0) {
+        if (sensorFilterMode.value !== 'all' && (detections.length > 0 || hasDroneDetections)) {
           console.log(`[MapStore] Sensor filter check for ${pin.id}:`, {
             sensorId: pin.id,
             systemId: pin.data?.system_id,
             filterMode: sensorFilterMode.value,
             totalDetections: detections.length,
+            hasDroneDetections,
             windowMs: detectionWindowMs,
             windowHours: detectionWindowMs ? (detectionWindowMs / (60 * 60 * 1000)).toFixed(2) : null,
             cutoffTime: new Date(cutoffTime).toISOString(),
@@ -519,15 +524,18 @@ export const useMapStore = defineStore('map', () => {
                 : new Date(d.timestamp).getTime() >= cutoffTime) && (d.status === true || d.status === 1) : false
             })),
             hasRecentDetections,
-            willShow: sensorFilterMode.value === 'with_detections' ? hasRecentDetections : !hasRecentDetections
+            willShow: sensorFilterMode.value === 'with_detections' ? hasRecentDetections : 
+                     (sensorFilterMode.value === 'with_targets' ? hasDroneDetections : !hasRecentDetections && !hasDroneDetections)
           })
         }
         
         // Apply filter mode
         if (sensorFilterMode.value === 'with_detections') {
           return hasRecentDetections
+        } else if (sensorFilterMode.value === 'with_targets') {
+          return hasDroneDetections
         } else if (sensorFilterMode.value === 'without_detections') {
-          return !hasRecentDetections
+          return !hasRecentDetections && !hasDroneDetections
         }
         
         return true // 'all' mode - show all sensors
@@ -561,11 +569,11 @@ export const useMapStore = defineStore('map', () => {
     return dateRange.value
   }
 
-  const setSensorFilterMode = (mode: 'all' | 'with_detections' | 'without_detections') => {
+  const setSensorFilterMode = (mode: 'all' | 'with_detections' | 'with_targets' | 'without_detections') => {
     sensorFilterMode.value = mode
   }
 
-  const getSensorFilterMode = (): 'all' | 'with_detections' | 'without_detections' => {
+  const getSensorFilterMode = (): 'all' | 'with_detections' | 'with_targets' | 'without_detections' => {
     return sensorFilterMode.value
   }
 
