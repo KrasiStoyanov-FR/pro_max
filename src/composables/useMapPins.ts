@@ -538,6 +538,21 @@ export function useMapPins() {
         return null
       }
       
+      // Prepare active drone position tracking
+      const activeDroneSystemIds = new Set<string>()
+      const positionWindowMs = getActivePositionWindow(mapStore)
+      const dateRangeForPos = mapStore.getDateRange()
+      let posCutoff: number
+      let posEnd: number
+      
+      if (dateRangeForPos) {
+         posCutoff = new Date(dateRangeForPos.start).getTime()
+         posEnd = new Date(dateRangeForPos.end).getTime()
+      } else {
+         posCutoff = Date.now() - positionWindowMs
+         posEnd = Date.now()
+      }
+
       // Convert drone positions to map pins
       if (dronePositionsResponse.success && dronePositionsResponse.data) {
         const processedPositionKeys = new Set<string>()
@@ -546,6 +561,14 @@ export function useMapPins() {
           const lat = parseFloat(position.latitude.toString())
           const lng = parseFloat(position.longitude.toString())
           const timestamp = position.time
+
+          // Track sensors with active drone detections
+          if (position.system_id !== null && position.system_id !== undefined) {
+             const t = toTimeValue(position.time)
+             if (t >= posCutoff && t <= posEnd) {
+                activeDroneSystemIds.add(String(position.system_id))
+             }
+          }
 
            if (!isValidCoordinate(lat, lng)) {
              return
@@ -1126,7 +1149,7 @@ export function useMapPins() {
       }
       
       // Prebuild detector lookup by system_id so operators can reference it
-      const systemIdToDetector: Map<string, { name?: string | null; unit_id?: number | null }> = new Map()
+      const systemIdToDetector: Map<string, { name?: string | null; unit_id?: string | number | null }> = new Map()
       if (gpsUnitPositionsResponse.success && gpsUnitPositionsResponse.data) {
         gpsUnitPositionsResponse.data.forEach((unit: GpsUnitPosition) => {
           if (typeof (unit as any)?.system_id === 'string') {
@@ -1285,7 +1308,7 @@ export function useMapPins() {
           // Update status to 'warning' if sensor has active detections
           // Check for recent active detections (within time window)
           // Note: status can be boolean true or number 1 (both mean active)
-          const hasActiveDetections = sensorDetections.some(d => {
+          const hasRFDetections = sensorDetections.some(d => {
             // Strictly check for active status (true, 1, "1") using helper
             if (!isActiveDetection(d.status)) return false
             
@@ -1300,6 +1323,12 @@ export function useMapPins() {
               return t >= cutoffTime
             }
           })
+
+          const hasDroneDetections = canonicalSystemId 
+            ? activeDroneSystemIds.has(String(canonicalSystemId))
+            : false
+
+          const hasActiveDetections = hasRFDetections || hasDroneDetections
           const finalStatus = hasActiveDetections ? 'warning' : status
           const finalPriority = hasActiveDetections ? 'high' : 'medium'
           
@@ -1354,10 +1383,11 @@ export function useMapPins() {
             system_id: canonicalSystemId ?? null,
             status: unit.status,
             timestamp: unit.time ?? null,
-            detection_range_km: 1.5, // 1.5km detection range
+            detection_range_km: unit.detection_range_km ?? 1.5, // Use range from DB or default to 1.5km
             // Attach RF detections to sensor pin
             detections: sensorDetections.length > 0 ? sensorDetections : undefined,
-            hasRFDetections: hasActiveDetections
+            hasRFDetections: hasRFDetections,
+            hasDroneDetections: hasDroneDetections
           }
           
           // Log what we're attaching to the sensor pin
@@ -1861,7 +1891,7 @@ export function useMapPins() {
       })
 
       // Build detector lookup for operator labels
-      const systemIdToDetector = new Map<string, { name?: string | null; unit_id?: number | null }>()
+      const systemIdToDetector = new Map<string, { name?: string | null; unit_id?: string | number | null }>()
       storeData.gpsUnits.forEach((unit: GpsUnitPosition) => {
         if (typeof (unit as any)?.system_id === 'string') {
           systemIdToDetector.set((unit as any).system_id as string, {
@@ -1881,6 +1911,20 @@ export function useMapPins() {
       const pins: MapPin[] = []
       
       // Process drone positions from store
+      const activeDroneSystemIds = new Set<string>()
+      const positionWindowMs = getActivePositionWindow(mapStore)
+      const dateRangeForPos = mapStore.getDateRange()
+      let posCutoff: number
+      let posEnd: number
+      
+      if (dateRangeForPos) {
+         posCutoff = new Date(dateRangeForPos.start).getTime()
+         posEnd = new Date(dateRangeForPos.end).getTime()
+      } else {
+         posCutoff = Date.now() - positionWindowMs
+         posEnd = Date.now()
+      }
+
       const droneTrajectoryMap = new Map<string, { points: DroneTrajectoryPoint[], positions: DronePosition[], latestPosition: DronePosition | null }>()
       
       storeData.dronePositions.forEach((position: DronePosition) => {
@@ -1893,6 +1937,14 @@ export function useMapPins() {
         const timestamp = position.time
 
         if (!isValidCoordinate(lat, lng)) return
+
+          // Track sensors with active drone detections
+          if (position.system_id !== null && position.system_id !== undefined) {
+             const t = toTimeValue(position.time)
+             if (t >= posCutoff && t <= posEnd) {
+                activeDroneSystemIds.add(String(position.system_id))
+             }
+          }
 
         const point: DroneTrajectoryPoint = { lat, lng, timestamp }
         const entry = droneTrajectoryMap.get(droneKey) || { points: [], positions: [], latestPosition: null }
@@ -2050,7 +2102,7 @@ export function useMapPins() {
           : []
 
         // Check if any detections are active within the current time window
-        const hasActiveDetections = sensorDetections.some(d => {
+        const hasRFDetections = sensorDetections.some(d => {
           // Strictly handle active status: true, 1, or "1"
           if (!isActiveDetection(d.status)) return false
           
@@ -2066,6 +2118,12 @@ export function useMapPins() {
           }
         })
 
+        const hasDroneDetections = systemId 
+           ? activeDroneSystemIds.has(String(systemId))
+           : false
+
+        const hasActiveDetections = hasRFDetections || hasDroneDetections
+
         pins.push({
           id: `gps-unit-${unitKey}`,
           lat: lat!,
@@ -2080,7 +2138,8 @@ export function useMapPins() {
             status: unit.status,
             timestamp: unit.time ?? null,
             detections: sensorDetections.length > 0 ? sensorDetections : undefined,
-            hasRFDetections: hasActiveDetections
+            hasRFDetections: hasRFDetections,
+            hasDroneDetections: hasDroneDetections
           },
           timestamp: unit.time ?? new Date().toISOString()
         })

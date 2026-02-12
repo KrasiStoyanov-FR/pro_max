@@ -263,25 +263,38 @@ class MapService {
     // Clear existing detection range circles
     this.clearDetectionRanges()
 
-    // Detection range in meters
-    const DETECTION_RANGE_METERS = 1500 // 1.5km detection range
-
     // Find GPS units (sensor type pins) - these are the detection sources
-    let detectionSources = pins.filter(pin => pin.type === 'sensor' && pin.status === 'active')
+    // Show radius for all sensors as requested
+    let detectionSources = pins.filter(pin => pin.type === 'sensor')
+    
     // When search is active, only show radius for sensors that match the search
     if (this.searchResultPinIds != null && this.searchResultPinIds.size > 0) {
       detectionSources = detectionSources.filter(source => this.searchResultPinIds!.has(source.id))
     }
 
     detectionSources.forEach(source => {
+      // Determine if sensor has detections
+      const hasRFDetections = source.data?.hasRFDetections === true
+      const hasDroneDetections = source.data?.hasDroneDetections === true
+      const hasDetections = hasRFDetections || hasDroneDetections
+
+      // Determine color based on detection status
+      // Use orange for sensors with detections, blue for others
+      const rangeColor = hasDetections ? '#f97316' : '#3b82f6'
+
+      // Determine radius
+      // Default to 1500m (1.5km) if not specified in data
+      const rangeKm = source.data?.detection_range_km ?? 1.5
+      const rangeMeters = rangeKm * 1000
+
       // Create a circle to show detection range
         const rangeCircle = L.circle([source.lat, source.lng], {
-          radius: DETECTION_RANGE_METERS,
-          color: '#3b82f6', // Blue color for detection range
-          fillColor: '#3b82f6',
+          radius: rangeMeters,
+          color: rangeColor,
+          fillColor: rangeColor,
         fillOpacity: 0.1, // Very transparent fill
-        weight: 2,
-        opacity: 1
+        weight: 1.5,
+        opacity: 0.6
       })
       
       // Do not bind Leaflet tooltip to circles to avoid UX disruption
@@ -1394,18 +1407,20 @@ class MapService {
     const color = this.getColorForStatus(status, type)
     const isAlarm = status === 'critical'
     const isWarning = status === 'warning'
-    // Sensors with RF detections should pulse to indicate activity
+    // Sensors with RF detections or drone detections should pulse to indicate activity
     const hasRFDetections = pinData?.hasRFDetections === true
-    const shouldPulse = isAlarm || isWarning || (type === 'sensor' && hasRFDetections) // Pulse for critical, warning, or sensors with detections
+    const hasDroneDetections = pinData?.hasDroneDetections === true
+    const hasDetections = hasRFDetections || hasDroneDetections
+    const shouldPulse = isAlarm || isWarning || (type === 'sensor' && hasDetections) // Pulse for critical, warning, or sensors with detections
     
-    // For sensors with RF detections, use orange/red color scheme (moderate alert level)
-    const sensorColor = (type === 'sensor' && hasRFDetections) 
+    // For sensors with detections, use orange/red color scheme (moderate alert level)
+    const sensorColor = (type === 'sensor' && hasDetections) 
       ? '#f97316' // Orange-500 - moderate alert, not too alarming
       : color
-    const sensorBorderColor = (type === 'sensor' && hasRFDetections)
+    const sensorBorderColor = (type === 'sensor' && hasDetections)
       ? '#ea580c' // Orange-600 - slightly darker for border
       : '#ffffff' // White border for normal sensors
-    const sensorPulseColor = (type === 'sensor' && hasRFDetections)
+    const sensorPulseColor = (type === 'sensor' && hasDetections)
       ? '#f97316' // Orange-500 for pulse
       : color
 
@@ -1451,8 +1466,8 @@ class MapService {
     const containerSizePx = isSelected ? pulseCircleSizePx : markerSizePx
     const markerOffsetPx = isSelected ? (pulseCircleSizePx - markerSizePx) / 2 : 0
 
-    // Add red/orange glow for sensors with RF detections
-    const sensorGlow = (type === 'sensor' && hasRFDetections && !isSelected)
+    // Add red/orange glow for sensors with detections
+    const sensorGlow = (type === 'sensor' && hasDetections && !isSelected)
       ? `box-shadow: 0 0 12px rgba(249, 115, 22, 0.8), 0 0 6px rgba(249, 115, 22, 0.6), inset 0 0 8px rgba(249, 115, 22, 0.3);`
       : (isSelected && isSensor ? 'box-shadow: 0 0 8px rgba(34, 211, 238, 0.6), inset 0 0 8px rgba(34, 211, 238, 0.3);' : '')
     
@@ -1465,16 +1480,16 @@ class MapService {
       </div>
     `
 
-    // Enhanced pulse for sensors with RF detections - use orange/red colors
+    // Enhanced pulse for sensors with detections - use orange/red colors
     const pulseMarkup = shouldPulse
       ? `
-        <div class="absolute rounded-full" style="width: ${markerSizePx}px; height: ${markerSizePx}px; background-color: ${sensorPulseColor}; animation: markerPulseOuter 4s ease-in-out infinite; left: ${markerOffsetPx}px; top: ${markerOffsetPx}px; opacity: ${isSelected ? '0.3' : (type === 'sensor' && hasRFDetections ? '0.7' : '0.6')};"></div>
-        <div class="absolute rounded-full" style="width: ${markerSizePx}px; height: ${markerSizePx}px; background-color: ${sensorPulseColor}; animation: markerPulseInner 4s ease-in-out infinite; animation-delay: 0.5s; left: ${markerOffsetPx}px; top: ${markerOffsetPx}px; opacity: ${isSelected ? '0.3' : (type === 'sensor' && hasRFDetections ? '0.7' : '0.6')};"></div>
+        <div class="absolute rounded-full" style="width: ${markerSizePx}px; height: ${markerSizePx}px; background-color: ${sensorPulseColor}; animation: markerPulseOuter 4s ease-in-out infinite; left: ${markerOffsetPx}px; top: ${markerOffsetPx}px; opacity: ${isSelected ? '0.3' : (type === 'sensor' && hasDetections ? '0.7' : '0.6')};"></div>
+        <div class="absolute rounded-full" style="width: ${markerSizePx}px; height: ${markerSizePx}px; background-color: ${sensorPulseColor}; animation: markerPulseInner 4s ease-in-out infinite; animation-delay: 0.5s; left: ${markerOffsetPx}px; top: ${markerOffsetPx}px; opacity: ${isSelected ? '0.3' : (type === 'sensor' && hasDetections ? '0.7' : '0.6')};"></div>
       `
       : ''
     
-    // Add an outer alert ring for sensors with RF detections (moderate alert level)
-    const alertRing = (type === 'sensor' && hasRFDetections && !isSelected)
+    // Add an outer alert ring for sensors with detections (moderate alert level)
+    const alertRing = (type === 'sensor' && hasDetections && !isSelected)
       ? `<div class="absolute rounded-full border-2" style="width: ${markerSizePx + 8}px; height: ${markerSizePx + 8}px; left: ${markerOffsetPx - 4}px; top: ${markerOffsetPx - 4}px; border-color: rgba(249, 115, 22, 0.6); animation: alertRingPulse 2s ease-in-out infinite; z-index: 1;"></div>`
       : ''
 
