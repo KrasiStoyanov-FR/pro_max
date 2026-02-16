@@ -1,93 +1,122 @@
-# Quick Remote Access Setup
+# Quick Remote Setup Guide
 
-## For Server at http://10.80.10.223:3000
+This guide details how to configure the Defense Radar Dashboard for remote access, allowing users to connect to the server from other machines on the network.
 
-### Step 1: Create .env File
+## 📋 Server Configuration
 
-**On the server, create `.env` file:**
+### Step 1: Prepare the Environment
+
+On the server machine (e.g., `10.80.10.223`), ensure you have cloned the repository and installed dependencies:
+
+```bash
+cd /path/to/pro_max
+npm install
+```
+
+### Step 2: Configure `.env` for Remote Access
+
+Create or edit the `.env` file:
 
 ```bash
 cp env.remote.example .env
+nano .env
 ```
 
-### Step 2: Verify Key Settings
+**Critical Settings:**
 
-**The `.env` file should have these critical settings:**
+1.  **Frontend API URL:**
+    Set `VITE_API_BASE_URL` to the **server's IP address** so the frontend knows where to find the backend API.
 
+    ```bash
+    VITE_API_BASE_URL=http://10.80.10.223:3001/api/db
+    ```
+
+2.  **Allow Remote Connections:**
+    Enable external access for the development server.
+
+    ```bash
+    VITE_HOST=true
+    VITE_ALLOWED_HOSTS=10.80.10.223,localhost,127.0.0.1
+    SERVER_HOST=0.0.0.0  # Listen on all interfaces
+    ```
+
+3.  **Database Configuration:**
+    Choose your database backend.
+
+    **Option A: Local SQLite (Simplest)**
+    ```bash
+    USE_SQLITE=true
+    ```
+    *Initialize if needed:* `node scripts/init-sqlite.js`
+
+    **Option B: MariaDB/MySQL**
+    If the database is on the same machine as the server, use `localhost`.
+
+    ```bash
+    USE_SQLITE=false
+    DB_HOST=localhost
+    DB_PORT=3306
+    DB_USER=drone_app
+    DB_PASSWORD=Qwerty@
+    DB_NAME=drone_monitoring
+    ```
+
+### Step 3: Start the Application
+
+Run the application on the server:
+
+**For Original Brand:**
 ```bash
-# Frontend connects to backend using server IP
-VITE_API_BASE_URL=http://10.80.10.223:3001/api/db
-
-# Database is LOCAL on server - use localhost
-DB_HOST=localhost
-DB_PORT=3306
-DB_USER=drone_app
-DB_PASSWORD=Qwerty@
-DB_NAME=drone_monitoring
-
-# Allow remote connections
-VITE_HOST=true
-VITE_ALLOWED_HOSTS=10.80.10.223,localhost,127.0.0.1
-SERVER_HOST=10.80.10.223
+npm run start
 ```
 
-### Step 3: Restart Application
-
+**For Pakistan Brand:**
 ```bash
-# Stop current server (Ctrl+C)
-npm start
+npm run start:pakistan
 ```
 
-### Step 4: Test from Remote Browser
+The server should output:
+- Frontend: `http://10.80.10.223:3000` (or similar)
+- Backend: `http://localhost:3001`
 
-**Access:** `http://10.80.10.223:3000`
+### Step 4: Configure Firewall
 
-**Test endpoints:**
-- `http://10.80.10.223:3001/api/health`
-- `http://10.80.10.223:3001/api/db/health`
+Ensure the server allows incoming connections on ports 3000 (frontend) and 3001 (backend).
 
-### Step 5: Check Firewall
-
-**If you can't access from remote:**
-
+**Ubuntu/Debian (UFW):**
 ```bash
-# Allow ports through firewall
 sudo ufw allow 3000/tcp
 sudo ufw allow 3001/tcp
 ```
 
-## Important Notes
-
-1. **Database stays local**: `DB_HOST=localhost` (database is on the server)
-2. **Frontend uses server IP**: `VITE_API_BASE_URL=http://10.80.10.223:3001/api/db`
-3. **Backend listens on all interfaces**: Updated in `server.js` to accept remote connections
-4. **CORS is enabled**: Allows cross-origin requests
-
-## If Database Port is Different
-
-**If your database uses a different port (not 3306), update in `.env`:**
-
+**CentOS/RHEL (firewalld):**
 ```bash
-DB_PORT=3307  # or whatever port your database uses
+sudo firewall-cmd --permanent --add-port=3000/tcp
+sudo firewall-cmd --permanent --add-port=3001/tcp
+sudo firewall-cmd --reload
 ```
 
-## Troubleshooting
+## 🌐 Client Access
 
-**Can't access from remote?**
-1. Check firewall: `sudo ufw status`
-2. Test from server: `curl http://10.80.10.223:3001/api/health`
-3. Test from remote: `curl http://10.80.10.223:3001/api/health`
+From another computer on the same network:
 
-**Frontend can't connect to backend?**
-1. Check `VITE_API_BASE_URL` uses server IP
-2. Restart frontend after changing `.env`
-3. Check browser console (F12) for errors
+1.  Open a browser.
+2.  Navigate to `http://10.80.10.223:3000` (replace with your server's IP).
 
-**Database connection fails?**
-1. Verify `DB_HOST=localhost` (not the server IP)
-2. Check database credentials
-3. Test: `mysql -h localhost -u drone_app -p'Qwerty@' drone_monitoring -e "SELECT 1;"`
+### Verification
 
+If the page loads but data is missing:
+1.  Open Developer Tools (F12) -> Network tab.
+2.  Check if requests to `http://10.80.10.223:3001/api/db/...` are failing.
+3.  If they fail, verify the firewall on the server allows port 3001.
+4.  Verify `VITE_API_BASE_URL` in `.env` matches the server IP, **not** `localhost`.
 
+## 🛠 Troubleshooting
 
+**"Connection Refused"**
+- Ensure the application is running (`npm run start`).
+- Check firewall settings.
+- Verify the IP address is correct.
 
+**"CORS Error"**
+- The backend is configured to allow CORS, but ensure the `VITE_API_BASE_URL` matches the server IP exactly as entered in the browser (or is accessible).

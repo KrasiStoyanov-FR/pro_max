@@ -1,159 +1,134 @@
-# Quick Setup Guide for Linux - Database Connection Fix
+# Quick Setup Guide for Linux
 
-## Immediate Steps to Fix Connection Issues
+This guide covers the setup process for deploying the Defense Radar Dashboard on a Linux environment, including database configuration options.
 
-### Step 1: Create/Update `.env` File
+## 📋 Prerequisites
+
+- **Node.js 18+** ([Download here](https://nodejs.org/))
+- **npm** (included with Node.js)
+- **MariaDB/MySQL** (optional, if not using SQLite)
+
+## 🚀 Setup Steps
+
+### Step 1: Clone and Install
 
 ```bash
 # Navigate to project directory
 cd /path/to/pro_max
 
-# Copy example file
-cp env.example .env
-
-# Edit .env file
-nano .env
+# Install dependencies
+npm install
 ```
 
-**Add/Update these lines in `.env`:**
+### Step 2: Configure Environment
 
+1.  **Create the `.env` file:**
+
+    ```bash
+    cp env.example .env
+    ```
+
+2.  **Edit the configuration:**
+
+    ```bash
+    nano .env
+    ```
+
+    You have two database options. Choose **one**:
+
+    **Option A: Local SQLite (Recommended for simple setup)**
+    ```bash
+    USE_SQLITE=true
+    # SQLITE_PATH=database.sqlite  # Default
+    ```
+    *If using this option, initialize the database:*
+    ```bash
+    node scripts/init-sqlite.js
+    ```
+
+    **Option B: Remote/Local MariaDB**
+    ```bash
+    USE_SQLITE=false
+    DB_HOST=localhost       # or remote IP
+    DB_PORT=3306
+    DB_USER=drone_app
+    DB_PASSWORD=Qwerty@     # Update if changed
+    DB_NAME=drone_monitoring
+    ```
+
+### Step 3: Start the Application
+
+Start both the frontend and backend servers:
+
+**For Original Brand:**
 ```bash
-# Database Configuration
-USE_SQLITE=false
-DB_HOST=localhost
-DB_PORT=3306
-DB_USER=drone_app
-DB_PASSWORD=Qwerty@
-DB_NAME=drone_monitoring
-
-# Frontend API Configuration
-VITE_API_BASE_URL=http://localhost:3001/api/db
-VITE_DB_NAME=drone_monitoring
+npm run start
 ```
 
-**Save and exit** (Ctrl+X, then Y, then Enter in nano)
-
-### Step 2: Verify Database Service is Running
-
+**For Pakistan Brand:**
 ```bash
-# Check MySQL/MariaDB status
-sudo systemctl status mysql
-# OR
-sudo systemctl status mariadb
-
-# If not running, start it:
-sudo systemctl start mysql
-# OR
-sudo systemctl start mariadb
+npm run start:pakistan
 ```
 
-### Step 3: Test Database Connection
+You should see output indicating:
+- Backend server running on port **3001**
+- Frontend server running on port **3000**
+- Database connection successful
 
-```bash
-# Test if you can connect to the database
-mysql -h localhost -u drone_app -p'Qwerty@' drone_monitoring -e "SELECT 1;"
-```
+### Step 4: Verification
 
-**If connection fails:**
-- Check if database exists: `mysql -h localhost -u root -p -e "SHOW DATABASES;"`
-- Check if user exists: `mysql -h localhost -u root -p -e "SELECT User FROM mysql.user;"`
-- Create database if needed: `mysql -h localhost -u root -p -e "CREATE DATABASE IF NOT EXISTS drone_monitoring;"`
-- Grant permissions: `mysql -h localhost -u root -p -e "GRANT ALL PRIVILEGES ON drone_monitoring.* TO 'drone_app'@'localhost'; FLUSH PRIVILEGES;"`
+1.  **Backend Health Check:**
+    ```bash
+    curl http://localhost:3001/api/health
+    # Should return {"status":"ok", ...}
+    ```
 
-### Step 4: Stop Any Running Servers
+2.  **Database Connection Check:**
+    ```bash
+    curl http://localhost:3001/api/db/health
+    # Should return {"success":true, ...}
+    ```
 
-```bash
-# Find and kill any processes on ports 3000 and 3001
-sudo fuser -k 3000/tcp
-sudo fuser -k 3001/tcp
-```
+3.  **Access Frontend:**
+    Open `http://localhost:3000` in your browser.
 
-### Step 5: Start the Application
-
-```bash
-# Start both frontend and backend
-npm start
-```
-
-**You should see output like:**
-```
-[API] Database server running on port 3001
-[API] Health check: http://localhost:3001/api/health
-[MariaDB] Testing connection...
-[MariaDB] Test connection successful
-[MariaDB] Connection pool created successfully
-```
-
-### Step 6: Verify Backend is Working
-
-**In a new terminal:**
-```bash
-# Test backend health
-curl http://localhost:3001/api/health
-
-# Test database health
-curl http://localhost:3001/api/db/health
-```
-
-Both should return JSON responses.
-
-### Step 7: Access the Application
-
-1. Open browser and go to: `http://localhost:3000`
-2. **If you see ERR_BLOCKED_BY_CLIENT errors:**
-   - Try `http://127.0.0.1:3000` instead
-   - Disable browser extensions (ad blockers)
-   - Try incognito/private browsing mode
-
-### Step 8: Login
-
-Use one of these accounts:
-- Email: `master@promax.com` / Password: `DroneTrackingSystem`
-- Email: `master@bluesurge.com` / Password: `DroneTrakingSystem`
-- Email: `admin@radar.com` / Password: `password`
-
-## Common Issues
+## 🛠 Troubleshooting
 
 ### "Port already in use"
+
+If ports 3000 or 3001 are occupied:
+
 ```bash
+# Find and kill processes
 sudo fuser -k 3000/tcp
 sudo fuser -k 3001/tcp
-npm start
+
+# Restart application
+npm run start
 ```
 
-### "Cannot connect to database"
-1. Check MySQL/MariaDB is running: `sudo systemctl status mysql`
-2. Verify credentials in `.env` file
-3. Test connection: `mysql -h localhost -u drone_app -p'Qwerty@' drone_monitoring`
+### Database Connection Issues (MariaDB)
 
-### "ERR_BLOCKED_BY_CLIENT"
-1. Disable browser extensions
-2. Try `http://127.0.0.1:3000` instead of `http://localhost:3000`
-3. Check backend is running: `curl http://localhost:3001/api/health`
+1.  **Check Service Status:**
+    ```bash
+    sudo systemctl status mariadb
+    # OR
+    sudo systemctl status mysql
+    ```
 
-### Backend shows connection errors
-- Verify `.env` file exists and has correct credentials
-- Restart backend after changing `.env`
-- Check database service is running
+2.  **Verify Credentials:**
+    Ensure `DB_USER` and `DB_PASSWORD` in `.env` match your database users.
 
-## Verification Checklist
+3.  **Test Connection Manually:**
+    ```bash
+    mysql -h localhost -u drone_app -p'Qwerty@' drone_monitoring -e "SELECT 1;"
+    ```
 
-Before reporting issues, verify:
+### Firewall Issues (Remote Access)
 
-- [ ] `.env` file exists in project root
-- [ ] Database credentials in `.env` are correct (drone_app / Qwerty@)
-- [ ] MySQL/MariaDB service is running
-- [ ] Backend server starts without errors (`npm start`)
-- [ ] `curl http://localhost:3001/api/health` returns JSON
-- [ ] `curl http://localhost:3001/api/db/health` returns success
-- [ ] Browser can access `http://localhost:3000` or `http://127.0.0.1:3000`
+If accessing from another machine, ensure ports are open:
 
-## Still Having Issues?
-
-1. Check backend terminal for error messages
-2. Check browser console (F12) for specific errors
-3. See `TROUBLESHOOTING.md` for detailed troubleshooting steps
-
-
-
-
+```bash
+sudo ufw allow 3000/tcp
+sudo ufw allow 3001/tcp
+```
