@@ -2,6 +2,12 @@
 
 A production-ready Vue 3 + TypeScript frontend application for monitoring radar targets and threats with an interactive map interface.
 
+## 📚 Documentation
+
+- **[Developer Onboarding Guide](ONBOARDING.md)**: Detailed instructions for setting up the development environment, project structure, and workflow.
+- **[User Guide](USER_GUIDE.md)**: Functional overview of the application, key features, and user roles.
+- **[Pakistan Local Setup](PAKISTAN_LOCAL_SETUP.md)**: Specific instructions for the Pakistan local deployment with SQLite.
+
 ## 🚀 Quick Start
 
 ### Prerequisites
