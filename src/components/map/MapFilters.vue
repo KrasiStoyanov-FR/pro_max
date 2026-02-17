@@ -33,24 +33,27 @@
           
           <div 
             v-if="showTimeWindowDropdown" 
-            class="w-40 max-h-60 flex flex-col absolute top-full left-0 p-1.5 mt-6 space-y-0.5 overflow-y-auto z-50 rounded shadow-xl bg-neutral-900/90 border border-white/10 overflow-hidden"
+            class="w-auto min-w-[10rem] flex flex-col absolute top-full left-0 p-1.5 mt-6 space-y-0.5 overflow-visible z-50 rounded shadow-xl bg-neutral-900/90 border border-white/10"
           >
-            <button 
-              v-for="(option, index) in timeWindowOptions" 
-              :key="option.value ?? index" 
-              @click="setTimeWindowOption(option.value)"
-              class="px-3 py-2 rounded-lg text-left text-xs hover:text-white hover:bg-primary-500/20 transition-colors"
-              :class="selectedTimeWindow === option.value ? 'bg-primary-500 text-neutral-900' : 'text-white'"
-            >
-              {{ option.label }}
-            </button>
-          </div>
+            <div class="max-h-60 overflow-y-auto space-y-0.5">
+              <button 
+                v-for="(option, index) in timeWindowOptions" 
+                :key="option.value ?? index" 
+                @click="setTimeWindowOption(option.value)"
+                class="w-full px-3 py-2 rounded-lg text-left text-xs hover:text-white hover:bg-primary-500/20 transition-colors"
+                :class="selectedTimeWindow === option.value ? 'bg-primary-500 text-neutral-900' : 'text-white'"
+              >
+                {{ option.label }}
+              </button>
+            </div>
 
-          <div v-if="customTimeWindow" class="mt-1.5 absolute top-full left-0 z-50 min-w-[300px]">
-            <DateRangePicker
-              v-model="customDateRange"
-              @update:model-value="handleDateRangeChange"
-            />
+            <!-- Embedded Date Range Picker for Custom Option -->
+            <div v-if="selectedTimeWindow === 'custom'" class="pt-2 mt-2 border-t border-white/10">
+              <DateRangePicker
+                v-model="customDateRange"
+                @update:model-value="handleDateRangeChange"
+              />
+            </div>
           </div>
         </div>
         
@@ -147,9 +150,15 @@ const toggleTimeWindowDropdown = () => {
 }
 
 const setTimeWindowOption = (value: number | string | null) => {
-  selectedTimeWindow.value = value
-  onTimeWindowChange()
-  showTimeWindowDropdown.value = false
+  if (value === 'custom') {
+    selectedTimeWindow.value = 'custom'
+    // Keep dropdown open for custom selection
+    // The date picker is now embedded in the dropdown
+  } else {
+    selectedTimeWindow.value = value
+    onTimeWindowChange()
+    showTimeWindowDropdown.value = false
+  }
 }
 
 const getSelectedTimeWindowLabel = computed(() => {
@@ -242,7 +251,7 @@ const timeWindowOptions = [
 ]
 
 const selectedTimeWindow = ref<number | string | null>(timeWindowMs.value)
-const customTimeWindow = ref(false)
+const customTimeWindow = ref(false) // Deprecated flag, keeping for ref compat if needed, but UI logic changed
 const customDateRange = ref<{ start: string; end: string } | null>(null)
 
 // Sensor filter mode
@@ -292,25 +301,13 @@ const sensorFilterModeDescription = computed(() => {
 
 // Watch for external changes to timeWindowMs and dateRange
 watch([timeWindowMs, dateRange], ([newWindow, newRange]) => {
-  // Only update if we're not currently in the middle of selecting a custom date range
-  if (customTimeWindow.value && selectedTimeWindow.value === 'custom') {
-    // Don't interfere with custom date range selection
-    if (newRange) {
-      customDateRange.value = newRange
-    }
-    return
-  }
-  
+  // Logic simplified as picker is now embedded
   if (newRange) {
-    // Date range is active
-    customTimeWindow.value = true
     selectedTimeWindow.value = 'custom'
     customDateRange.value = newRange
   } else if (newWindow !== null && !timeWindowOptions.some(opt => opt.value === newWindow)) {
-    // It's a custom value - try to infer dates from the time window
-    customTimeWindow.value = true
+    // Custom window logic
     selectedTimeWindow.value = 'custom'
-    // Set default dates if not already set
     if (!customDateRange.value) {
       const now = new Date()
       const endDate = now.toISOString()
@@ -319,25 +316,17 @@ watch([timeWindowMs, dateRange], ([newWindow, newRange]) => {
     }
   } else {
     selectedTimeWindow.value = newWindow
-    customTimeWindow.value = false
-    customDateRange.value = null
+    // Clear custom range if we switch away from custom
+    if (selectedTimeWindow.value !== 'custom') {
+      customDateRange.value = null
+    }
   }
 }, { immediate: false })
 
 const onTimeWindowChange = () => {
   if (selectedTimeWindow.value === 'custom') {
-    customTimeWindow.value = true
-    // Set default dates if not already set
-    if (!customDateRange.value) {
-      const now = new Date()
-      const endDate = now.toISOString()
-      // Default to 24 hours back
-      const startDate = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString()
-      customDateRange.value = { start: startDate, end: endDate }
-    }
-    updateCustomTimeWindow()
+    // Wait for DateRangePicker input
   } else {
-    customTimeWindow.value = false
     customDateRange.value = null
     mapStore.setTimeWindow(selectedTimeWindow.value as number | null)
   }
@@ -348,6 +337,8 @@ const handleDateRangeChange = (range: { start: string; end: string } | null) => 
   if (range && range.start && range.end) {
     customDateRange.value = range
     updateCustomTimeWindow()
+    // Close dropdown only when a full range is selected and applied
+    showTimeWindowDropdown.value = false
   } else if (range === null) {
     // Clear was explicitly triggered
     customDateRange.value = null
