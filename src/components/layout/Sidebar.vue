@@ -1,11 +1,11 @@
 <template>
   <aside :class="[
-    'flex-1 bg-neutral-900 transition-all duration-[400ms] ease-in-out',
+    'flex-1 bg-neutral-900 transition-all duration-[400ms] ease-in-out relative z-50',
     isCollapsed ? 'sidebar-collapsed max-w-16' : 'max-w-64'
   ]">
     <div class="h-full flex flex-col relative">
       <button @click="$emit('toggle')"
-        class="w-8 h-8 flex items-center justify-center absolute top-4 -right-7 p-1 rounded-full bg-neutral-800 hover:bg-neutral-900 text-neutral-200 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-primary-500 transition-all ease-in-out"
+        class="w-8 h-8 flex items-center justify-center absolute bottom-12 -right-4 p-1 rounded-full bg-neutral-800 hover:bg-neutral-900 text-neutral-200 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-primary-500 transition-all ease-in-out"
         :class="{ 'rotate-180 -right-9': isCollapsed }">
         <PhCaretLeft :size="16" weight="bold" />
       </button>
@@ -89,8 +89,8 @@
       </div>
 
       <!-- Sidebar footer -->
-      <div :class="[isCollapsed ? 'px-3' : 'px-4']" class="py-4">
-        <p class="pt-4 transform border-t text-xs text-neutral-500 truncate">v3.15.3</p>
+      <div :class="[isCollapsed ? 'px-3' : 'px-4']" class="pt-4">
+        <p class="pt-4 pb-8 transform border-t text-xs text-neutral-500 truncate">v3.15.3</p>
       </div>
     </div>
   </aside>

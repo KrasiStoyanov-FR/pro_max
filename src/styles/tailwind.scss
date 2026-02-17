@@ -90,10 +90,10 @@
 
   /* Base input field styling */
   .input-field {
-    @apply flex rounded bg-white/10 text-white placeholder:text-neutral-400 border border-white/30 shadow-sm transition-all duration-200 focus-within:ring-2 focus-within:ring-primary-500 focus-within:border-primary-500 overflow-hidden sm:text-sm;
+    @apply flex rounded-2xl bg-white/10 text-white placeholder:text-neutral-400 border border-white/30 shadow-sm transition-all duration-200 focus-within:ring-2 focus-within:ring-primary-500 focus-within:border-primary-500 overflow-hidden;
 
     input {
-      @apply flex-1 py-2 px-1 border-0 bg-transparent outline-none;
+      @apply flex-1 py-2 px-1 border-0 leading-normal bg-transparent outline-none;
 
       &:is(:-webkit-autofill, :autofill),
       &:-internal-autofill-selected {
@@ -124,7 +124,7 @@
     }
 
     .icon {
-      @apply size-4;
+      @apply size-5;
     }
   }
 

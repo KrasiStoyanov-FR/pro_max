@@ -10,74 +10,48 @@
     <div
       v-if="!isFullscreenMode"
       ref="widgetRef"
-      tabindex="0"
-      class="w-64 p-4 absolute top-4 lg:top-6 right-4 lg:right-6 z-20 rounded-2xl bg-neutral-900/40 backdrop-blur-3xl shadow-md border border-neutral-700/50 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 focus:ring-offset-neutral-900"
+      class="p-4 absolute top-4 lg:top-22 right-4 lg:right-6 z-20 rounded-2xl bg-neutral-900/40 backdrop-blur-3xl border border-white/10"
       role="region"
       aria-label="System Status"
     >
-      <div class="flex flex-col space-y-3">
-        <!-- Database Status -->
-        <Tooltip
-          :content="databaseTooltip"
-          position="left"
-        >
-          <button
-            @click="handleDatabaseClick"
-            class="w-full flex items-center space-x-3 p-2 rounded-lg hover:bg-neutral-800/50 transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1"
-            :aria-label="`Database status: ${databaseStatusText}`"
-          >
-            <div
-              class="w-3 h-3 rounded-full flex-shrink-0"
-              :class="{
-                'bg-green-500': databaseStatus === 'ok',
-                'bg-yellow-500 animate-pulse': databaseStatus === 'degraded',
-                'bg-red-500 animate-pulse': databaseStatus === 'down'
-              }"
-              :aria-label="`Database is ${databaseStatusText}`"
-            ></div>
-            <span class="text-white text-sm flex-1 text-left">{{ databaseStatusText }}</span>
-            <span v-if="isStale" class="text-xs text-neutral-400" aria-label="Data may be stale">⚠</span>
-          </button>
-        </Tooltip>
+      <div class="flex flex-row gap-6">
+        <!-- TODO: There's no need for handleDronesClick() method anymore -->
+        <div class="w-full flex items-center space-x-3 transition-colors" :aria-label="`${activeDrones} targets`">
+          <div class="w-4.5 h-4.5 bg-blue-500 border border-white rounded-full flex-shrink-0"></div>
+          <span class="space-x-2 text-white text-xs flex-1 text-left">
+            <span class="whitespace-nowrap">{{ activeDrones === 1 ? 'Target' : 'Targets' }}:</span>
+            <span>{{ activeDrones }}</span>
+          </span>
+          <!-- <span v-if="isLoading" class="text-xs text-neutral-400 animate-pulse">⟳</span> -->
+        </div>
 
-        <!-- Targets -->
-        <Tooltip
-          :content="`Targets currently tracked: ${activeDrones}`"
-          position="left"
-        >
-          <button
-            @click="handleDronesClick"
-            class="w-full flex items-center space-x-3 p-2 rounded-lg hover:bg-neutral-800/50 transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1"
-            :aria-label="`${activeDrones} targets`"
-            :disabled="isLoading"
-          >
-            <div class="w-3 h-3 bg-blue-500 rounded-full flex-shrink-0"></div>
-            <span class="text-white text-sm flex-1 text-left">
-              {{ activeDrones }} {{ activeDrones === 1 ? 'Target' : 'Targets' }}
-            </span>
-            <span v-if="isLoading" class="text-xs text-neutral-400 animate-pulse">⟳</span>
-          </button>
-        </Tooltip>
+        <!-- TODO: There's no need for handleDetectionsClick() method anymore -->
+        <div class="w-full flex items-center space-x-3 transition-colors" :aria-label="`${rfDetections} RF detections`">
+          <div class="w-4.5 h-4.5 bg-yellow-500 border border-white rounded-full flex-shrink-0"></div>
+          <span class="space-x-2 text-white text-xs flex-1 text-left">
+            <span class="whitespace-nowrap">RF {{ rfDetections === 1 ? 'Detection' : 'Detections' }}:</span>
+            <span>{{ rfDetections }}</span>
+          </span>
+          <!-- <span v-if="isLoading" class="text-xs text-neutral-400 animate-pulse">⟳</span> -->
+        </div>
 
-        <!-- RF Detections -->
-        <Tooltip
-          :content="`RF detections in the last hour: ${rfDetections}`"
-          position="left"
+        <!-- TODO: There's no need for handleDatabaseClick() method anymore -->
+        <div
+          class="w-full flex items-center space-x-3 transition-colors"
+          :aria-label="`Database status: ${databaseStatusText}`"
         >
-          <button
-            @click="handleDetectionsClick"
-            class="w-full flex items-center space-x-3 p-2 rounded-lg hover:bg-neutral-800/50 transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1"
-            :aria-label="`${rfDetections} RF detections`"
-            :disabled="isLoading"
-          >
-            <div class="w-3 h-3 bg-yellow-500 rounded-full flex-shrink-0"></div>
-            <span class="text-white text-sm flex-1 text-left">
-              {{ rfDetections }} RF {{ rfDetections === 1 ? 'Detection' : 'Detections' }}
-            </span>
-            <span v-if="isLoading" class="text-xs text-neutral-400 animate-pulse">⟳</span>
-          </button>
-        </Tooltip>
-
+          <div
+            class="w-4.5 h-4.5 border border-white rounded-full flex-shrink-0"
+            :class="{
+              'bg-green-500': databaseStatus === 'ok',
+              'bg-yellow-500 animate-pulse': databaseStatus === 'degraded',
+              'bg-red-500 animate-pulse': databaseStatus === 'down'
+            }"
+            :aria-label="`Database is ${databaseStatusText}`"
+          ></div>
+          <span class="flex gap-2 text-white text-xs flex-1 text-left">Database: <span v-html="databaseStatusIndicator"></span></span>
+          <span v-if="isStale" class="text-xs text-neutral-400" aria-label="Data may be stale">⚠</span>
+        </div>
       </div>
 
       <!-- Error State -->
@@ -222,6 +196,19 @@ const databaseStatusText = computed(() => {
       return 'Database Disconnected'
     default:
       return 'Database Unknown'
+  }
+})
+
+const databaseStatusIndicator = computed(() => {
+  switch (databaseStatus.value) {
+    case 'ok':
+      return '<span class="text-green-500">Connected</span>'
+    case 'degraded':
+      return '<span class="text-yellow-500">Degraded</span>'
+    case 'down':
+      return '<span class="text-red-500">Disconnected</span>'
+    default:
+      return '<span class="text-neutral-500">Unknown</span>'
   }
 })
 

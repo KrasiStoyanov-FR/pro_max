@@ -1,272 +1,132 @@
 <template>
-  <div class="absolute top-4 left-4 z-20 bg-neutral-900/95 backdrop-blur-sm rounded-lg shadow-lg border border-neutral-700/50 p-3 max-w-56">
-    <!-- Map search (inside filters) -->
-    <div class="mb-3 pb-3 border-b border-neutral-700/50">
-      <label class="block text-xs text-neutral-400 mb-1.5">Search map</label>
-      <div class="flex items-center gap-1.5">
-        <div class="flex-1 input-field min-w-0">
-          <input
-            v-model="searchQuery"
-            type="search"
-            autocomplete="off"
-            placeholder="Places, sensors, drones..."
-            class="!border-0 !bg-transparent !py-1.5 !text-sm"
-            aria-label="Search map"
-            @input="scheduleSearch"
-            @keydown.enter.prevent="runSearchNow"
-          />
-          <div class="input-field__icon input-field__icon--right">
-            <PhMagnifyingGlass aria-hidden="true" weight="bold" class="icon text-neutral-400" />
-          </div>
-        </div>
-        <button
-          v-if="hasSearchResults || searchQuery"
-          type="button"
-          class="shrink-0 rounded p-1.5 text-neutral-400 hover:text-white hover:bg-neutral-700 transition-colors"
-          title="Clear search"
-          aria-label="Clear search"
-          @click="clearSearchNow"
-        >
-          <PhX :size="16" weight="bold" />
-        </button>
-      </div>
-      <div class="max-h-52 overflow-hidden mt-1.5">
-      <MapSearchResultsPanel
-        v-if="showSearchPanel"
-        :marker-results="markerResults"
-        :place-results="placeResults"
-        :is-searching="isSearching"
-        :error="searchError"
-        :place-search-error="placeSearchError"
-        :can-zoom-to-selection="canZoomToSelection"
-        @zoom-to-place="zoomToPlace"
-        @select-marker="selectMarker"
-        @fit-to-selection="fitOrFlyToResults"
-        @clear="clearSearchNow"
-      />
-      </div>
-    </div>
-
-    <div class="flex items-center justify-between mb-2">
-      <h3 class="text-sm font-semibold text-white">Map Filters</h3>
-      <button
-        @click="toggleAll"
-        class="text-xs text-neutral-400 hover:text-white transition-colors"
-        title="Toggle all filters"
-      >
-        {{ allVisible ? 'Hide All' : 'Show All' }}
-      </button>
-    </div>
-
-    <!-- Time Window Filter -->
-    <div class="mb-3 pb-3 border-b border-neutral-700/50">
-      <label class="block text-xs text-neutral-400 mb-1.5">Time Window</label>
-      <select
-        v-model="selectedTimeWindow"
-        @change="onTimeWindowChange"
-        class="w-full bg-neutral-800/50 border border-neutral-700/30 rounded px-2 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-      >
-        <option class="text-neutral-900" v-for="option in timeWindowOptions" :key="option.value" :value="option.value">
-          {{ option.label }}
-        </option>
-      </select>
-      <div v-if="customTimeWindow" class="mt-1.5">
-        <DateRangePicker
-          v-model="customDateRange"
-          @update:model-value="handleDateRangeChange"
-        />
-      </div>
-      <!-- Current Active Time Window Display -->
-      <div class="mt-2 pt-2 border-t border-neutral-700/30">
-        <div class="text-xs text-neutral-400">
-          <div class="flex items-center justify-between">
-            <span>Active:</span>
-            <span class="text-primary-400 font-medium">{{ currentTimeWindowDisplay }}</span>
-          </div>
-          <div class="flex items-center justify-between mt-0.5">
-            <span>Source:</span>
-            <span class="text-neutral-300 text-[10px]">{{ timeWindowSource }}</span>
-          </div>
-        </div>
-      </div>
-    </div>
-    
-    <div class="space-y-1.5">
-      <template v-for="type in markerTypes" :key="type.value">
-        <!-- RF Detections filter (commented out) -->
-        <!-- <button
-          v-if="type.value === 'target'"
-          @click="toggleType(type.value)"
-          :class="[
-            'w-full flex items-center justify-between px-2.5 py-1.5 rounded text-sm transition-colors',
-            isVisible(type.value)
-              ? 'bg-primary-500/20 text-white border border-primary-500/50'
-              : 'bg-neutral-800/50 text-neutral-400 border border-neutral-700/30 hover:bg-neutral-800/70'
-          ]"
-          :title="`Toggle ${type.label}`"
-        >
-          <div class="flex items-center space-x-2">
-            <div
-              :class="[
-                'w-2.5 h-2.5 rounded-full flex-shrink-0',
-                isVisible(type.value) ? 'opacity-100' : 'opacity-50'
-              ]"
-              :style="{ backgroundColor: type.color }"
-            ></div>
-            <div class="flex flex-col">
-              <span>{{ type.label }}</span>
-              <span v-if="type.description" class="text-[10px] text-neutral-500 mt-0.5">
-                {{ type.description }}
-              </span>
-            </div>
-          </div>
-          <div
-            :class="[
-              'text-xs',
-              isVisible(type.value) ? 'text-primary-400' : 'text-neutral-500'
-            ]"
+  <Transition
+    enter-active-class="transition-all duration-300 ease-out"
+    enter-from-class="opacity-0 translate-y-2"
+    enter-to-class="opacity-100 translate-y-0"
+    leave-active-class="transition-all duration-300 ease-in"
+    leave-from-class="opacity-100 translate-y-0"
+    leave-to-class="opacity-0 translate-y-2"
+  >
+    <div class="p-4 absolute top-4 lg:top-22 left-4 lg:left-6 z-20 rounded-2xl bg-neutral-900/40 backdrop-blur-3xl border border-white/10">
+      <div class="flex flex- items-center gap-6 lg:gap-10">
+        <div class="flex items-center justify-between">
+          <h3 class="text-xs font-bold text-white">Map Filters:</h3>
+          <!-- <button
+            @click="toggleAll"
+            class="text-xs text-neutral-400 hover:text-white transition-colors"
+            title="Toggle all filters"
           >
-            {{ isVisible(type.value) ? 'ON' : 'OFF' }}
-          </div>
-        </button> -->
-        
-        <template v-if="type.value !== 'target'">
-          <button
-            @click="toggleType(type.value)"
-            :class="[
-              'w-full flex items-center justify-between px-2.5 py-1.5 rounded text-sm transition-colors',
-              isVisible(type.value)
-                ? 'bg-primary-500/20 text-white border border-primary-500/50'
-                : 'bg-neutral-800/50 text-neutral-400 border border-neutral-700/30 hover:bg-neutral-800/70'
-            ]"
-            :title="`Toggle ${type.label}`"
+            {{ allVisible ? 'Hide All' : 'Show All' }}
+          </button> -->
+        </div>
+
+        <!-- Time Window Filter -->
+        <div class="relative">
+          <button 
+            @click.stop="toggleTimeWindowDropdown"
+            class="min-w-32 flex items-center gap-2 cursor-pointer select-none hover:opacity-80 transition-opacity"
           >
-            <div class="flex items-center space-x-2">
-              <div
-                :class="[
-                  'w-2.5 h-2.5 rounded-full flex-shrink-0',
-                  isVisible(type.value) ? 'opacity-100' : 'opacity-50'
-                ]"
-                :style="{ backgroundColor: type.color }"
-              ></div>
-              <div class="flex flex-col">
-                <span>{{ type.label }}</span>
-                <span v-if="type.description" class="text-[10px] text-neutral-500 mt-0.5">
-                  {{ type.description }}
-                </span>
-              </div>
-            </div>
-            <div
-              :class="[
-                'text-xs',
-                isVisible(type.value) ? 'text-primary-400' : 'text-neutral-500'
-              ]"
-            >
-              {{ isVisible(type.value) ? 'ON' : 'OFF' }}
-            </div>
+            <span class="flex-1 text-xs text-left text-white font-medium">{{ getSelectedTimeWindowLabel }}</span>
+            <PhCaretDown v-if="!showTimeWindowDropdown" weight="bold" class="w-3 h-3 text-neutral-400" />
+            <PhCaretUp v-else weight="bold" class="w-3 h-3 text-neutral-400" />
           </button>
           
-          <!-- Sensor Filter Mode (shown directly under Sensors button when enabled) -->
-          <div v-if="type.value === 'sensor' && isVisible('sensor')" class="ml-4 mb-2 mt-1">
-            <select
-              v-model="selectedSensorFilterMode"
-              @change="onSensorFilterModeChange"
-              class="w-full bg-neutral-800/50 border border-neutral-700/30 rounded px-2 py-1.5 text-xs text-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+          <div 
+            v-if="showTimeWindowDropdown" 
+            class="w-40 max-h-60 flex flex-col absolute top-full left-0 p-1.5 mt-6 space-y-0.5 overflow-y-auto z-50 rounded shadow-xl bg-neutral-900/90 border border-white/10 overflow-hidden"
+          >
+            <button 
+              v-for="(option, index) in timeWindowOptions" 
+              :key="option.value ?? index" 
+              @click="setTimeWindowOption(option.value)"
+              class="px-3 py-2 rounded-lg text-left text-xs hover:text-white hover:bg-primary-500/20 transition-colors"
+              :class="selectedTimeWindow === option.value ? 'bg-primary-500 text-neutral-900' : 'text-white'"
             >
-              <option class="text-neutral-900" value="all">All Sensors</option>
-              <option class="text-neutral-900" value="with_detections">With Recent RF Detections</option>
-              <option class="text-neutral-900" value="with_targets">With Active Targets</option>
-              <option class="text-neutral-900" value="without_detections">Without Detections</option>
-            </select>
-            <p class="text-[10px] text-neutral-500 mt-0.5">
-              {{ sensorFilterModeDescription }}
-            </p>
+              {{ option.label }}
+            </button>
           </div>
-        </template>
-      </template>
+
+          <div v-if="customTimeWindow" class="mt-1.5 absolute top-full left-0 z-50 min-w-[300px]">
+            <DateRangePicker
+              v-model="customDateRange"
+              @update:model-value="handleDateRangeChange"
+            />
+          </div>
+        </div>
+        
+        <div class="flex items-center gap-6">
+          <template v-for="type in markerTypes" :key="type.value">
+            <div class="relative flex items-center">
+              <!-- Checkbox and Label Group -->
+              <div class="flex items-center gap-2 cursor-pointer select-none" @click="toggleType(type.value)">
+                <!-- Custom Checkbox -->
+                <div 
+                  class="w-4 h-4 rounded-md border border-neutral-100 flex items-center justify-center transition-colors"
+                  :class="{ 'bg-white': isVisible(type.value) }"
+                >
+                  <PhCheck v-if="isVisible(type.value)" weight="bold" class="text-black text-xs" />
+                </div>
+                
+                <!-- Shape Icon -->
+                <div 
+                  class="ml-2 shape shape--outline" 
+                  :class="[
+                    type.shapeClass, 
+                    `shape--${type.value}`,
+
+                    { 'shape--active': isVisible(type.value) },
+                    { 'opacity-50': !isVisible(type.value) }
+                  ]"
+                ></div>
+                
+                <!-- Label with Count -->
+                <span class="text-xs text-white font-medium" :class="{ 'opacity-50': !isVisible(type.value) }">
+                  {{ type.label }} <span class="text-neutral-400">({{ getCount(type.value) }})</span>
+                </span>
+              </div>
+
+              <!-- Sensor Dropdown Toggle -->
+              <button 
+                v-if="type.value === 'sensor'"
+                @click.stop="toggleSensorDropdown"
+                class="ml-0.5 p-0.5 text-neutral-400 hover:text-white transition-colors"
+              >
+                <PhCaretDown v-if="!showSensorDropdown" weight="bold" class="w-3 h-3" />
+                <PhCaretUp v-else weight="bold" class="w-3 h-3" />
+              </button>
+
+              <!-- Sensor Filter Dropdown Menu -->
+              <div 
+                v-if="type.value === 'sensor' && showSensorDropdown" 
+                class="w-48 max-h-60 flex flex-col absolute top-full left-0 p-1.5 mt-6 space-y-0.5 overflow-y-auto z-50 rounded shadow-xl bg-neutral-900/90 border border-white/10 overflow-hidden"
+              >
+                <button 
+                  v-for="mode in ['all', 'with_detections', 'without_detections']" 
+                  :key="mode"
+                  @click="setSensorMode(mode)"
+                  class="px-3 py-2 rounded-lg text-left text-xs hover:text-white hover:bg-primary-500/20 transition-colors"
+                  :class="selectedSensorFilterMode === mode ? 'bg-primary-500 text-neutral-900' : 'text-white'"
+                >
+                  {{ mode === 'all' ? 'All sensors' : (mode === 'with_detections' ? 'With Recent RF Detections' : 'Without RF Detections') }}
+                </button>
+              </div>
+            </div>
+          </template>
+        </div>
+      </div>
     </div>
-  </div>
+  </Transition>
 </template>
 
 <script setup lang="ts">
 import { computed, ref, watch, onUnmounted } from 'vue'
-import { PhMagnifyingGlass, PhX } from '@phosphor-icons/vue'
+import { PhCheck, PhCaretDown, PhCaretUp } from '@phosphor-icons/vue'
 import { storeToRefs } from 'pinia'
 import { useMapStore } from '@/store/map'
-import { useMapSearch } from '@/composables/useMapSearch'
 import type { MapPin } from '@/types/map'
 import DateRangePicker from '@/components/shared/DateRangePicker.vue'
-import MapSearchResultsPanel from '@/components/map/MapSearchResultsPanel.vue'
 
 const mapStore = useMapStore()
-const {
-  query: searchQuery,
-  markerResults,
-  placeResults,
-  isSearching,
-  error: searchError,
-  placeSearchError,
-  hasResults: hasSearchResults,
-  canZoomToSelection,
-  runSearch,
-  clearSearch,
-  fitOrFlyToResults,
-  zoomToPlace,
-  selectMarker
-} = useMapSearch()
-
-const SEARCH_DEBOUNCE_MS = 400
-let searchDebounceId: ReturnType<typeof setTimeout> | null = null
-
-/** Show panel when we have results, any error, or a completed search (so "No results" or place error is visible). */
-const showSearchPanel = computed(
-  () =>
-    hasSearchResults.value ||
-    searchError.value != null ||
-    placeSearchError.value != null ||
-    (searchQuery.value.trim() !== '' && !isSearching.value)
-)
-
-function scheduleSearch() {
-  if (searchDebounceId != null) {
-    clearTimeout(searchDebounceId)
-    searchDebounceId = null
-  }
-  if (!searchQuery.value.trim()) {
-    clearSearch()
-    return
-  }
-  searchDebounceId = setTimeout(() => {
-    searchDebounceId = null
-    runSearch()
-  }, SEARCH_DEBOUNCE_MS)
-}
-
-async function runSearchNow() {
-  if (searchDebounceId != null) {
-    clearTimeout(searchDebounceId)
-    searchDebounceId = null
-  }
-  if (!searchQuery.value.trim()) {
-    clearSearch()
-    return
-  }
-  await runSearch()
-  fitOrFlyToResults()
-}
-
-function clearSearchNow() {
-  if (searchDebounceId != null) {
-    clearTimeout(searchDebounceId)
-    searchDebounceId = null
-  }
-  clearSearch()
-}
-
-onUnmounted(() => {
-  if (searchDebounceId != null) clearTimeout(searchDebounceId)
-  clearSearch()
-})
 const { visibleMarkerTypes, timeWindowMs, dateRange, sensorFilterMode } = storeToRefs(mapStore)
 
 // Helper to format milliseconds to human-readable string
@@ -280,6 +140,22 @@ const formatTimeWindow = (ms: number | null): string => {
   if (ms >= 60 * 1000) return `${Math.round(ms / (60 * 1000))} minutes`
   return `${Math.round(ms / 1000)} seconds`
 }
+
+const showTimeWindowDropdown = ref(false)
+const toggleTimeWindowDropdown = () => {
+  showTimeWindowDropdown.value = !showTimeWindowDropdown.value
+}
+
+const setTimeWindowOption = (value: number | string | null) => {
+  selectedTimeWindow.value = value
+  onTimeWindowChange()
+  showTimeWindowDropdown.value = false
+}
+
+const getSelectedTimeWindowLabel = computed(() => {
+  const option = timeWindowOptions.find(o => o.value === selectedTimeWindow.value)
+  return option ? option.label : 'Select Time'
+})
 
 // Determine current active time window and source
 const currentTimeWindowDisplay = computed(() => {
@@ -503,16 +379,29 @@ const updateCustomTimeWindow = () => {
   }
 }
 
-const markerTypes: Array<{ value: MapPin['type']; label: string; color: string; description?: string }> = [
-  { value: 'drone', label: 'Targets', color: '#22c55e' },
-  { value: 'sensor', label: 'Sensors', color: '#22d3ee' },
-  { value: 'target', label: 'RF Detections', color: '#f59e0b', description: 'Shown at sensor locations' }
-  // Note: 'radar', 'threat', 'friendly', and 'unknown' types are defined but not currently used
-  // { value: 'radar', label: 'Radar', color: '#8b5cf6' },
-  // { value: 'threat', label: 'Threats', color: '#ef4444' },
-  // { value: 'friendly', label: 'Operators', color: '#3b82f6' },
-  // { value: 'unknown', label: 'Unknown', color: '#6b7280' }
+
+const markerTypes: Array<{ value: MapPin['type']; label: string; shapeClass: string }> = [
+  { value: 'drone', label: 'Drones', shapeClass: 'shape--circle' },
+  { value: 'friendly', label: 'Operators', shapeClass: 'shape--square' },
+  { value: 'sensor', label: 'All Sensors', shapeClass: 'shape--triangle' }
 ]
+
+const getCount = (type: MapPin['type']): number => {
+  return mapStore.pins.filter(pin => pin.type === type).length
+}
+
+const showSensorDropdown = ref(false)
+
+const toggleSensorDropdown = () => {
+  showSensorDropdown.value = !showSensorDropdown.value
+}
+
+const setSensorMode = (mode: any) => {
+  selectedSensorFilterMode.value = mode
+  onSensorFilterModeChange()
+  showSensorDropdown.value = false
+}
+
 
 const isVisible = (type: MapPin['type']): boolean => {
   return mapStore.isMarkerTypeVisible(type)
@@ -552,3 +441,90 @@ const toggleAll = () => {
   })
 }
 </script>
+
+<style lang="scss" scoped>
+$shape-size: 1.125rem;
+$border-width: 0.0625rem;
+$default-color: theme('colors.white');
+
+@mixin shape-active-style($color) {
+  &:not(.shape--triangle) {
+    background-color: $color;
+    border-color: $color;
+  }
+
+  &.shape--triangle {
+    background-color: $color;
+    border-color: transparent;
+    clip-path: polygon(50% 15%, 0% 100%, 100% 100%);
+    
+    &::before {
+      display: none;
+    }
+  }
+}
+
+.shape {
+  &:not(.shape--triangle) {
+    width: $shape-size;
+    height: $shape-size;
+  }
+
+  &--circle {
+    border-radius: theme('borderRadius.full');
+  }
+
+  &--triangle {
+    width: 1.25rem;
+    height: $shape-size;
+    position: relative;
+    transform: translateY(-0.0625rem); // Nudge up to visually center with circles/squares
+    border-left: $border-width solid transparent;
+    border-bottom: $border-width solid $default-color;
+
+    &::before {
+      content: "";
+      width: $shape-size;
+      height: $shape-size;
+      position: absolute;
+      transform: rotate(45deg) skew(10deg, 10deg);
+      left: 0;
+      bottom: -0.625rem;
+    }
+
+    &,
+    &::before {
+      display: block;
+      box-sizing: border-box;
+      border-right: $border-width solid transparent;
+    }
+  }
+
+  &--outline {
+    &:not(.shape--triangle) {
+      border-width: $border-width;
+      border-color: $default-color;
+    }
+
+    &.shape--triangle::before {
+      border-left: $border-width solid $default-color;
+      border-top: $border-width solid $default-color;
+      border-bottom: $border-width solid transparent;
+    }
+  }
+
+  &--active {
+    &.shape--drone {
+      @include shape-active-style(theme('colors.green.500'));
+    }
+
+    &.shape--friendly {
+      @include shape-active-style(theme('colors.blue.500'));
+    }
+
+    &.shape--sensor {
+      @include shape-active-style(#22d3ee);
+    }
+  }
+}
+</style>

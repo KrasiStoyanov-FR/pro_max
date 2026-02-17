@@ -23,6 +23,10 @@
       </div>
     </div>
 
+    <div class="flex w-full absolute top-0 right-0 left-0 z-40">
+      <TopNav />
+    </div>
+
     <!-- Map filters overlay -->
     <MapFilters />
 
@@ -87,6 +91,7 @@ import { PhWarning, PhArrowClockwise, PhGpsFix, PhStack, PhPlus, PhMinus } from 
 import { useMapPins } from '@/composables/useMapPins'
 import { mapService } from '@/services/mapService'
 import MapFilters from './MapFilters.vue'
+import TopNav from '@/components/layout/TopNav.vue'
 
 // Props
 interface Props {

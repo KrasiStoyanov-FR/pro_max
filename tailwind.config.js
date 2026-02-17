@@ -90,9 +90,9 @@ export default {
       md: '0.25rem', // 4px
       lg: '0.375rem', // 6px
       DEFAULT: '0.5rem', // 8px
-      xl: '.625rem', // 12px
-      '2xl': '1.25rem', // 16px
-      '3xl': '1.875rem', // 24px
+      xl: '.75rem', // 12px
+      '2xl': '1rem', // 16px
+      '3xl': '1.5rem', // 24px
       '4xl': '2.5rem', // 40px
       full: '9999px',
     },

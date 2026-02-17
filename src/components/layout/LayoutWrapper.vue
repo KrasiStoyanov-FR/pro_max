@@ -4,10 +4,7 @@
     <Sidebar :is-collapsed="isSidebarCollapsed" @toggle="isSidebarCollapsed = !isSidebarCollapsed" />
 
     <!-- Main Content -->
-    <main class="flex flex-1 flex-col items-stretch">
-      <!-- Top Navigation -->
-      <TopNav />
-
+    <main class="flex flex-1 flex-col items-stretch relative">
       <div class="flex-1 flex overflow-hidden relative">
         <div class="flex justify-start p-4 absolute top-0 right-0 bottom-0 left-0 z-10 pointer-events-none lg:p-6">
           <!-- Cluster info panel disabled for spiderfy-only UX -->
