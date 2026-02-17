@@ -3,7 +3,7 @@
     <span class="max-w-xs flex-1">Map</span>
     <div class="flex flex-1 items-center justify-stretch text-center">
       <!-- Per-page search lives on each page (Map, Detections, Sensors) -->
-       <span class="flex-1">Real time view, 21.11.2025, 11:55</span>
+       <span class="flex-1">{{ formattedDate }}</span>
     </div>
     <div class="max-w-xs flex flex-1 items-end gap-1.5 relative">
         <div class="min-w-0 max-h-10 flex-1 input-field bg-neutral-900/40 border-white/10">
@@ -52,10 +52,86 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onUnmounted } from 'vue'
+import { computed, ref, onUnmounted, onMounted } from 'vue'
 import { PhMagnifyingGlass, PhX } from '@phosphor-icons/vue'
+import { storeToRefs } from 'pinia'
 import { useMapSearch } from '@/composables/useMapSearch'
+import { useMapStore } from '@/store/map'
 import MapSearchResultsPanel from '@/components/map/MapSearchResultsPanel.vue'
+
+const mapStore = useMapStore()
+const { timeWindowMs, dateRange } = storeToRefs(mapStore)
+
+const currentDate = ref(new Date())
+
+const formattedDate = computed(() => {
+  // If we have a custom date range (historical view)
+  if (dateRange.value) {
+    const start = new Date(dateRange.value.start)
+    const end = new Date(dateRange.value.end)
+    
+    // Format: "Historical view: DD.MM.YYYY HH:MM - DD.MM.YYYY HH:MM"
+    const format = (d: Date) => d.toLocaleDateString('de-DE', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    })
+    
+    return `Historical view: ${format(start)} - ${format(end)}`
+  }
+  
+  // If we have a time window set (e.g. "Last 15 minutes", "Last 1 hour")
+  if (timeWindowMs.value !== null) {
+    // Format: "Past [window] view, DD.MM.YYYY, HH:MM"
+    // We'll calculate the human readable string for the window
+    const ms = timeWindowMs.value
+    let windowText = ''
+    
+    if (ms >= 24 * 60 * 60 * 1000) {
+      const days = Math.round(ms / (24 * 60 * 60 * 1000))
+      windowText = `${days} ${days === 1 ? 'day' : 'days'}`
+    } else if (ms >= 60 * 60 * 1000) {
+      const hours = Math.round(ms / (60 * 60 * 1000))
+      windowText = `${hours} ${hours === 1 ? 'hour' : 'hours'}`
+    } else {
+      const minutes = Math.round(ms / (60 * 1000))
+      windowText = `${minutes} ${minutes === 1 ? 'minute' : 'minutes'}`
+    }
+    
+    return `Past ${windowText} view, ${currentDate.value.toLocaleDateString('de-DE', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric'
+    })}, ${currentDate.value.toLocaleTimeString('de-DE', {
+      hour: '2-digit',
+      minute: '2-digit'
+    })}`
+  }
+
+  // Default: Live view (timeWindowMs is null)
+  return `Real time view, ${currentDate.value.toLocaleDateString('de-DE', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric'
+  })}, ${currentDate.value.toLocaleTimeString('de-DE', {
+    hour: '2-digit',
+    minute: '2-digit'
+  })}`
+})
+
+let timer: ReturnType<typeof setInterval>
+
+onMounted(() => {
+  timer = setInterval(() => {
+    currentDate.value = new Date()
+  }, 1000)
+})
+
+onUnmounted(() => {
+  if (timer) clearInterval(timer)
+})
 
 const {
   query: searchQuery,
