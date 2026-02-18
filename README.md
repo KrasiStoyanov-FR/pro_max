@@ -30,10 +30,10 @@ A production-ready Vue 3 + TypeScript frontend application for monitoring radar 
 
 3. **Set up environment variables**
    ```bash
-   cp env.example .env.local
+   cp env.example .env
    ```
    
-   Edit `.env.local` with your configuration:
+   Edit `.env` with your configuration:
    ```bash
    VITE_API_BASE_URL=http://localhost:3001/api
    VITE_MAP_PROVIDER=leaflet
@@ -50,7 +50,7 @@ A production-ready Vue 3 + TypeScript frontend application for monitoring radar 
    
    **Option 2: Full stack (Frontend + Backend + Database)**
    ```bash
-   npm start
+   npm run start
    ```
 
 5. **Access the application**
@@ -64,13 +64,13 @@ Use these credentials for master admin access:
 - **Email**: `master@promax.com`
 - **Password**: `DroneTrackingSystem`
 
-- **Email**: `master@bluesurge.com`
-- **Password**: `DroneTrakingSystem`
-
 ### Demo Account Credentials (Legacy)
 For backward compatibility, the following demo account is also available:
 
 - **Email**: `admin@radar.com`
+- **Password**: `password`
+
+- **Email**: `user@radar.com`
 - **Password**: `password`
 
 ### What You Can Access
@@ -108,9 +108,9 @@ This application consists of three main components:
 - `npm run dev:original` - Start frontend with original brand
 - `npm run dev:pakistan` - Start frontend with Pakistan brand
 - `npm run server` - Start backend server only  
-- `npm start` - Start both frontend and backend concurrently (original brand)
-- `npm start:original` - Start full stack with original brand
-- `npm start:pakistan` - Start full stack with Pakistan brand
+- `npm run start` - Start both frontend and backend concurrently (original brand)
+- `npm run start:original` - Start full stack with original brand
+- `npm run start:pakistan` - Start full stack with Pakistan brand
 
 ### Build
 - `npm run build` - Build frontend for production (original brand)
@@ -193,14 +193,14 @@ The backend provides the following endpoints:
 
 **Original Brand (Default):**
 ```bash
-npm start  # Starts both frontend and backend
+npm run start  # Starts both frontend and backend
 # or explicitly
-npm start:original
+npm run start:original
 ```
 
 **Pakistan Brand:**
 ```bash
-npm start:pakistan
+npm run start:pakistan
 ```
 
 ### Pakistan Local Deployment (SQLite)
@@ -219,7 +219,7 @@ For Pakistan client's **local deployment** with a **local SQLite database** (no 
 
 3. **Start the application:**
    ```bash
-   npm start:pakistan
+   npm run start:pakistan
    ```
 
 4. **Access the application:**
@@ -351,7 +351,7 @@ For technical support or questions:
 
 ## 🎯 Quick Reference
 
-**Start the application**: `npm start`  
+**Start the application**: `npm run start`  
 **Access URL**: http://localhost:3000  
 **Master Email**: master@promax.com  
 **Master Password**: DroneTrackingSystem  
