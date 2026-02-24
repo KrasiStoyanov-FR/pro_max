@@ -6,7 +6,7 @@
     <div class="h-full flex flex-col relative">
       <button @click="$emit('toggle')"
         class="w-8 h-8 flex items-center justify-center absolute bottom-12 -right-3.5 z-10 p-1 rounded-full bg-neutral-900 hover:bg-neutral-700 text-neutral-200 hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-primary-500 transition-all ease-in-out"
-        :class="{ 'rotate-180 -right-9': isCollapsed }">
+        :class="{ 'rotate-180': isCollapsed }">
         <PhCaretLeft :size="16" weight="bold" />
       </button>
       

@@ -9,14 +9,65 @@
           @pin-deselected="handlePinDeselected"
         />
 
-        <!-- Status summary card overlay -->
-        <StatusSummaryCard
-          :is-fullscreen-mode="false"
-          @open-drones-panel="handleOpenDronesPanel"
-          @open-detections-panel="handleOpenDetectionsPanel"
-          @open-operators-panel="handleOpenOperatorsPanel"
-          @open-database-status="handleOpenDatabaseStatus"
-        />
+        <div class="flex items-start justify-between p-4 lg:p-6 absolute top-16 right-0 bottom-0 left-0">
+          <div class="flex flex-col items-end gap-8 self-stretch">
+            <!-- Map filters overlay -->
+            <MapFilters />
+          </div>
+
+          <div class="flex flex-col items-end justify-between gap-8 self-stretch">
+            <!-- Status summary card overlay -->
+            <StatusSummaryCard
+              :is-fullscreen-mode="false"
+              @open-drones-panel="handleOpenDronesPanel"
+              @open-detections-panel="handleOpenDetectionsPanel"
+              @open-operators-panel="handleOpenOperatorsPanel"
+              @open-database-status="handleOpenDatabaseStatus"
+            />
+
+            <!-- Info Panel Overlay -->
+            <InfoPanel 
+              class="flex-1"
+              :is-open="isInfoPanelOpen" 
+              :selected-pin="selectedPin"
+              :has-cluster-panel="false" 
+              :focus-mode-active="mapStore.focusModeActive"
+              @close="closeInfoPanel" 
+              @pin-deselected="handlePinDeselected"
+              @exit-focus="handleExitFocusMode" 
+              @focus-detection="handleFocusDetection"
+              @zoom-to-map-pin="handleZoomToPin" 
+            />
+
+            <!-- Map Controls Overlay -->
+            <div class="w-10 max-h-54 flex flex-col flex-wrap space-y-1 z-10">
+              <!-- Toggle layers (topmost) -->
+              <button @click="toggleLayers" class="map-control-button map-control-button--inverted" title="Toggle terrain layers">
+                <PhStack :size="16" class="text-current" weight="fill" />
+              </button>
+      
+              <!-- Zoom In -->
+              <button @click="zoomIn" class="map-control-button" title="Zoom In">
+                <PhPlus :size="16" class="text-current" weight="bold" />
+              </button>
+      
+              <!-- Zoom Out -->
+              <button @click="zoomOut" class="map-control-button" title="Zoom Out">
+                <PhMinus :size="16" class="text-current" weight="bold" />
+              </button>
+      
+              <!-- Center to user location -->
+              <button @click="centerToUserLocation" class="map-control-button" title="Center to my location">
+                <PhGpsFix :size="16" class="text-current" weight="fill" />
+              </button>
+      
+              <!-- Refresh pins -->
+              <button @click="handleRefreshPins" class="map-control-button" title="Refresh map data">
+                <PhArrowClockwise :size="16" class="text-current" weight="bold" />
+              </button>
+            </div>
+          </div>
+        </div>
 
         <!-- Add Device Button (only show if user has permission) -->
         <AddDeviceButton
@@ -47,12 +98,15 @@ import { useMapPins } from '@/composables/useMapPins'
 import { databaseApi } from '@/services/api'
 import { mapService } from '@/services/mapService'
 import { useDataStore } from '@/store/data'
+import { PhStack, PhPlus, PhMinus, PhGpsFix, PhArrowClockwise } from '@phosphor-icons/vue'
+import InfoPanel from '@/components/layout/InfoPanel.vue'
 import LayoutWrapper from '@/components/layout/LayoutWrapper.vue'
 import MapView from '@/components/map/MapView.vue'
+import MapFilters from '@/components/map/MapFilters.vue'
 import StatusSummaryCard from '@/components/map/StatusSummaryCard.vue'
 import AddDeviceButton from '@/components/devices/AddDeviceButton.vue'
 import DeviceCreationModal from '@/components/devices/DeviceCreationModal.vue'
-import type { MapPin } from '@/types/map'
+import type { MapPin, DetectionCheckpoint } from '@/types/map'
 import type { GpsUnitPosition, RFDetection } from '@/types/database'
 
 // Composables
@@ -62,7 +116,10 @@ const route = useRoute()
 const router = useRouter()
 const mapStore = useMapStore()
 const dataStore = useDataStore()
-const { pins: mapPins, selectedPin, initializeMap, loadPins, refreshPins, isMapReady } = useMapPins()
+const { pins: mapPins, selectedPin, initializeMap, loadPins, refreshPins, isMapReady, flyToLocation } = useMapPins()
+
+const DEFAULT_CENTER = [42.6977, 23.3219]
+const DEFAULT_ZOOM = 10
 
 // Computed properties
 const pins = computed(() => mapPins.value)
@@ -104,14 +161,247 @@ watch(
 // Device modal state
 const isDeviceModalOpen = ref(false)
 
+// Info Panel State
+const isInfoPanelOpen = ref(false)
+
+// Computed
+const focusedDetectionId = computed(() => mapStore.focusedDetectionId)
+
+// Get selected detection from the selected pin's detections or search all pins
+const selectedDetection = computed<DetectionCheckpoint | null>(() => {
+  if (!focusedDetectionId.value) {
+    return null
+  }
+  
+  // First, check if the selected pin IS a detection (type: 'target')
+  if (selectedPin.value?.type === 'target' && selectedPin.value.data) {
+    const pinDetectionId = typeof selectedPin.value.data.id === 'number'
+      ? selectedPin.value.data.id
+      : Number(String(selectedPin.value.id).replace('rf-detection-', ''))
+    
+    if (pinDetectionId === focusedDetectionId.value) {
+      // Convert pin data to DetectionCheckpoint format
+      return {
+        id: pinDetectionId,
+        timestamp: selectedPin.value.data.timestamp ?? selectedPin.value.timestamp,
+        frequency: selectedPin.value.data.frequency ?? null,
+        signalStrength: selectedPin.value.data.signal_strength ?? null,
+        status: selectedPin.value.data.detection_status ?? false,
+        systemId: selectedPin.value.data.system_id ?? null,
+        droneId: selectedPin.value.data.drone_id ?? null
+      }
+    }
+  }
+  
+  // Second, try to find in selected pin's detections array
+  if (selectedPin.value) {
+    const detections = selectedPin.value.data?.detections
+    if (Array.isArray(detections)) {
+      const detection = detections.find((d: DetectionCheckpoint) => d.id === focusedDetectionId.value)
+      if (detection) {
+        return detection
+      }
+    }
+  }
+  
+  // If not found, search all pins for this detection
+  // This handles cases where a detector is selected and shows detections from linked drones
+  for (const pin of mapStore.pins) {
+    if (pin.type === 'drone' && Array.isArray(pin.data?.detections)) {
+      const detection = (pin.data.detections as DetectionCheckpoint[]).find(
+        (d: DetectionCheckpoint) => d.id === focusedDetectionId.value
+      )
+      if (detection) {
+        return detection
+      }
+    }
+  }
+  
+  return null
+})
+
 // Methods
+const toggleLayers = () => {
+  mapService.toggleLayer()
+}
+
+const zoomIn = () => {
+  if (isMapReady.value) {
+    mapService.zoomIn()
+  }
+}
+
+const zoomOut = () => {
+  if (isMapReady.value) {
+    mapService.zoomOut()
+  }
+}
+
+const centerToUserLocation = () => {
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const { latitude, longitude } = position.coords
+        flyToLocation(latitude, longitude, 15)
+      },
+      (error) => {
+        console.error('Geolocation error:', error)
+        // Fallback to default center
+        flyToLocation(DEFAULT_CENTER[0], DEFAULT_CENTER[1], DEFAULT_ZOOM)
+      }
+    )
+  } else {
+    // Fallback to default center
+    flyToLocation(DEFAULT_CENTER[0], DEFAULT_CENTER[1], DEFAULT_ZOOM)
+  }
+}
+
+const handleRefreshPins = async () => {
+  await refreshPins()
+}
+
+const handleExitFocusMode = () => {
+  mapStore.exitFocusMode()
+}
+
+const handleFocusDetection = (detection: DetectionCheckpoint) => {
+  console.log('[Map] handleFocusDetection called with:', detection)
+  if (!detection) {
+    console.warn('[Map] No detection provided')
+    return
+  }
+  
+  // Ensure info panel is open
+  if (!isInfoPanelOpen.value) {
+    isInfoPanelOpen.value = true
+  }
+  
+  // Set the focused detection ID first - this will trigger the panel
+  mapStore.setFocusedDetectionId(detection.id)
+  console.log('[Map] Set focusedDetectionId to:', detection.id)
+  
+  // Find the trajectory point that matches this detection's timestamp
+  const pin = selectedPin.value
+  console.log('[Map] Selected pin:', pin?.id, 'has trajectory:', !!pin?.data?.trajectory)
+  
+  if (pin && Array.isArray(pin.data?.trajectory)) {
+    const trajectory = pin.data.trajectory as any[]
+    const detectionTime = new Date(detection.timestamp).getTime()
+    console.log('[Map] Looking for trajectory point matching detection time:', detection.timestamp, 'in', trajectory.length, 'points')
+    
+    // Find the closest trajectory point to this detection's timestamp
+    let closestPoint: any = null
+    let closestTimeDiff = Infinity
+    
+    trajectory.forEach((point) => {
+      const pointTime = new Date(point.timestamp).getTime()
+      const timeDiff = Math.abs(pointTime - detectionTime)
+      if (timeDiff < closestTimeDiff) {
+        closestTimeDiff = timeDiff
+        closestPoint = point
+      }
+    })
+    
+    console.log('[Map] Closest point found:', closestPoint, 'time diff:', closestTimeDiff, 'ms')
+    
+    if (closestPoint && closestTimeDiff < 5000) { // Within 5 seconds
+      // Pan to the trajectory point with zoom
+      const zoomLevel = Math.max(mapStore.viewport.zoom ?? 13, 16)
+      console.log('[Map] Flying to checkpoint:', closestPoint.lat, closestPoint.lng, 'zoom:', zoomLevel)
+      mapService.flyTo(closestPoint.lat, closestPoint.lng, zoomLevel)
+      
+      // Use focusedDronePinId if available, otherwise use pin.id
+      const dronePinId = mapStore.focusedDronePinId || pin.id
+      console.log('[Map] Drone pin ID:', dronePinId, '(focusedDronePinId:', mapStore.focusedDronePinId, ', pin.id:', pin.id, ')')
+      
+      if (dronePinId) {
+        // Ensure trajectory checkpoints are shown
+        const trajectory = pin.data.trajectory as any[]
+        if (trajectory && trajectory.length > 0) {
+          const service = mapService as unknown as { showTrajectoryCheckpoints?: (dronePinId: string, points: any[]) => void }
+          service.showTrajectoryCheckpoints?.(dronePinId, trajectory)
+        }
+        
+        mapService.highlightTrajectoryCheckpoint(dronePinId, closestPoint.timestamp)
+        // Also add detection-selected class with timestamp for precise matching
+        const service = mapService as unknown as { highlightDetectionCheckpoint?: (dronePinId: string, detectionId: number | null, detectionTimestamp?: string) => void }
+        service.highlightDetectionCheckpoint?.(dronePinId, detection.id, detection.timestamp)
+        console.log('[Map] Highlighted checkpoint for detection:', detection.id)
+      } else {
+        console.warn('[Map] No drone pin ID available')
+      }
+    } else {
+      console.warn('[Map] No matching trajectory point found or time diff too large:', closestTimeDiff, 'ms')
+    }
+  } else {
+    console.warn('[Map] No trajectory data available in selected pin')
+  }
+  
+  // Also try the old method for target-type pins (if they exist)
+  mapService.panToDetection(detection.id)
+  const service = mapService as unknown as { highlightDetection?: (id: number | null) => void }
+  service.highlightDetection?.(detection.id)
+}
+
+const handleZoomToPin = (pin: MapPin) => {
+  if (!pin) return
+  mapStore.flyToPin(pin)
+}
+
+const closeInfoPanel = () => {
+  isInfoPanelOpen.value = false
+  // Only clear the pin selection, keep cluster if it exists
+  mapStore.selectPin(null)
+}
+
 const handlePinSelected = () => {
   // The map store will handle the selection
+  // Note: we can add custom logic here if needed, but the watcher on selectedPin handles the UI
 }
 
 const handlePinDeselected = () => {
-  // The map store will handle the deselection
+  closeInfoPanel()
 }
+
+// Watch for detection focus changes (e.g., from trajectory checkpoint clicks)
+watch(focusedDetectionId, (newId) => {
+  if (newId !== null) {
+    // Ensure info panel is open when a detection is focused
+    if (!isInfoPanelOpen.value) {
+      isInfoPanelOpen.value = true
+    }
+    console.log('[Map] Detection focused via watch:', newId, 'selectedDetection:', selectedDetection.value?.id)
+  }
+})
+
+// Watch for pin selection to open/close info panel
+watch(selectedPin, (newPin: any) => {
+  console.log('[Map] selectedPin changed:', { 
+    type: newPin?.type, 
+    id: newPin?.id, 
+    dataId: newPin?.data?.id,
+    isInfoPanelOpen: isInfoPanelOpen.value 
+  })
+  if (newPin) {
+    isInfoPanelOpen.value = true
+    console.log('[Map] InfoPanel opened for pin:', newPin.type, newPin.id)
+  } else {
+    isInfoPanelOpen.value = false
+  }
+})
+
+// Watch for panel visibility changes to update available viewport
+watch([() => false /* mapStore.hasSelectedCluster disabled */, isInfoPanelOpen], () => {
+  // Calculate panel widths based on visibility
+  const clusterWidth = 0
+  const infoWidth = isInfoPanelOpen.value ? 320 : 0 // w-64 lg:w-80 = 256px + 64px = 320px
+
+  // Update the available viewport
+  mapStore.updateAvailableViewport({
+    cluster: clusterWidth,
+    info: infoWidth
+  })
+}, { immediate: true })
 
 const openDeviceModal = () => {
   // Check permission before opening modal

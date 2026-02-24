@@ -27,39 +27,6 @@
       <TopNav />
     </div>
 
-    <!-- Map filters overlay -->
-    <MapFilters />
-
-    <!-- Map controls overlay -->
-    <div class="absolute bottom-4 right-4 lg:bottom-6 lg:right-6 z-20">
-      <div class="flex flex-col space-y-1">
-        <!-- Toggle layers (topmost) -->
-        <button @click="toggleLayers" class="map-control-button map-control-button--inverted" title="Toggle terrain layers">
-          <PhStack :size="16" class="text-current" weight="fill" />
-        </button>
-
-        <!-- Zoom In -->
-        <button @click="zoomIn" class="map-control-button" title="Zoom In">
-          <PhPlus :size="16" class="text-current" weight="bold" />
-        </button>
-
-        <!-- Zoom Out -->
-        <button @click="zoomOut" class="map-control-button" title="Zoom Out">
-          <PhMinus :size="16" class="text-current" weight="bold" />
-        </button>
-
-        <!-- Center to user location -->
-        <button @click="centerToUserLocation" class="map-control-button" title="Center to my location">
-          <PhGpsFix :size="16" class="text-current" weight="fill" />
-        </button>
-
-        <!-- Refresh pins -->
-        <button @click="refreshPins" class="map-control-button" title="Refresh map data">
-          <PhArrowClockwise :size="16" class="text-current" weight="bold" />
-        </button>
-      </div>
-    </div>
-
     <!-- TODO: The map doesn't visually resize when the sidebar is collapsed. When that happens, the space the sidebar took is now cutout from the map on its right side, since the sidebar is on the left. Look into this issue and see if there's additional settings concerning responsiveness. -->
 
     <!-- Map info overlay -->
@@ -87,7 +54,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, watch } from 'vue'
-import { PhWarning, PhArrowClockwise, PhGpsFix, PhStack, PhPlus, PhMinus } from '@phosphor-icons/vue'
+import { PhWarning } from '@phosphor-icons/vue'
 import { useMapPins } from '@/composables/useMapPins'
 import { mapService } from '@/services/mapService'
 import MapFilters from './MapFilters.vue'
@@ -129,7 +96,6 @@ const {
   selectPin,
   clearSelection,
   flyToLocation,
-  refreshPins: refreshPinsData,
   cleanup
 } = useMapPins()
 
@@ -145,45 +111,6 @@ const retryMap = async () => {
       zoom: props.zoom
     })
   }
-}
-
-const centerToUserLocation = () => {
-  if (navigator.geolocation) {
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        const { latitude, longitude } = position.coords
-        flyToLocation(latitude, longitude, 15)
-      },
-      (error) => {
-        console.error('Geolocation error:', error)
-        // Fallback to default center
-        flyToLocation(props.center[0], props.center[1], props.zoom)
-      }
-    )
-  } else {
-    // Fallback to default center
-    flyToLocation(props.center[0], props.center[1], props.zoom)
-  }
-}
-
-const toggleLayers = () => {
-  mapService.toggleLayer()
-}
-
-const zoomIn = () => {
-  if (isMapReady.value) {
-    mapService.zoomIn()
-  }
-}
-
-const zoomOut = () => {
-  if (isMapReady.value) {
-    mapService.zoomOut()
-  }
-}
-
-const refreshPins = async () => {
-  await refreshPinsData()
 }
 
 // Watch for prop changes

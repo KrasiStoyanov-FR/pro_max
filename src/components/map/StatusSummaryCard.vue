@@ -10,21 +10,11 @@
     <div
       v-if="!isFullscreenMode"
       ref="widgetRef"
-      class="p-4 absolute top-4 lg:top-22 right-4 lg:right-6 z-20 rounded-2xl bg-neutral-900/40 backdrop-blur-3xl border border-white/10"
+      class="p-4 z-10 rounded-2xl bg-neutral-900/40 backdrop-blur-3xl border border-white/10"
       role="region"
       aria-label="System Status"
     >
       <div class="flex flex-row gap-6">
-        <!-- TODO: There's no need for handleDronesClick() method anymore -->
-        <div class="w-full flex items-center space-x-3 transition-colors" :aria-label="`${activeDrones} targets`">
-          <div class="w-4.5 h-4.5 bg-blue-500 border border-white rounded-full flex-shrink-0"></div>
-          <span class="space-x-2 text-white text-xs flex-1 text-left">
-            <span class="whitespace-nowrap">{{ activeDrones === 1 ? 'Target' : 'Targets' }}:</span>
-            <span>{{ activeDrones }}</span>
-          </span>
-          <!-- <span v-if="isLoading" class="text-xs text-neutral-400 animate-pulse">⟳</span> -->
-        </div>
-
         <!-- TODO: There's no need for handleDetectionsClick() method anymore -->
         <div class="w-full flex items-center space-x-3 transition-colors" :aria-label="`${rfDetections} RF detections`">
           <div class="w-4.5 h-4.5 bg-yellow-500 border border-white rounded-full flex-shrink-0"></div>
@@ -40,15 +30,6 @@
           class="w-full flex items-center space-x-3 transition-colors"
           :aria-label="`Database status: ${databaseStatusText}`"
         >
-          <div
-            class="w-4.5 h-4.5 border border-white rounded-full flex-shrink-0"
-            :class="{
-              'bg-green-500': databaseStatus === 'ok',
-              'bg-yellow-500 animate-pulse': databaseStatus === 'degraded',
-              'bg-red-500 animate-pulse': databaseStatus === 'down'
-            }"
-            :aria-label="`Database is ${databaseStatusText}`"
-          ></div>
           <span class="flex gap-2 text-white text-xs flex-1 text-left">Database: <span v-html="databaseStatusIndicator"></span></span>
           <span v-if="isStale" class="text-xs text-neutral-400" aria-label="Data may be stale">⚠</span>
         </div>

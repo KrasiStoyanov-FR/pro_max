@@ -339,3 +339,88 @@
     transform: scale(1.15);
   }
 }
+
+$shape-size: 1.125rem;
+$border-width: 0.0625rem;
+$default-color: theme('colors.white');
+
+@mixin shape-active-style($color) {
+  &:not(.shape--triangle) {
+    background-color: $color;
+    border-color: $default-color;
+  }
+
+  &.shape--triangle {
+    background-color: $color;
+    border-color: transparent;
+    clip-path: polygon(50% 15%, 0% 100%, 100% 100%);
+    
+    &::before {
+      display: none;
+    }
+  }
+}
+
+.shape {
+  &:not(.shape--triangle) {
+    width: $shape-size;
+    height: $shape-size;
+  }
+
+  &--circle {
+    border-radius: theme('borderRadius.full');
+  }
+
+  &--triangle {
+    width: 1.25rem;
+    height: $shape-size;
+    position: relative;
+    transform: translateY(-0.0625rem); // Nudge up to visually center with circles/squares
+    border-left: $border-width solid transparent;
+    border-bottom: $border-width solid $default-color;
+
+    &::before {
+      content: "";
+      width: $shape-size;
+      height: $shape-size;
+      position: absolute;
+      transform: rotate(45deg) skew(10deg, 10deg);
+      left: 0;
+      bottom: -0.625rem;
+    }
+
+    &,
+    &::before {
+      display: block;
+      box-sizing: border-box;
+      border-right: $border-width solid transparent;
+    }
+  }
+
+  &--outline {
+    &:not(.shape--triangle) {
+      border-width: $border-width;
+      border-color: $default-color;
+    }
+
+    &.shape--triangle::before {
+      border-left: $border-width solid $default-color;
+      border-top: $border-width solid $default-color;
+      border-bottom: $border-width solid transparent;
+    }
+  }
+
+  &--active {
+    &.shape--drone {
+      @include shape-active-style(theme('colors.green.500'));
+    }
+
+    &.shape--friendly {
+      @include shape-active-style(theme('colors.blue.500'));
+    }
+
+    &.shape--sensor {
+      @include shape-active-style(#22d3ee);
+    }
+  }
+}

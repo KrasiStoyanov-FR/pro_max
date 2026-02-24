@@ -7,7 +7,7 @@
     leave-from-class="opacity-100 translate-y-0"
     leave-to-class="opacity-0 translate-y-2"
   >
-    <div class="p-4 absolute top-4 lg:top-22 left-4 lg:left-6 z-20 rounded-2xl bg-neutral-900/40 backdrop-blur-3xl border border-white/10">
+    <div class="p-4 z-10 rounded-2xl bg-neutral-900/40 backdrop-blur-3xl border border-white/10">
       <div class="flex flex- items-center gap-6 lg:gap-10">
         <div class="flex items-center justify-between">
           <h3 class="text-xs font-bold text-white">Map Filters:</h3>
@@ -432,90 +432,3 @@ const toggleAll = () => {
   })
 }
 </script>
-
-<style lang="scss" scoped>
-$shape-size: 1.125rem;
-$border-width: 0.0625rem;
-$default-color: theme('colors.white');
-
-@mixin shape-active-style($color) {
-  &:not(.shape--triangle) {
-    background-color: $color;
-    border-color: $color;
-  }
-
-  &.shape--triangle {
-    background-color: $color;
-    border-color: transparent;
-    clip-path: polygon(50% 15%, 0% 100%, 100% 100%);
-    
-    &::before {
-      display: none;
-    }
-  }
-}
-
-.shape {
-  &:not(.shape--triangle) {
-    width: $shape-size;
-    height: $shape-size;
-  }
-
-  &--circle {
-    border-radius: theme('borderRadius.full');
-  }
-
-  &--triangle {
-    width: 1.25rem;
-    height: $shape-size;
-    position: relative;
-    transform: translateY(-0.0625rem); // Nudge up to visually center with circles/squares
-    border-left: $border-width solid transparent;
-    border-bottom: $border-width solid $default-color;
-
-    &::before {
-      content: "";
-      width: $shape-size;
-      height: $shape-size;
-      position: absolute;
-      transform: rotate(45deg) skew(10deg, 10deg);
-      left: 0;
-      bottom: -0.625rem;
-    }
-
-    &,
-    &::before {
-      display: block;
-      box-sizing: border-box;
-      border-right: $border-width solid transparent;
-    }
-  }
-
-  &--outline {
-    &:not(.shape--triangle) {
-      border-width: $border-width;
-      border-color: $default-color;
-    }
-
-    &.shape--triangle::before {
-      border-left: $border-width solid $default-color;
-      border-top: $border-width solid $default-color;
-      border-bottom: $border-width solid transparent;
-    }
-  }
-
-  &--active {
-    &.shape--drone {
-      @include shape-active-style(theme('colors.green.500'));
-    }
-
-    &.shape--friendly {
-      @include shape-active-style(theme('colors.blue.500'));
-    }
-
-    &.shape--sensor {
-      @include shape-active-style(#22d3ee);
-    }
-  }
-}
-</style>
